@@ -3,19 +3,20 @@
 A Salesforce-style CRM for ThinkFirst Studios — customers, vendors, work orders and
 an everyday tracker, built on the brand guide (orange `#FA7700` on near-black).
 
-**Zero dependencies. No build step. No install.** Open `index.html` and it runs.
+**No build step. No install.** Runs as static files, backed by Supabase for the shared
+team version or by `localStorage` for offline use.
 
 ---
 
 ## Running it
 
-Double-click `index.html`, or serve the folder:
-
 ```bash
 npx serve .
 ```
 
-Either works — the app uses classic scripts, so `file://` is fine.
+Or just open `index.html` — the app uses classic scripts, so `file://` works for the
+offline mode. Use a served URL for the Supabase version, since auth email links need
+somewhere real to return to.
 
 ## What's in it
 
@@ -63,37 +64,83 @@ owner — plus **vendor type** (Subcontractor, Supplier, Freelancer, Software/Sa
 Partner, Print/Fabrication, Media Buyer — all editable in Admin) and their own **work
 orders**, which flow into the same Daily Tracker as customer work.
 
-## Where the data lives
+## Two modes
 
-Everything is in this browser's `localStorage` under `tfs_crm_v1`. That means:
+The app reads `js/config.js` at boot and runs one of two ways.
 
-- It works offline and starts instantly
-- **It does not sync between machines or teammates** — each browser holds its own copy
-- Clearing site data wipes it
+| | **Offline** (blank config) | **Live** (Supabase configured) |
+|---|---|---|
+| Storage | `localStorage`, this browser only | Shared Postgres |
+| Accounts | None — pick a teammate from the chip | Real sign-in |
+| Sharing | Nothing is shared | Whole team, updating live |
+| Roles | UI-level only | Enforced by the database |
 
-Use **Admin → Data & Backup** to export a JSON snapshot (the portable copy) or restore one.
+The top bar shows which one you're in: **Live** or **Offline**.
+
+The offline mode is the demo — it ships with sample accounts so every screen has something
+in it. If the backend is configured but unreachable, the app **stops with an error rather
+than silently falling back**, so a connection problem never looks like your team's data
+vanished.
+
+## Setting up the live version
+
+**1. Create the tables.** Supabase Dashboard → **SQL Editor** → New query → paste all of
+[`supabase/schema.sql`](supabase/schema.sql) → Run. It's idempotent, so re-running is safe.
+This creates the tables, the row-level security policies, realtime, and the reference data.
+
+**2. Point the app at your project.** Fill in `url` and `anonKey` in
+[`js/config.js`](js/config.js). That key is the *publishable/anon* key — it's designed to
+ship in client code and is safe to commit. Your security is the RLS policies from step 1,
+which is why step 1 is not optional. A `service_role` key must **never** go in this file.
+
+**3. Host it.** Auth email links need a real URL to return to — they can't redirect to a
+`file://` path. Either:
+
+- **GitHub Pages** — Settings → Pages → Source `main` / `/ (root)`, or
+- **Locally** — `npx serve -l 3000`
+
+Then set Supabase → **Authentication → URL Configuration → Site URL** to that address.
+If you leave it as the default `http://localhost:3000` and nothing is running there,
+confirmation links land on *"This site can't be reached"* — the account is still created
+and confirmed, the redirect just has nowhere to go.
+
+**4. Sign up.** The first account becomes the **admin**; everyone after starts as a **rep**,
+and an admin promotes them in Admin → Users & Roles. If you signed up before running
+step 1, re-run `schema.sql` — it backfills a profile for any existing login and makes the
+earliest account the admin.
+
+> For a small internal team, consider turning off **Authentication → Sign In / Providers →
+> Email → Confirm email**. Sign-up then works instantly with no email round-trip and no
+> redirect to get wrong.
+
+## Access model
+
+Every signed-in teammate **sees everything** — all customers, vendors, work orders and notes.
+
+- **admin** — the Admin panel and all setup tables (services, statuses, vendor types)
+- **manager** — can delete records
+- **rep** — day-to-day use: create and edit anything, delete nothing
+
+Reads and writes are open to the whole team; deletes and setup are restricted. Those rules
+live in the database policies, not just the interface, so they hold even if someone pokes at
+the API directly. In offline mode the acting-user switcher is a convenience, not
+authentication — it exists so you can see how multi-author notes behave.
+
+## Backups
+
+**Admin → Data & Backup** exports the whole database as JSON and restores it, in either
+mode. Because record ids are plain text and carry across, a backup taken from the offline
+version imports straight into Supabase with its ids intact — that's the migration path if
+you've already entered real data locally.
+
 Customers, vendors and billing also export to CSV.
 
-The app ships with demo data so every screen has something in it. **Admin → Data & Backup →
-Clear all records** empties it for real use while keeping your users and service catalog.
+## How the backend swap works
 
-## Making it multi-user
-
-`js/store.js` is the only file that touches persistence — every view goes through its API
-(`all`, `find`, `insert`, `update`, `remove`, plus the domain helpers). Swapping the
-`load()`/`save()` pair for `fetch()` calls against a real API is a contained change; the
-views don't need to know.
-
-## Roles
-
-Set per user in Admin:
-
-- **admin** — full setup access, including the Admin panel
-- **manager** — can delete records and reassign ownership
-- **rep** — day-to-day CRM use
-
-The acting-user switcher is a convenience for a single shared machine, not authentication.
-Real auth belongs with the server-backed version above.
+`js/backend.js` is an adapter with two implementations behind one interface; `js/store.js`
+keeps a synchronous in-memory cache either way — hydrate once at boot, write through on
+every change, fold teammates' realtime changes back in. That's why moving from localStorage
+to Postgres needed **no changes to any view file**.
 
 ## Shortcuts
 

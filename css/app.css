@@ -410,6 +410,40 @@ table.tbl tbody tr:last-child td{border-bottom:0}
 .avatars .avatar:first-child{margin-left:0}
 hr.sep{border:0;border-top:1px solid var(--line);margin:16px 0}
 
+/* ── Auth gate ──────────────────────────────────────────────────── */
+body.auth-open .topbar,
+body.auth-open .shell{display:none}
+.auth-wrap{
+  position:fixed;inset:0;z-index:150;display:grid;place-items:center;padding:24px;overflow:auto;
+  background:radial-gradient(1100px 620px at 50% -12%,rgba(250,119,0,.13),transparent 62%),var(--bg);
+}
+.auth-card{
+  width:100%;max-width:404px;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r-lg);padding:32px;box-shadow:var(--shadow);
+}
+.auth-brand{display:flex;align-items:center;gap:11px;margin-bottom:26px}
+.auth-brand img{width:34px;height:34px}
+.auth-title{font-family:var(--font-display);font-size:21px;font-weight:700;margin:0 0 7px;letter-spacing:.01em}
+.auth-sub{color:var(--text-3);font-size:12.5px;margin:0;line-height:1.55}
+.auth-error{
+  margin-top:16px;background:#2a1215;border:1px solid #5c2b2e;color:#ff8a80;
+  border-radius:var(--r-sm);padding:10px 13px;font-size:12.5px;line-height:1.5;
+}
+.auth-foot{
+  margin-top:22px;padding-top:16px;border-top:1px solid var(--line);
+  color:var(--text-3);font-size:11px;text-align:center;
+}
+.auth-foot .mono{color:var(--text-2)}
+
+/* live-sync indicator in the top bar */
+.sync-dot{
+  display:inline-flex;align-items:center;gap:6px;font-size:10.5px;letter-spacing:.12em;
+  text-transform:uppercase;font-family:var(--font-display);color:var(--text-3);white-space:nowrap;
+}
+.sync-dot::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--ok);flex:none}
+.sync-dot.local::before{background:var(--text-3)}
+@media(max-width:1100px){.sync-dot{display:none}}
+
 @media(max-width:900px){
   :root{--rail-w:64px}
   .rail a span{display:none}

@@ -1,0 +1,117 @@
+/* ═══════════════════════════════════════════════════════════════════
+   auth.js — sign-in gate. Only used when js/config.js points at a
+   Supabase project; offline demo mode never sees this.
+   ═══════════════════════════════════════════════════════════════════ */
+(function (root) {
+  'use strict';
+  var B = root.Backend;
+
+  function esc(v) {
+    return String(v == null ? '' : v)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function screen(opts) {
+    opts = opts || {};
+    var mode = 'in';   // 'in' | 'up'
+
+    var wrap = document.createElement('div');
+    wrap.className = 'auth-wrap';
+    document.body.appendChild(wrap);
+    document.body.classList.add('auth-open');
+    paint();
+
+    function paint(error) {
+      wrap.innerHTML =
+        '<div class="auth-card">' +
+          '<div class="auth-brand">' +
+            '<img src="assets/thinkfirst-mark.svg" alt="">' +
+            '<div class="brand-text">THINKFIRST<em>STUDIOS</em></div>' +
+          '</div>' +
+          '<h1 class="auth-title">' + (mode === 'in' ? 'Sign in to the CRM' : 'Create your account') + '</h1>' +
+          '<p class="auth-sub">' + (mode === 'in'
+            ? 'Your notes, work orders and time entries are recorded under this account.'
+            : 'The first account created becomes the admin. Everyone after starts as a rep.') + '</p>' +
+
+          (opts.fatal ? '<div class="auth-error">' + esc(opts.fatal) + '</div>' : '') +
+          (error ? '<div class="auth-error">' + esc(error) + '</div>' : '') +
+
+          (opts.fatal ? '' :
+            '<div class="stack" style="gap:12px;margin-top:18px">' +
+              (mode === 'up'
+                ? '<div class="field"><label>Full Name</label><input class="input" id="auName" placeholder="Alex Phillips"></div>'
+                : '') +
+              '<div class="field"><label>Email</label><input class="input" id="auEmail" type="email" autocomplete="username" placeholder="you@thinkfirststudios.com"></div>' +
+              '<div class="field"><label>Password</label><input class="input" id="auPass" type="password" autocomplete="' +
+                (mode === 'in' ? 'current-password' : 'new-password') + '" placeholder="••••••••"></div>' +
+              '<button class="btn btn-primary" id="auGo" style="justify-content:center;padding:10px">' +
+                (mode === 'in' ? 'Sign in' : 'Create account') + '</button>' +
+              '<button class="btn btn-ghost btn-sm" id="auToggle" style="justify-content:center">' +
+                (mode === 'in' ? 'No account yet? Create one' : 'Already have an account? Sign in') + '</button>' +
+            '</div>') +
+
+          '<div class="auth-foot">Connected to <span class="mono">' + esc(shortHost(B.config.url)) + '</span></div>' +
+        '</div>';
+
+      if (opts.fatal) return;
+
+      var go = wrap.querySelector('#auGo');
+      var email = wrap.querySelector('#auEmail');
+      var pass = wrap.querySelector('#auPass');
+      var name = wrap.querySelector('#auName');
+
+      wrap.querySelector('#auToggle').onclick = function () {
+        mode = mode === 'in' ? 'up' : 'in';
+        paint();
+      };
+
+      go.onclick = function () {
+        var e = (email.value || '').trim();
+        var p = pass.value || '';
+        if (!e || !p) { paint('Enter your email and password.'); return; }
+
+        go.disabled = true;
+        go.textContent = mode === 'in' ? 'Signing in…' : 'Creating…';
+
+        var work = mode === 'in'
+          ? B.signIn(e, p)
+          : B.signUp(e, p, (name && name.value.trim()) || e.split('@')[0]);
+
+        work.then(function (session) {
+          if (!session) {
+            /* email confirmation is switched on for this project */
+            paint('Account created. Check your email to confirm it, then sign in.');
+            mode = 'in';
+            return;
+          }
+          location.reload();
+        }).catch(function (err) {
+          paint(friendly(err));
+        });
+      };
+
+      [email, pass, name].forEach(function (el) {
+        if (!el) return;
+        el.onkeydown = function (ev) { if (ev.key === 'Enter') go.click(); };
+      });
+
+      (name || email).focus();
+    }
+  }
+
+  function friendly(err) {
+    var m = (err && err.message) || String(err);
+    if (/Invalid login credentials/i.test(m)) return 'That email and password combination did not match.';
+    if (/User already registered/i.test(m)) return 'That email already has an account — sign in instead.';
+    if (/Password should be/i.test(m)) return m;
+    if (/Failed to fetch|NetworkError/i.test(m)) return 'Could not reach Supabase. Check your connection.';
+    return m;
+  }
+
+  function shortHost(url) {
+    try { return new URL(url).host; } catch (e) { return url || ''; }
+  }
+
+  root.Auth = { screen: screen };
+})(window);

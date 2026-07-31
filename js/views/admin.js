@@ -54,9 +54,16 @@
 
   PANELS.users = function (body) {
     var users = S.all('users');
+    var hosted = S.mode() === 'supabase';
     body.innerHTML =
       '<div class="card"><div class="card-head"><span class="card-title">Users &amp; Roles</span>' +
-        '<div class="page-actions"><button class="btn btn-primary btn-sm" id="addUser">+ Add User</button></div></div>' +
+        '<div class="page-actions">' +
+          (hosted
+            /* Creating a login requires the auth service — people join by
+               signing up, and an admin sets their role here afterwards. */
+            ? '<span class="hint">Teammates join by signing up at your CRM link — set their role here once they appear</span>'
+            : '<button class="btn btn-primary btn-sm" id="addUser">+ Add User</button>') +
+        '</div></div>' +
       U.table([
         { key: 'name', label: 'Name', render: function (u) {
             return '<div class="split">' + U.avatar(u.id, '') + '<div><div class="strong">' + U.esc(u.name) + '</div>' +
@@ -84,7 +91,8 @@
           } }
       ], users, {}) + '</div>';
 
-    body.querySelector('#addUser').onclick = function () { userForm(null); };
+    var add = body.querySelector('#addUser');
+    if (add) add.onclick = function () { userForm(null); };
     body.querySelectorAll('[data-edit]').forEach(function (b) {
       b.onclick = function () { userForm(S.find('users', b.dataset.edit)); };
     });
@@ -93,7 +101,9 @@
         var u = S.find('users', b.dataset.del);
         U.confirmDelete(u.name, function () {
           S.remove('users', u.id);
-          U.toast('User removed. Their records keep the old owner id until reassigned.');
+          U.toast(hosted
+            ? 'Profile removed. Their login still exists — delete it in Supabase → Authentication to fully revoke access.'
+            : 'User removed. Their records keep the old owner id until reassigned.');
           root.render();
         });
       };
@@ -323,15 +333,23 @@
           U.field('Currency', '<input class="input" id="currency" value="' + U.esc(s.currency) + '">') +
         '</div><div style="margin-top:14px"><button class="btn btn-primary btn-sm" id="saveSettings">Save</button></div></div></div>' +
         '<div class="card"><div class="card-head"><span class="card-title">Where Data Lives</span></div><div class="card-body">' +
-          '<p class="hint" style="margin-top:0">Records are stored in this browser\'s local storage under <span class="mono">tfs_crm_v1</span>. ' +
-          'They stay on this machine and are not synced between computers or teammates.</p>' +
-          '<p class="hint">Use <strong>Data &amp; Backup</strong> to export a JSON snapshot — that file is the portable copy, and it is what you would import into a hosted database later.</p>' +
+          (S.mode() === 'supabase'
+            ? '<p class="hint" style="margin-top:0">' + U.badge('Live', 'b-green') + ' Records live in your <strong>Supabase</strong> project. ' +
+                'Every signed-in teammate sees the same data, and changes appear on their screen in real time.</p>' +
+              '<p class="hint">Deletes are limited to admins and managers, and the setup tabs on this page are admin-only — ' +
+                'those rules are enforced by the database, not just this interface.</p>'
+            : '<p class="hint" style="margin-top:0">' + U.badge('Offline', 'b-grey') + ' Records are stored in this browser only, under ' +
+                '<span class="mono">tfs_crm_v1</span>. Nothing is shared with teammates.</p>' +
+              '<p class="hint">To switch the team onto shared data, fill in <span class="mono">js/config.js</span> and run ' +
+                '<span class="mono">supabase/schema.sql</span> — see the README.</p>') +
+          '<p class="hint">Either way, <strong>Data &amp; Backup</strong> exports a portable JSON snapshot.</p>' +
         '</div></div></div>';
 
     body.querySelector('#saveSettings').onclick = function () {
-      s.orgName = body.querySelector('#orgName').value.trim();
-      s.currency = body.querySelector('#currency').value.trim();
-      S.save();
+      S.saveSettings({
+        orgName: body.querySelector('#orgName').value.trim(),
+        currency: body.querySelector('#currency').value.trim()
+      });
       U.toast('Settings saved.', 'ok');
     };
   };
@@ -359,23 +377,38 @@
       if (!file) return;
       var reader = new FileReader();
       reader.onload = function () {
-        try { S.importJSON(reader.result); U.toast('Backup restored.', 'ok'); root.render(); }
-        catch (e) { U.toast('Import failed: ' + e.message, 'err'); }
+        U.toast('Restoring…');
+        Promise.resolve()
+          .then(function () { return S.importJSON(reader.result); })
+          .then(function () { U.toast('Backup restored.', 'ok'); root.render(); })
+          .catch(function (e) { U.toast('Import failed: ' + e.message, 'err'); });
       };
       reader.readAsText(file);
     };
     body.querySelector('#reseed').onclick = function () {
       U.modal({
         title: 'Reset to demo data?', danger: true, okText: 'Reset',
-        body: '<p style="margin:0;color:var(--text-2)">This wipes everything currently stored and reloads the sample dataset. Export a backup first if you have real records.</p>',
-        onOk: function () { S.resetToSeed(); U.toast('Demo data restored.'); root.render(); }
+        body: '<p style="margin:0;color:var(--text-2)">This wipes everything currently stored and reloads the sample dataset. Export a backup first if you have real records.</p>' +
+          (S.mode() === 'supabase'
+            ? '<p style="margin:12px 0 0;color:var(--danger)"><strong>You are connected to Supabase</strong> — this replaces the shared data for the whole team, not just your browser.</p>'
+            : ''),
+        onOk: function () {
+          S.resetToSeed().then(function () { U.toast('Demo data restored.'); root.render(); })
+            .catch(function (e) { U.toast('Reset failed: ' + e.message, 'err'); });
+        }
       });
     };
     body.querySelector('#wipe').onclick = function () {
       U.modal({
         title: 'Delete every record?', danger: true, okText: 'Delete all records',
-        body: '<p style="margin:0;color:var(--text-2)">Customers, vendors, work orders, notes, time entries and activity will be erased. Users, services and settings are kept.</p>',
-        onOk: function () { S.wipe(); U.toast('All records cleared.'); root.render(); }
+        body: '<p style="margin:0;color:var(--text-2)">Customers, vendors, work orders, notes, time entries and activity will be erased. Users, services and settings are kept.</p>' +
+          (S.mode() === 'supabase'
+            ? '<p style="margin:12px 0 0;color:var(--danger)"><strong>You are connected to Supabase</strong> — this erases the shared data for the whole team.</p>'
+            : ''),
+        onOk: function () {
+          S.wipe().then(function () { U.toast('All records cleared.'); root.render(); })
+            .catch(function (e) { U.toast('Clear failed: ' + e.message, 'err'); });
+        }
       });
     };
 

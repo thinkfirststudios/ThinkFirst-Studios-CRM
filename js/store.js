@@ -1,12 +1,19 @@
 /* ═══════════════════════════════════════════════════════════════════
-   store.js — the ONLY place that touches persistence.
-   Swap the load()/save() pair for fetch() calls against an API and the
-   rest of the app keeps working unchanged.
+   store.js — the app's single source of truth.
+
+   Views read from a synchronous in-memory cache, exactly as before.
+   All I/O goes through js/backend.js:
+     boot()      hydrates the cache once
+     mutations   write through to the backend
+     onRemote    folds a teammate's change back into the cache
+
+   Because the cache stays synchronous, no view needed to change when
+   this moved from localStorage to Supabase.
    ═══════════════════════════════════════════════════════════════════ */
 (function (root) {
   'use strict';
 
-  var KEY = 'tfs_crm_v1';
+  var B = root.Backend;
   var SESSION_KEY = 'tfs_crm_me';
 
   /* ── helpers ─────────────────────────────────────────────────── */
@@ -23,7 +30,7 @@
     return (name || '?').split(/\s+/).slice(0, 2).map(function (p) { return p[0]; }).join('').toUpperCase();
   }
 
-  /* ── reference data (editable in Admin) ──────────────────────── */
+  /* ── reference defaults (also seeded server-side by schema.sql) ── */
   var DEFAULT_STATUSES = [
     { id: 'new',       label: 'New',        tone: 'b-blue',   order: 1, open: true,  won: false },
     { id: 'followup',  label: 'Follow Up',  tone: 'b-orange', order: 2, open: true,  won: false },
@@ -60,13 +67,24 @@
   var BILLING_CYCLES = ['Monthly', 'Quarterly', 'Annual', 'One-Time', 'Retainer'];
   var ROLES = ['admin', 'manager', 'rep'];
 
-  /* ── seed ────────────────────────────────────────────────────── */
+  var EMPTY_COLLS = ['users', 'services', 'customers', 'vendors', 'workOrders',
+    'notes', 'timeEntries', 'dailyLogs', 'activity', 'statuses', 'vendorTypes'];
+
+  function emptyDb() {
+    var db = { version: 1, settings: { id: 'org', orgName: 'ThinkFirst Studios', currency: 'USD' } };
+    EMPTY_COLLS.forEach(function (c) { db[c] = []; });
+    db.statuses = DEFAULT_STATUSES.slice();
+    db.vendorTypes = DEFAULT_VENDOR_TYPES.slice();
+    return db;
+  }
+
+  /* ── demo seed (local mode only) ─────────────────────────────── */
   function seed() {
     var users = [
-      { id: 'u_alex',  name: 'Alex Phillips', email: 'alex@thinkfirststudios.com',  role: 'admin',   title: 'Founder',           active: true, createdAt: now() },
-      { id: 'u_jordan',name: 'Jordan Reyes',  email: 'jordan@thinkfirststudios.com',role: 'manager', title: 'Account Manager',   active: true, createdAt: now() },
-      { id: 'u_sam',   name: 'Sam Okafor',    email: 'sam@thinkfirststudios.com',   role: 'rep',     title: 'Sales Rep',         active: true, createdAt: now() },
-      { id: 'u_riley', name: 'Riley Chen',    email: 'riley@thinkfirststudios.com', role: 'rep',     title: 'Production Lead',   active: true, createdAt: now() }
+      { id: 'u_alex',  name: 'Alex Phillips', email: 'alex@thinkfirststudios.com',  role: 'admin',   title: 'Founder',         active: true, createdAt: now() },
+      { id: 'u_jordan',name: 'Jordan Reyes',  email: 'jordan@thinkfirststudios.com',role: 'manager', title: 'Account Manager', active: true, createdAt: now() },
+      { id: 'u_sam',   name: 'Sam Okafor',    email: 'sam@thinkfirststudios.com',   role: 'rep',     title: 'Sales Rep',       active: true, createdAt: now() },
+      { id: 'u_riley', name: 'Riley Chen',    email: 'riley@thinkfirststudios.com', role: 'rep',     title: 'Production Lead', active: true, createdAt: now() }
     ];
 
     var services = [
@@ -161,76 +179,137 @@
       { id: uid('n'), entityType: 'vendor',   entityId: 'v_3', authorId: 'u_alex',   body: 'Ravi hasn\'t signed the updated MSA yet. Do not assign new work until that\'s back.', pinned: true, createdAt: now() }
     ];
 
-    return {
-      version: 1,
-      users: users,
-      services: services,
-      customers: customers,
-      vendors: vendors,
-      workOrders: workOrders,
-      notes: notes,
-      timeEntries: [],
-      dailyLogs: [],
-      activity: [],
-      statuses: DEFAULT_STATUSES.slice(),
-      vendorTypes: DEFAULT_VENDOR_TYPES.slice(),
-      settings: { orgName: 'ThinkFirst Studios', currency: 'USD' }
-    };
+    var db = emptyDb();
+    db.users = users;
+    db.services = services;
+    db.customers = customers;
+    db.vendors = vendors;
+    db.workOrders = workOrders;
+    db.notes = notes;
+    return db;
   }
 
-  /* ── persistence ─────────────────────────────────────────────── */
-  var db = null;
+  /* ── cache + notification ────────────────────────────────────── */
+  var db = emptyDb();
   var listeners = [];
+  var booted = false;
 
-  function load() {
-    try {
-      var raw = localStorage.getItem(KEY);
-      if (raw) return JSON.parse(raw);
-    } catch (e) { console.warn('CRM: could not read saved data, reseeding.', e); }
-    var fresh = seed();
-    try { localStorage.setItem(KEY, JSON.stringify(fresh)); } catch (e) {}
-    return fresh;
-  }
+  function notify() { listeners.forEach(function (fn) { fn(); }); }
 
+  /* Persist (local mode writes the whole blob) and notify subscribers. */
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(db)); }
-    catch (e) { console.error('CRM: save failed', e); }
-    listeners.forEach(function (fn) { fn(); });
+    if (B.mode === 'local') B.persist(db);
+    notify();
   }
 
-  db = load();
+  /* Write one record through to the backend. */
+  function push(coll, op, rec) {
+    if (B.mode === 'local') B.persist(db);
+    else B.write(coll, op, rec);
+  }
 
-  /* ── session (acting user) ───────────────────────────────────── */
-  var meId = localStorage.getItem(SESSION_KEY);
-  if (!meId || !db.users.some(function (u) { return u.id === meId; })) {
-    meId = db.users[0].id;
-    localStorage.setItem(SESSION_KEY, meId);
+  /* ── session ─────────────────────────────────────────────────── */
+  var meId = null;
+
+  function resolveMe() {
+    if (B.mode === 'supabase') {
+      var s = B.session();
+      meId = s && s.user ? s.user.id : null;
+      return;
+    }
+    meId = localStorage.getItem(SESSION_KEY);
+    if (!meId || !db.users.some(function (u) { return u.id === meId; })) {
+      meId = (db.users[0] || {}).id || null;
+      if (meId) localStorage.setItem(SESSION_KEY, meId);
+    }
+  }
+
+  /* ── boot ────────────────────────────────────────────────────── */
+  function boot() {
+    return B.init(B.config)
+      .then(function () {
+        if (B.mode === 'supabase' && !B.session()) return null;   // auth screen takes over
+        return B.hydrate();
+      })
+      .then(function (loaded) {
+        if (loaded) {
+          db = loaded;
+          /* a brand-new Supabase project may have no reference rows yet */
+          if (!db.statuses || !db.statuses.length) db.statuses = DEFAULT_STATUSES.slice();
+          if (!db.vendorTypes || !db.vendorTypes.length) db.vendorTypes = DEFAULT_VENDOR_TYPES.slice();
+        } else if (B.mode === 'local') {
+          db = seed();
+          B.persist(db);
+        }
+
+        resolveMe();
+
+        if (B.mode === 'supabase' && B.session()) {
+          B.onError = function (table, op, msg) {
+            if (root.UI) root.UI.toast('Could not save to ' + table + ': ' + msg, 'err');
+          };
+          B.subscribe(applyRemote);
+        }
+
+        booted = true;
+        return { authenticated: B.mode === 'local' || !!B.session() };
+      });
+  }
+
+  /* A teammate changed something — fold it into the cache and repaint. */
+  function applyRemote(coll, event, newRow, oldRow) {
+    if (coll === 'settings') {
+      if (newRow) db.settings = newRow;
+      if (root.render) root.render();
+      return;
+    }
+    var list = db[coll];
+    if (!list) return;
+
+    var id = (newRow && newRow.id) || (oldRow && oldRow.id);
+    if (!id) return;
+    var idx = -1;
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) { idx = i; break; }
+
+    if (event === 'DELETE') { if (idx > -1) list.splice(idx, 1); }
+    else if (idx > -1) list[idx] = newRow;
+    else if (coll === 'activity') list.unshift(newRow);
+    else list.push(newRow);
+
+    notify();
+    if (root.render) root.render();
   }
 
   /* ── activity log ────────────────────────────────────────────── */
   function log(action, entityType, entityId, detail) {
-    db.activity.unshift({
-      id: uid('a'), ts: now(), userId: meId,
+    var entry = {
+      id: uid('a'), ts: now(), userId: meId || '',
       action: action, entityType: entityType, entityId: entityId, detail: detail || ''
-    });
+    };
+    db.activity.unshift(entry);
     if (db.activity.length > 500) db.activity.length = 500;
+    if (B.mode === 'supabase') B.write('activity', 'insert', entry);
   }
 
   /* ── generic collection ops ──────────────────────────────────── */
   function all(coll) { return db[coll] || []; }
+
   function find(coll, id) {
     var list = db[coll] || [];
     for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
     return null;
   }
+
   function insert(coll, obj, prefix, label) {
     obj.id = obj.id || uid(prefix || 'x');
     obj.createdAt = obj.createdAt || now();
     db[coll].push(obj);
     log('created', coll, obj.id, label || obj.name || obj.title || '');
-    save();
+    push(coll, 'insert', obj);
+    notify();
     return obj;
   }
+
   function update(coll, id, patch, label) {
     var rec = find(coll, id);
     if (!rec) return null;
@@ -241,28 +320,30 @@
     });
     rec.updatedAt = now();
     if (changed.length) log('updated', coll, id, label || changed.join(', '));
-    save();
+    push(coll, 'update', rec);
+    notify();
     return rec;
   }
+
   function remove(coll, id) {
     var rec = find(coll, id);
     db[coll] = db[coll].filter(function (r) { return r.id !== id; });
     if (rec) log('deleted', coll, id, rec.name || rec.title || '');
-    save();
+    push(coll, 'delete', { id: id });
+    notify();
   }
 
-  /* ── domain helpers ──────────────────────────────────────────── */
+  /* ── public API ──────────────────────────────────────────────── */
   var API = {
-    /* raw access + reactivity */
+    /* lifecycle */
+    boot: boot,
+    isBooted: function () { return booted; },
+    mode: function () { return B.mode; },
     db: function () { return db; },
     save: save,
     onChange: function (fn) { listeners.push(fn); },
-    uid: uid,
-    today: today,
-    shift: shift,
-    nowISO: now,
-    initials: initials,
 
+    uid: uid, today: today, shift: shift, nowISO: now, initials: initials,
     all: all, find: find, insert: insert, update: update, remove: remove,
 
     /* reference */
@@ -271,10 +352,7 @@
       return find('statuses', id) || { id: id, label: id || '—', tone: 'b-grey', order: 99 };
     },
     VENDOR_TYPES: function () { return db.vendorTypes; },
-    vendorType: function (id) {
-      var t = find('vendorTypes', id);
-      return t || { id: id, label: id || '—' };
-    },
+    vendorType: function (id) { return find('vendorTypes', id) || { id: id, label: id || '—' }; },
     WO_STATUSES: WO_STATUSES,
     woStatus: function (id) {
       for (var i = 0; i < WO_STATUSES.length; i++) if (WO_STATUSES[i].id === id) return WO_STATUSES[i];
@@ -289,8 +367,24 @@
     ROLES: ROLES,
 
     /* session */
-    me: function () { return find('users', meId) || db.users[0]; },
-    setMe: function (id) { meId = id; localStorage.setItem(SESSION_KEY, id); save(); },
+    me: function () {
+      var u = find('users', meId);
+      if (u) return u;
+      if (B.mode === 'supabase') {
+        var s = B.session();
+        /* the profile row may not have replicated yet on first sign-in */
+        return { id: meId || '', name: (s && s.user && s.user.email) || 'You', role: 'rep', email: (s && s.user && s.user.email) || '', title: '' };
+      }
+      return db.users[0] || { id: '', name: 'You', role: 'admin', email: '', title: '' };
+    },
+    /* Switching acting user is a single-machine convenience — it only
+       exists offline. On Supabase you are whoever you signed in as. */
+    canSwitchUser: function () { return B.mode === 'local'; },
+    setMe: function (id) {
+      if (B.mode !== 'local') return;
+      meId = id; localStorage.setItem(SESSION_KEY, id); notify();
+    },
+    signOut: function () { return B.signOut(); },
     isAdmin: function () { return API.me().role === 'admin'; },
     canManage: function () { var r = API.me().role; return r === 'admin' || r === 'manager'; },
     user: function (id) { return find('users', id) || { id: '', name: 'Unassigned', role: '', email: '' }; },
@@ -298,9 +392,7 @@
 
     /* services */
     service: function (id) { return find('services', id) || { id: id, name: '—', rate: 0 }; },
-    serviceNames: function (ids) {
-      return (ids || []).map(function (id) { return API.service(id).name; });
-    },
+    serviceNames: function (ids) { return (ids || []).map(function (id) { return API.service(id).name; }); },
 
     /* records */
     record: function (type, id) { return find(type === 'vendor' ? 'vendors' : 'customers', id); },
@@ -315,14 +407,15 @@
         .filter(function (n) { return n.entityType === type && n.entityId === id; })
         .sort(function (a, b) {
           if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
-          return b.createdAt.localeCompare(a.createdAt);
+          return String(b.createdAt).localeCompare(String(a.createdAt));
         });
     },
     addNote: function (type, id, body) {
-      var n = { id: uid('n'), entityType: type, entityId: id, authorId: meId, body: body, pinned: false, createdAt: now() };
+      var n = { id: uid('n'), entityType: type, entityId: id, authorId: meId || '', body: body, pinned: false, createdAt: now() };
       db.notes.push(n);
       log('noted', type, id, body.slice(0, 70));
-      save();
+      push('notes', 'insert', n);
+      notify();
       return n;
     },
 
@@ -333,7 +426,6 @@
     workOrdersOn: function (date) {
       return db.workOrders.filter(function (w) {
         if (w.scheduledDate === date) return true;
-        // overdue open items roll forward onto today
         return date === today() && w.status !== 'complete' && w.dueDate && w.dueDate < date;
       });
     },
@@ -347,15 +439,17 @@
       w.completedAt = status === 'complete' ? now() : '';
       w.updatedAt = now();
       log(status === 'complete' ? 'completed' : 'moved', 'workOrders', id, w.title + ' → ' + API.woStatus(status).label);
-      save();
+      push('workOrders', 'update', w);
+      notify();
     },
 
     /* time tracking */
     logTime: function (workOrderId, date, hours, note) {
-      var t = { id: uid('t'), workOrderId: workOrderId, date: date, userId: meId, hours: Number(hours) || 0, note: note || '', createdAt: now() };
+      var t = { id: uid('t'), workOrderId: workOrderId, date: date, userId: meId || '', hours: Number(hours) || 0, note: note || '', createdAt: now() };
       db.timeEntries.push(t);
       log('logged time', 'workOrders', workOrderId, t.hours + 'h');
-      save();
+      push('timeEntries', 'insert', t);
+      notify();
       return t;
     },
     timeFor: function (workOrderId) {
@@ -371,14 +465,30 @@
 
     /* daily log */
     dailyLog: function (date, userId) {
-      return db.dailyLogs.filter(function (l) { return l.date === date && l.userId === (userId || meId); })[0] || null;
+      var uid_ = userId || meId;
+      return db.dailyLogs.filter(function (l) { return l.date === date && l.userId === uid_; })[0] || null;
     },
     saveDailyLog: function (date, summary) {
       var existing = API.dailyLog(date, meId);
-      if (existing) { existing.summary = summary; existing.updatedAt = now(); }
-      else db.dailyLogs.push({ id: uid('dl'), date: date, userId: meId, summary: summary, createdAt: now() });
+      if (existing) {
+        existing.summary = summary;
+        existing.updatedAt = now();
+        push('dailyLogs', 'update', existing);
+      } else {
+        var row = { id: uid('dl'), date: date, userId: meId || '', summary: summary, createdAt: now() };
+        db.dailyLogs.push(row);
+        push('dailyLogs', 'insert', row);
+      }
       log('logged day', 'dailyLogs', date, '');
-      save();
+      notify();
+    },
+
+    /* settings */
+    saveSettings: function (patch) {
+      Object.keys(patch).forEach(function (k) { db.settings[k] = patch[k]; });
+      db.settings.id = db.settings.id || 'org';
+      push('settings', 'update', db.settings);
+      notify();
     },
 
     /* activity */
@@ -408,20 +518,35 @@
       return Math.round(ms / 86400000);
     },
 
-    /* admin: data management */
+    /* backup / restore */
     exportJSON: function () { return JSON.stringify(db, null, 2); },
     importJSON: function (text) {
       var incoming = JSON.parse(text);
       if (!incoming.customers || !incoming.users) throw new Error('That file does not look like a CRM backup.');
       db = incoming;
-      save();
+      if (B.mode === 'local') { B.persist(db); notify(); return Promise.resolve(); }
+      return B.replaceAll(db).then(notify);
     },
-    resetToSeed: function () { db = seed(); meId = db.users[0].id; localStorage.setItem(SESSION_KEY, meId); save(); },
-    wipe: function () {
+    resetToSeed: function () {
       db = seed();
-      db.customers = []; db.vendors = []; db.workOrders = []; db.notes = [];
-      db.timeEntries = []; db.dailyLogs = []; db.activity = [];
-      save();
+      if (B.mode === 'local') {
+        meId = db.users[0].id;
+        localStorage.setItem(SESSION_KEY, meId);
+        B.persist(db);
+        notify();
+        return Promise.resolve();
+      }
+      return B.replaceAll(db).then(notify);
+    },
+    wipe: function () {
+      var keepUsers = db.users, keepServices = db.services;
+      var fresh = emptyDb();
+      fresh.users = keepUsers;
+      fresh.services = keepServices;
+      fresh.settings = db.settings;
+      db = fresh;
+      if (B.mode === 'local') { B.persist(db); notify(); return Promise.resolve(); }
+      return B.replaceAll(db).then(notify);
     }
   };
 

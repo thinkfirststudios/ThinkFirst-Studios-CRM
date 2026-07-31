@@ -59,15 +59,35 @@
   document.getElementById('userChipBtn').onclick = function (e) {
     e.stopPropagation();
     if (!userMenu.hidden) { userMenu.hidden = true; return; }
-    userMenu.innerHTML =
-      '<div class="menu-label">Acting as</div>' +
-      S.activeUsers().map(function (u) {
-        return '<button class="menu-item' + (u.id === S.me().id ? ' is-on' : '') + '" data-user="' + U.esc(u.id) + '">' +
-          U.avatar(u.id, 'sm') + '<span>' + U.esc(u.name) + '</span><small>' + U.esc(u.role) + '</small></button>';
-      }).join('') +
-      '<hr class="sep" style="margin:6px 0">' +
-      '<div class="menu-label">Notes you post are attributed to the selected user</div>';
+
+    if (S.canSwitchUser()) {
+      /* Offline demo mode: switch freely between the seeded teammates. */
+      userMenu.innerHTML =
+        '<div class="menu-label">Acting as</div>' +
+        S.activeUsers().map(function (u) {
+          return '<button class="menu-item' + (u.id === S.me().id ? ' is-on' : '') + '" data-user="' + U.esc(u.id) + '">' +
+            U.avatar(u.id, 'sm') + '<span>' + U.esc(u.name) + '</span><small>' + U.esc(u.role) + '</small></button>';
+        }).join('') +
+        '<hr class="sep" style="margin:6px 0">' +
+        '<div class="menu-label">Offline demo — notes are attributed to the selected user</div>';
+    } else {
+      /* Signed in: you are who you authenticated as. */
+      userMenu.innerHTML =
+        '<div class="menu-label">Signed in as</div>' +
+        '<div class="menu-item" style="cursor:default">' + U.avatar(S.me().id, 'sm') +
+          '<span>' + U.esc(S.me().name) + '</span><small>' + U.esc(S.me().role) + '</small></div>' +
+        '<hr class="sep" style="margin:6px 0">' +
+        '<div class="menu-label">Team</div>' +
+        S.activeUsers().filter(function (u) { return u.id !== S.me().id; }).map(function (u) {
+          return '<div class="menu-item" style="cursor:default">' + U.avatar(u.id, 'sm') +
+            '<span>' + U.esc(u.name) + '</span><small>' + U.esc(u.role) + '</small></div>';
+        }).join('') +
+        '<hr class="sep" style="margin:6px 0">' +
+        '<button class="menu-item" id="signOutBtn"><span>Sign out</span></button>';
+    }
+
     userMenu.hidden = false;
+
     userMenu.querySelectorAll('[data-user]').forEach(function (b) {
       b.onclick = function () {
         S.setMe(b.dataset.user);
@@ -76,6 +96,8 @@
         render();
       };
     });
+    var out = userMenu.querySelector('#signOutBtn');
+    if (out) out.onclick = function () { S.signOut().then(function () { location.reload(); }); };
   };
   document.addEventListener('click', function () { userMenu.hidden = true; });
 
@@ -192,7 +214,33 @@
   });
 
   /* ── boot ────────────────────────────────────────────────────── */
+  function paintSyncDot() {
+    var dot = document.getElementById('syncDot');
+    if (S.mode() === 'supabase') {
+      dot.className = 'sync-dot';
+      dot.textContent = 'Live';
+      dot.title = 'Shared with your team in real time';
+    } else {
+      dot.className = 'sync-dot local';
+      dot.textContent = 'Offline';
+      dot.title = 'This browser only — data is not shared. See README to connect Supabase.';
+    }
+  }
+
   window.addEventListener('hashchange', render);
   if (!location.hash) location.hash = '#/dashboard';
-  render();
+
+  viewEl.innerHTML = '<div class="empty" style="padding:80px"><h4>Loading…</h4></div>';
+
+  S.boot().then(function (result) {
+    if (!result.authenticated) { root.Auth.screen(); return; }
+    paintSyncDot();
+    render();
+  }).catch(function (err) {
+    console.error(err);
+    /* A backend that is configured but unreachable must not silently fall
+       back to local storage — that would look like the team's data vanished. */
+    if (root.Auth) root.Auth.screen({ fatal: err.message });
+    else viewEl.innerHTML = U.empty('Could not start', err.message);
+  });
 })(window);
