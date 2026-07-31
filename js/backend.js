@@ -111,8 +111,16 @@
     },
 
     signUp: function (email, password, name) {
+      var opts = { data: { name: name } };
+      /* Send the confirmation link back to wherever this app is actually
+         being served, instead of the project's default Site URL. Skipped
+         on file://, where origin is "null" and no redirect is possible. */
+      var loc = root.location;
+      if (loc && /^https?:$/.test(loc.protocol)) {
+        opts.emailRedirectTo = loc.origin + loc.pathname;
+      }
       return client.auth.signUp({
-        email: email, password: password, options: { data: { name: name } }
+        email: email, password: password, options: opts
       }).then(function (r) {
         if (r.error) throw r.error;
         session = r.data.session;

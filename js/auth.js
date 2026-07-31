@@ -12,9 +12,37 @@
       .replace(/"/g, '&quot;');
   }
 
+  /* Supabase returns auth failures as hash params on the redirect back
+     (e.g. #error=access_denied&error_code=otp_expired). Turn that into a
+     readable message instead of letting the router silently ignore it. */
+  function hashError() {
+    var h = (root.location.hash || '').replace(/^#\/?/, '');
+    if (h.indexOf('error') < 0) return null;
+
+    var p = {};
+    h.split('&').forEach(function (kv) {
+      var i = kv.indexOf('=');
+      if (i > 0) p[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1).replace(/\+/g, ' '));
+    });
+    if (!p.error && !p.error_code) return null;
+
+    /* clear it so a reload doesn't show the same message again */
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+
+    if (p.error_code === 'otp_expired') {
+      return 'That confirmation link has already been used or has expired. ' +
+             'Links work once — if you clicked it before, your account is already confirmed, so just sign in below.';
+    }
+    if (p.error_code === 'access_denied' || p.error === 'access_denied') {
+      return 'That link was rejected: ' + (p.error_description || 'access denied') + '. Try signing in below.';
+    }
+    return p.error_description || p.error_code || p.error;
+  }
+
   function screen(opts) {
     opts = opts || {};
     var mode = 'in';   // 'in' | 'up'
+    var initialNotice = opts.fatal ? null : hashError();
 
     var wrap = document.createElement('div');
     wrap.className = 'auth-wrap';
@@ -23,6 +51,7 @@
     paint();
 
     function paint(error) {
+      if (initialNotice && !error) { error = initialNotice; initialNotice = null; }
       wrap.innerHTML =
         '<div class="auth-card">' +
           '<div class="auth-brand">' +
