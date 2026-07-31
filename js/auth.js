@@ -39,10 +39,55 @@
     return p.error_description || p.error_code || p.error;
   }
 
+  /* The tables have not been created yet — PostgREST reports this as a
+     missing entry in its schema cache. It is a setup step, not a bug, so
+     say what to do about it. */
+  function isMissingSchema(msg) {
+    return /schema cache|Could not find the table|does not exist/i.test(msg || '');
+  }
+
+  /* Boot failed. The person may well already be signed in, so this is a
+     status screen with a way forward — not a sign-in form. */
+  function fatalScreen(message) {
+    var setup = isMissingSchema(message);
+    var signedIn = !!B.session();
+
+    var wrap = document.createElement('div');
+    wrap.className = 'auth-wrap';
+    document.body.appendChild(wrap);
+    document.body.classList.add('auth-open');
+
+    wrap.innerHTML =
+      '<div class="auth-card">' +
+        '<div class="auth-brand">' +
+          '<img src="assets/thinkfirst-mark.svg" alt="">' +
+          '<div class="brand-text">THINKFIRST<em>STUDIOS</em></div>' +
+        '</div>' +
+        '<h1 class="auth-title">' + (setup ? 'One setup step left' : 'Could not start') + '</h1>' +
+        '<p class="auth-sub">' + (setup
+          ? 'You are signed in, but this project has no CRM tables yet. Run <span class="mono">supabase/schema.sql</span> ' +
+            'in the Supabase SQL Editor, then come back and retry.'
+          : 'The CRM could not reach its database. Nothing has been lost — it stopped rather than falling back to local data.') +
+        '</p>' +
+        '<div class="auth-error">' + esc(message) + '</div>' +
+        '<div class="stack" style="gap:9px;margin-top:18px">' +
+          '<button class="btn btn-primary" id="auRetry" style="justify-content:center;padding:10px">Retry</button>' +
+          (signedIn ? '<button class="btn btn-ghost btn-sm" id="auOut" style="justify-content:center">Sign out</button>' : '') +
+        '</div>' +
+        '<div class="auth-foot">Connected to <span class="mono">' + esc(shortHost(B.config.url)) + '</span></div>' +
+      '</div>';
+
+    wrap.querySelector('#auRetry').onclick = function () { location.reload(); };
+    var out = wrap.querySelector('#auOut');
+    if (out) out.onclick = function () { B.signOut().then(function () { location.reload(); }); };
+  }
+
   function screen(opts) {
     opts = opts || {};
+    if (opts.fatal) return fatalScreen(opts.fatal);
+
     var mode = 'in';   // 'in' | 'up'
-    var initialNotice = opts.fatal ? null : hashError();
+    var initialNotice = hashError();
 
     var wrap = document.createElement('div');
     wrap.className = 'auth-wrap';
@@ -63,27 +108,23 @@
             ? 'Your notes, work orders and time entries are recorded under this account.'
             : 'The first account created becomes the admin. Everyone after starts as a rep.') + '</p>' +
 
-          (opts.fatal ? '<div class="auth-error">' + esc(opts.fatal) + '</div>' : '') +
           (error ? '<div class="auth-error">' + esc(error) + '</div>' : '') +
 
-          (opts.fatal ? '' :
-            '<div class="stack" style="gap:12px;margin-top:18px">' +
-              (mode === 'up'
-                ? '<div class="field"><label>Full Name</label><input class="input" id="auName" placeholder="Alex Phillips"></div>'
-                : '') +
-              '<div class="field"><label>Email</label><input class="input" id="auEmail" type="email" autocomplete="username" placeholder="you@thinkfirststudios.com"></div>' +
-              '<div class="field"><label>Password</label><input class="input" id="auPass" type="password" autocomplete="' +
-                (mode === 'in' ? 'current-password' : 'new-password') + '" placeholder="••••••••"></div>' +
-              '<button class="btn btn-primary" id="auGo" style="justify-content:center;padding:10px">' +
-                (mode === 'in' ? 'Sign in' : 'Create account') + '</button>' +
-              '<button class="btn btn-ghost btn-sm" id="auToggle" style="justify-content:center">' +
-                (mode === 'in' ? 'No account yet? Create one' : 'Already have an account? Sign in') + '</button>' +
-            '</div>') +
+          '<div class="stack" style="gap:12px;margin-top:18px">' +
+            (mode === 'up'
+              ? '<div class="field"><label>Full Name</label><input class="input" id="auName" placeholder="Alex Phillips"></div>'
+              : '') +
+            '<div class="field"><label>Email</label><input class="input" id="auEmail" type="email" autocomplete="username" placeholder="you@thinkfirststudios.com"></div>' +
+            '<div class="field"><label>Password</label><input class="input" id="auPass" type="password" autocomplete="' +
+              (mode === 'in' ? 'current-password' : 'new-password') + '" placeholder="••••••••"></div>' +
+            '<button class="btn btn-primary" id="auGo" style="justify-content:center;padding:10px">' +
+              (mode === 'in' ? 'Sign in' : 'Create account') + '</button>' +
+            '<button class="btn btn-ghost btn-sm" id="auToggle" style="justify-content:center">' +
+              (mode === 'in' ? 'No account yet? Create one' : 'Already have an account? Sign in') + '</button>' +
+          '</div>' +
 
           '<div class="auth-foot">Connected to <span class="mono">' + esc(shortHost(B.config.url)) + '</span></div>' +
         '</div>';
-
-      if (opts.fatal) return;
 
       var go = wrap.querySelector('#auGo');
       var email = wrap.querySelector('#auEmail');
