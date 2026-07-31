@@ -88,6 +88,13 @@ vanished.
 [`supabase/schema.sql`](supabase/schema.sql) → Run. It's idempotent, so re-running is safe.
 This creates the tables, the row-level security policies, realtime, and the reference data.
 
+> If the dashboard itself is down (`Failed to fetch (api.supabase.com)`), the SQL Editor is
+> unavailable but your project's database is a separate service and is usually still fine.
+> [`supabase/apply-schema.mjs`](supabase/apply-schema.mjs) applies the same file directly
+> over the connection pooler: `cd supabase && npm install pg && node apply-schema.mjs`.
+> It prompts for your database password locally. That `pg` install is for this script only —
+> the app itself stays dependency-free.
+
 **2. Point the app at your project.** Fill in `url` and `anonKey` in
 [`js/config.js`](js/config.js). That key is the *publishable/anon* key — it's designed to
 ship in client code and is safe to commit. Your security is the RLS policies from step 1,
