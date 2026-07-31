@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ThinkFirst Studios — CRM</title>
+<link rel="icon" href="assets/thinkfirst-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- ── Global search / utility bar ───────────────────────────────── -->
+<header class="topbar">
+  <a class="brand" href="#/dashboard">
+    <img src="assets/thinkfirst-mark.svg" alt="" class="brand-mark">
+    <span class="brand-text">THINKFIRST<em>STUDIOS</em></span>
+  </a>
+
+  <div class="global-search">
+    <svg viewBox="0 0 24 24" class="gs-icon" aria-hidden="true"><path d="M21 21l-4.35-4.35M11 19a8 8 0 110-16 8 8 0 010 16z"/></svg>
+    <input id="globalSearch" type="search" placeholder="Search customers, vendors, work orders…" autocomplete="off" spellcheck="false">
+    <kbd>/</kbd>
+    <div id="gsResults" class="gs-results" hidden></div>
+  </div>
+
+  <div class="topbar-right">
+    <button class="btn btn-primary btn-sm" id="quickNewBtn">
+      <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg> New
+    </button>
+    <div class="user-switch">
+      <button class="user-chip" id="userChipBtn" title="Switch acting user">
+        <span class="avatar" id="meAvatar">--</span>
+        <span class="user-chip-meta">
+          <span id="meName">—</span>
+          <span id="meRole" class="role-tag">—</span>
+        </span>
+        <svg viewBox="0 0 24 24" class="ico caret"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="menu" id="userMenu" hidden></div>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+  <!-- ── Object nav rail ─────────────────────────────────────────── -->
+  <nav class="rail" id="rail">
+    <a href="#/dashboard" data-nav="dashboard"><svg viewBox="0 0 24 24" class="ico"><path d="M3 12l9-9 9 9M5 10v10h5v-6h4v6h5V10"/></svg><span>Home</span></a>
+    <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24" class="ico"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg><span>Customers</span></a>
+    <a href="#/pipeline" data-nav="pipeline"><svg viewBox="0 0 24 24" class="ico"><path d="M3 3v18h18M7 15V9M12 18V6M17 13V8"/></svg><span>Pipeline</span></a>
+    <a href="#/tracker" data-nav="tracker"><svg viewBox="0 0 24 24" class="ico"><path d="M3 5h18v16H3zM3 9h18M8 3v4M16 3v4M8 14l2.5 2.5L16 12"/></svg><span>Daily Tracker</span></a>
+    <a href="#/workorders" data-nav="workorders"><svg viewBox="0 0 24 24" class="ico"><path d="M20 7h-3V5a2 2 0 00-2-2H9a2 2 0 00-2 2v2H4a1 1 0 00-1 1v11a1 1 0 001 1h16a1 1 0 001-1V8a1 1 0 00-1-1zM9 7V5h6v2"/></svg><span>Work Orders</span></a>
+    <a href="#/vendors" data-nav="vendors"><svg viewBox="0 0 24 24" class="ico"><path d="M3 21V9l9-6 9 6v12M9 21v-7h6v7"/></svg><span>Vendors</span></a>
+    <a href="#/billing" data-nav="billing"><svg viewBox="0 0 24 24" class="ico"><path d="M2 7h20v12H2zM2 11h20M6 15h4"/></svg><span>Billing</span></a>
+    <a href="#/admin" data-nav="admin" class="rail-admin"><svg viewBox="0 0 24 24" class="ico"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.7 1.7 0 00.34 1.88l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.88-.34 1.7 1.7 0 00-1 1.56V21a2 2 0 11-4 0v-.09A1.7 1.7 0 008 19.4a1.7 1.7 0 00-1.88.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.7 1.7 0 003.62 15a1.7 1.7 0 00-1.56-1H2a2 2 0 110-4h.09A1.7 1.7 0 003.6 8.9a1.7 1.7 0 00-.33-1.88l-.06-.06a2 2 0 112.83-2.83l.06.06A1.7 1.7 0 009 4.6a1.7 1.7 0 001-1.56V3a2 2 0 114 0v.09a1.7 1.7 0 001 1.56 1.7 1.7 0 001.88-.34l.06-.06a2 2 0 112.83 2.83l-.06.06A1.7 1.7 0 0019.4 9v0a1.7 1.7 0 001.56 1H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.51 1z"/></svg><span>Admin</span></a>
+  </nav>
+
+  <main class="main" id="view"></main>
+</div>
+
+<!-- ── Overlays ──────────────────────────────────────────────────── -->
+<div class="modal-root" id="modalRoot" hidden></div>
+<div class="toast-root" id="toastRoot"></div>
+
+<script src="js/store.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/views/dashboard.js"></script>
+<script src="js/views/record.js"></script>
+<script src="js/views/customers.js"></script>
+<script src="js/views/pipeline.js"></script>
+<script src="js/views/tracker.js"></script>
+<script src="js/views/workorders.js"></script>
+<script src="js/views/vendors.js"></script>
+<script src="js/views/billing.js"></script>
+<script src="js/views/admin.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

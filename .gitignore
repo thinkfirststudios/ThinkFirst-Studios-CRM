@@ -1,0 +1,20 @@
+# OS / editor
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# Node (only if tooling is added later)
+node_modules/
+npm-debug.log*
+
+# Local backups exported from the Admin panel
+*-backup-*.json
+thinkfirst-*.csv
+
+# Secrets — never commit
+.env
+.env.*
+credentials.json
+token.json

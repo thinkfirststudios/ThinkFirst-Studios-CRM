@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <linearGradient id="tfsG" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#FA7700"/>
+      <stop offset="1" stop-color="#D84600"/>
+    </linearGradient>
+  </defs>
+  <!-- crossbar -->
+  <polygon fill="url(#tfsG)" points="17,19 73,19 83,32 28,32"/>
+  <!-- stem -->
+  <polygon fill="url(#tfsG)" points="44,32 57,32 57,79 44,68"/>
+  <!-- F arm -->
+  <polygon fill="url(#tfsG)" points="61,39 72,39 83,52 61,52"/>
+  <!-- counter stroke -->
+  <polygon fill="#EDEFF3" points="33,64 41,64 54,79 46,79"/>
+</svg>
