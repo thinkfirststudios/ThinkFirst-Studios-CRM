@@ -19,10 +19,17 @@
 import Stripe from 'https://esm.sh/stripe@17.7.0?target=deno';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
-const STRIPE_KEY = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
-const WEBHOOK_SECRET = Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? '';
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
-const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+/* Trim every secret. Pasting into a multi-line secrets box very easily
+   leaves a trailing newline, and a webhook secret with whitespace fails
+   signature verification on EVERY event — with an error that reads like
+   the payload was tampered with rather than like a config typo. No valid
+   Stripe credential has surrounding whitespace, so trimming is safe. */
+const env = (name: string) => (Deno.env.get(name) ?? '').trim();
+
+const STRIPE_KEY = env('STRIPE_SECRET_KEY');
+const WEBHOOK_SECRET = env('STRIPE_WEBHOOK_SECRET');
+const SUPABASE_URL = env('SUPABASE_URL');
+const SERVICE_KEY = env('SUPABASE_SERVICE_ROLE_KEY');
 
 const stripe = new Stripe(STRIPE_KEY, { apiVersion: '2025-01-27.acacia' });
 const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
