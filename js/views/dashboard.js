@@ -14,7 +14,11 @@
     var open = customers.filter(function (c) { return S.status(c.status).open; });
     var won = customers.filter(function (c) { return S.status(c.status).won; });
     var lost = customers.filter(function (c) { return c.status === 'lost'; });
-    var pipelineValue = open.reduce(function (s, c) { return s + (Number(c.value) || 0); }, 0);
+    var freeAccounts = customers.filter(S.isFree);
+    /* Pro bono and internal work is real work but not pipeline money. */
+    var pipelineValue = open.filter(S.isRevenue)
+      .reduce(function (s, c) { return s + (Number(c.value) || 0); }, 0);
+    var openPaying = open.filter(S.isRevenue).length;
     var closeRate = (won.length + lost.length) ? Math.round(won.length / (won.length + lost.length) * 100) : 0;
 
     var dueToday = wos.filter(function (w) { return w.status !== 'complete' && (w.scheduledDate === today || w.dueDate === today); });
@@ -60,8 +64,9 @@
 
       '<div class="grid g-4" style="margin-bottom:14px">' +
         kpi('Open Pipeline', S.money(pipelineValue),
-            pipelineValue ? open.length + ' active opportunities'
-                          : open.length + ' open · no contract values set', 'accent') +
+            (pipelineValue ? openPaying + ' active opportunities'
+                           : openPaying + ' open · no contract values set') +
+            (freeAccounts.length ? ' · ' + freeAccounts.length + ' free' : ''), 'accent') +
         kpi('Recurring / mo', recurring, recurringFoot, 'ok') +
         (outstanding || lateInvoices.length
           ? kpi('Outstanding', S.cents(outstanding),

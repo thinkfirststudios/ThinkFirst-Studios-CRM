@@ -102,6 +102,35 @@
     return '<div class="field' + (span ? ' span-2' : '') + '"><label>' + esc(label) + '</label>' + inner + '</div>';
   }
 
+  /* Comma-separated tag entry with autocomplete from tags already in use,
+     so the same idea doesn't end up spelled three ways. */
+  function tagInput(name, tags) {
+    var existing = S.allTags();
+    return '<input class="input" name="' + esc(name) + '" list="tagOptions" ' +
+        'placeholder="VIP, Referral, Local…" value="' + esc((tags || []).join(', ')) + '">' +
+      '<datalist id="tagOptions">' +
+        existing.map(function (t) { return '<option value="' + esc(t) + '">'; }).join('') +
+      '</datalist>' +
+      '<div class="hint">Separate with commas.' +
+        (existing.length ? ' In use: ' + esc(existing.slice(0, 8).join(', ')) : '') + '</div>';
+  }
+
+  function tagChips(tags, limit) {
+    tags = tags || [];
+    if (!tags.length) return '';
+    var shown = limit ? tags.slice(0, limit) : tags;
+    return '<div class="chips">' +
+      shown.map(function (t) { return '<span class="chip">' + esc(t) + '</span>'; }).join('') +
+      (limit && tags.length > limit ? '<span class="chip">+' + (tags.length - limit) + '</span>' : '') +
+      '</div>';
+  }
+
+  /* The Paid / Pro Bono / Internal / Trial badge. */
+  function billingTypeBadge(c) {
+    var bt = S.billingType(c && c.billingType);
+    return badge(bt.label, bt.tone);
+  }
+
   function serviceChecks(name, selectedIds) {
     selectedIds = selectedIds || [];
     return '<div class="checks">' + S.all('services').filter(function (s) { return s.active; }).map(function (s) {
@@ -329,6 +358,7 @@
     badge: badge, statusBadge: statusBadge, woBadge: woBadge,
     avatar: avatar, avatarColor: avatarColor, userCell: userCell,
     empty: empty, options: options, field: field, serviceChecks: serviceChecks,
+    tagInput: tagInput, tagChips: tagChips, billingTypeBadge: billingTypeBadge,
     toast: toast, modal: modal, closeModal: closeModal, confirmDelete: confirmDelete,
     values: values, table: table, bindTable: bindTable,
     notesPanel: notesPanel, bindNotes: bindNotes, timeline: timeline

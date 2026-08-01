@@ -39,7 +39,9 @@
             '<h1 class="record-name">' + U.esc(rec.name) + '</h1>' +
             '<div class="record-meta">' +
               U.statusBadge(rec.status) +
+              (cfg.type === 'customer' && S.isFree(rec) ? U.billingTypeBadge(rec) : '') +
               (cfg.type === 'vendor' ? U.badge(S.vendorType(rec.vendorType).label, 'b-violet', true) : '') +
+              U.tagChips(rec.tags) +
               (rec.industry ? '<span class="chip">' + U.esc(rec.industry) + '</span>' : '') +
               (rec.website ? '<a class="chip" href="https://' + U.esc(rec.website) + '" target="_blank" rel="noopener">' + U.esc(rec.website) + '</a>' : '') +
               (rec.address ? '<span>' + U.esc(rec.address) + '</span>' : '') +

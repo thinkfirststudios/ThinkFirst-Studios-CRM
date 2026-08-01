@@ -21,7 +21,10 @@
       return d <= Number(st.window);
     });
 
-    var incoming = rows.filter(function (r) { return r.kind === 'customer'; }).reduce(function (s, r) { return s + r.amount; }, 0);
+    /* Free accounts have a value on the record but bill nothing. */
+    var incoming = rows
+      .filter(function (r) { return r.kind === 'customer' && !(r.health && r.health.source === 'free'); })
+      .reduce(function (s, r) { return s + r.amount; }, 0);
     var outgoing = rows.filter(function (r) { return r.kind === 'vendor'; }).reduce(function (s, r) { return s + r.amount; }, 0);
     var overdue = rows.filter(function (r) { return S.daysUntil(r.date) < 0; });
 
@@ -120,6 +123,11 @@
       { key: 'payment', label: 'Payment', sort: function (r) { return r.health ? r.health.label : 'zz'; },
         render: function (r) {
           if (!r.health) return '<span class="muted">—</span>';
+          if (r.health.source === 'free') {
+            /* Owes nothing by design — must not read as unpaid. */
+            return U.badge(r.health.label, r.health.tone) +
+              '<div class="muted" style="font-size:11px;margin-top:3px">no charge</div>';
+          }
           if (r.health.source === 'manual') {
             /* Deliberately neutral: not linked to Stripe is not the same
                as not paid, and must never read like a red flag. */

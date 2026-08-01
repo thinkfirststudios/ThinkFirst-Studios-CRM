@@ -165,6 +165,25 @@ create table if not exists public.settings (
 alter table public.settings
   add column if not exists "mrrGoalCents" bigint not null default 0;
 
+-- ── Billing type and tags ──────────────────────────────────────────
+-- billingType is structured rather than a tag because the app has to do
+-- arithmetic with it: pro bono and internal accounts are excluded from
+-- revenue, pipeline value and the MRR goal, and are never shown as
+-- unpaid. A free-text tag could be misspelled or renamed and would
+-- silently stop being honoured.
+alter table public.customers
+  add column if not exists "billingType" text not null default 'paid';
+
+-- Tags are the opposite case: open-ended labels the app never reasons
+-- about, so free text is right.
+alter table public.customers
+  add column if not exists tags jsonb not null default '[]'::jsonb;
+alter table public.vendors
+  add column if not exists tags jsonb not null default '[]'::jsonb;
+
+create index if not exists customers_billing_type_idx
+  on public.customers ("billingType");
+
 -- helpful indexes for the list views
 create index if not exists notes_entity_idx       on public.notes ("entityType", "entityId");
 create index if not exists work_orders_sched_idx  on public.work_orders ("scheduledDate");

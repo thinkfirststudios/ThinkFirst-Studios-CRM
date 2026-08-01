@@ -7,7 +7,7 @@
   var ICON = '<svg viewBox="0 0 24 24" class="ico"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87"/></svg>';
 
   /* view state survives re-renders within a session */
-  var st = { q: '', status: '', owner: '', service: '', sortKey: 'name', sortDir: 1 };
+  var st = { q: '', status: '', owner: '', service: '', tag: '', billingType: '', sortKey: 'name', sortDir: 1 };
 
   /* ── list ────────────────────────────────────────────────────── */
   root.Views.customers = function (el, params) {
@@ -17,20 +17,27 @@
       if (st.status && c.status !== st.status) return false;
       if (st.owner && c.ownerId !== st.owner) return false;
       if (st.service && (c.services || []).indexOf(st.service) < 0) return false;
+      if (st.tag && !S.hasTag(c, st.tag)) return false;
+      if (st.billingType && (c.billingType || 'paid') !== st.billingType) return false;
       if (st.q) {
-        var hay = [c.name, c.contactName, c.email, c.phone, c.industry, c.address].join(' ').toLowerCase();
+        var hay = [c.name, c.contactName, c.email, c.phone, c.industry, c.address]
+          .concat(S.tagsOf(c)).join(' ').toLowerCase();
         if (hay.indexOf(st.q.toLowerCase()) < 0) return false;
       }
       return true;
     });
 
-    var totalValue = rows.reduce(function (s, c) { return s + (Number(c.value) || 0); }, 0);
+    /* Only paying accounts contribute to the headline figure. */
+    var totalValue = rows.filter(S.isRevenue)
+      .reduce(function (s, c) { return s + (Number(c.value) || 0); }, 0);
+    var freeCount = rows.filter(S.isFree).length;
 
     el.innerHTML =
       '<div class="page-head">' +
         '<div><div class="eyebrow">Object</div><h1 class="page-title">Customers</h1>' +
           '<div class="page-sub">' + rows.length + ' of ' + S.all('customers').length + ' records · ' +
-            S.money(totalValue) + ' represented</div></div>' +
+            S.money(totalValue) + ' represented' +
+            (freeCount ? ' · ' + freeCount + ' free / non-billing' : '') + '</div></div>' +
         '<div class="page-actions">' +
           '<a class="btn" href="#/pipeline">Pipeline view</a>' +
           '<button class="btn btn-primary" id="newCust">+ New Customer</button>' +
@@ -42,6 +49,14 @@
         '<select class="input" id="fstatus"><option value="">All statuses</option>' + U.options(S.STATUSES(), st.status) + '</select>' +
         '<select class="input" id="fowner"><option value="">All owners</option>' + U.options(S.activeUsers(), st.owner, 'id', 'name') + '</select>' +
         '<select class="input" id="fservice"><option value="">All services</option>' + U.options(S.all('services'), st.service, 'id', 'name') + '</select>' +
+        '<select class="input" id="fbillingType"><option value="">Paid &amp; free</option>' +
+          U.options(S.BILLING_TYPES, st.billingType) + '</select>' +
+        (S.allTags().length
+          ? '<select class="input" id="ftag"><option value="">All tags</option>' +
+              S.allTags().map(function (t) {
+                return '<option value="' + U.esc(t) + '"' + (t === st.tag ? ' selected' : '') + '>' + U.esc(t) + '</option>';
+              }).join('') + '</select>'
+          : '') +
         '<button class="btn btn-ghost btn-sm" id="clear">Clear</button>' +
         '<button class="btn btn-sm" id="exportCsv" style="margin-left:auto">Export CSV</button>' +
       '</div>' +
@@ -57,8 +72,11 @@
     bindFilter(el, '#fstatus', 'status');
     bindFilter(el, '#fowner', 'owner');
     bindFilter(el, '#fservice', 'service');
+    bindFilter(el, '#fbillingType', 'billingType');
+    if (el.querySelector('#ftag')) bindFilter(el, '#ftag', 'tag');
     el.querySelector('#clear').onclick = function () {
-      st.q = ''; st.status = ''; st.owner = ''; st.service = ''; root.render();
+      st.q = ''; st.status = ''; st.owner = ''; st.service = ''; st.tag = ''; st.billingType = '';
+      root.render();
     };
     el.querySelector('#exportCsv').onclick = function () { exportCsv(rows); };
 
@@ -83,7 +101,10 @@
       { key: 'name', label: 'Customer', sort: function (c) { return c.name; },
         render: function (c) {
           return '<div><span class="link">' + U.esc(c.name) + '</span>' +
-            '<div class="muted" style="font-size:11.5px">' + U.esc(c.contactName || '') + '</div></div>';
+            (S.isFree(c) ? ' ' + U.billingTypeBadge(c) : '') +
+            '<div class="muted" style="font-size:11.5px">' + U.esc(c.contactName || '') + '</div>' +
+            (S.tagsOf(c).length ? '<div style="margin-top:4px">' + U.tagChips(c.tags, 3) + '</div>' : '') +
+            '</div>';
         } },
       { key: 'status', label: 'Status', sort: function (c) { return S.status(c.status).order; },
         render: function (c) { return U.statusBadge(c.status); } },
@@ -95,7 +116,15 @@
             (names.length > 2 ? '<span class="chip">+' + (names.length - 2) + '</span>' : '') + '</div>';
         } },
       { key: 'value', label: 'Value', cls: 'right', sort: function (c) { return Number(c.value) || 0; },
-        render: function (c) { return '<span class="mono">' + S.money(c.value) + '</span><div class="muted" style="font-size:11px">' + U.esc(c.billingCycle || '') + '</div>'; } },
+        render: function (c) {
+          /* A free account showing "$0" reads like missing data. Say why. */
+          if (S.isFree(c)) {
+            return '<span class="muted">—</span><div class="muted" style="font-size:11px">' +
+              U.esc(S.billingType(c.billingType).label.toLowerCase()) + '</div>';
+          }
+          return '<span class="mono">' + S.money(c.value) + '</span>' +
+            '<div class="muted" style="font-size:11px">' + U.esc(c.billingCycle || '') + '</div>';
+        } },
       { key: 'billing', label: 'Billing Date', sort: function (c) { return c.billingDate || '9999'; },
         render: function (c) {
           if (!c.billingDate) return '<span class="muted">—</span>';
@@ -130,6 +159,9 @@
       }] : null,
       detailRows: function (c) {
         return row('Company', U.esc(c.name)) +
+          row('Billing Type', U.billingTypeBadge(c) +
+            (S.isFree(c) ? ' <span class="muted" style="font-size:11.5px">excluded from revenue</span>' : '')) +
+          row('Tags', S.tagsOf(c).length ? U.tagChips(c.tags) : '<span class="muted">—</span>') +
           row('Primary Contact', U.esc(c.contactName || '—')) +
           row('Email', c.email ? '<a href="mailto:' + U.esc(c.email) + '" style="color:var(--orange)">' + U.esc(c.email) + '</a>' : '—') +
           row('Phone', U.esc(c.phone || '—')) +
@@ -248,6 +280,10 @@
         U.field('Phone', '<input class="input" name="phone" value="' + U.esc(c.phone || '') + '">') +
         U.field('Status', '<select class="input" name="status">' + U.options(S.STATUSES(), c.status) + '</select>') +
         U.field('Account Owner', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), c.ownerId, 'id', 'name') + '</select>') +
+        U.field('Billing Type',
+          '<select class="input" name="billingType">' + U.options(S.BILLING_TYPES, c.billingType || 'paid') + '</select>' +
+          '<div class="hint">' + U.esc(S.billingType(c.billingType).hint) + '</div>') +
+        U.field('Tags', U.tagInput('tagsRaw', c.tags)) +
         U.field('Billing Date', '<input class="input" type="date" name="billingDate" value="' + U.esc(c.billingDate || '') + '">') +
         U.field('Billing Cycle', '<select class="input" name="billingCycle">' + U.options(S.BILLING_CYCLES, c.billingCycle) + '</select>') +
         U.field('Contract Value ($)', '<input class="input" type="number" min="0" step="50" name="value" value="' + U.esc(c.value || 0) + '">') +
@@ -269,6 +305,7 @@
         var v = U.values(box);
         if (!v.name) { U.toast('Company name is required.', 'err'); return false; }
         v.value = Number(v.value) || 0;
+        v.tags = S.parseTags(v.tagsRaw); delete v.tagsRaw;
         var note = v.openingNote; delete v.openingNote;
 
         if (isNew) {
@@ -286,9 +323,11 @@
 
   /* ── CSV export ──────────────────────────────────────────────── */
   function exportCsv(rows) {
-    var head = ['Customer', 'Contact', 'Email', 'Phone', 'Status', 'Services', 'Billing Date', 'Cycle', 'Value', 'Owner', 'Industry', 'Source'];
+    var head = ['Customer', 'Contact', 'Email', 'Phone', 'Status', 'Billing Type', 'Tags',
+      'Services', 'Billing Date', 'Cycle', 'Value', 'Owner', 'Industry', 'Source'];
     var lines = [head.join(',')].concat(rows.map(function (c) {
       return [c.name, c.contactName, c.email, c.phone, S.status(c.status).label,
+        S.billingType(c.billingType).label, S.tagsOf(c).join(' | '),
         S.serviceNames(c.services).join(' | '), c.billingDate, c.billingCycle, c.value,
         S.user(c.ownerId).name, c.industry, c.source]
         .map(function (f) { return '"' + String(f == null ? '' : f).replace(/"/g, '""') + '"'; }).join(',');

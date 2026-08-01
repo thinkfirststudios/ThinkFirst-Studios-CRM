@@ -64,6 +64,20 @@
     { id: 'urgent', label: 'Urgent', tone: 'b-red',    color: '#E5484D' }
   ];
 
+  /* Whether an account is expected to pay. Structured rather than a tag,
+     because revenue, pipeline value and the MRR goal all depend on it —
+     a misspelled tag would quietly skew the numbers. */
+  var BILLING_TYPES = [
+    { id: 'paid',     label: 'Paid',      tone: 'b-green',  revenue: true,
+      hint: 'A normal paying account.' },
+    { id: 'probono',  label: 'Pro Bono',  tone: 'b-violet', revenue: false,
+      hint: 'Work done for free. Excluded from revenue and never shown as unpaid.' },
+    { id: 'internal', label: 'Internal',  tone: 'b-grey',   revenue: false,
+      hint: 'Our own projects. Excluded from revenue.' },
+    { id: 'trial',    label: 'Trial',     tone: 'b-blue',   revenue: false,
+      hint: 'Not billing yet. Excluded until moved to Paid.' }
+  ];
+
   var BILLING_CYCLES = ['Monthly', 'Quarterly', 'Annual', 'One-Time', 'Retainer'];
   var ROLES = ['admin', 'manager', 'rep'];
 
@@ -367,6 +381,41 @@
     BILLING_CYCLES: BILLING_CYCLES,
     ROLES: ROLES,
 
+    /* ── billing type ───────────────────────────────────────────── */
+    BILLING_TYPES: BILLING_TYPES,
+    billingType: function (id) {
+      for (var i = 0; i < BILLING_TYPES.length; i++) if (BILLING_TYPES[i].id === id) return BILLING_TYPES[i];
+      return BILLING_TYPES[0];              // records predating the field are Paid
+    },
+    /* Does this account count toward money? */
+    isRevenue: function (c) { return API.billingType(c && c.billingType).revenue; },
+    isFree: function (c) { return !API.isRevenue(c); },
+
+    /* ── tags ───────────────────────────────────────────────────── */
+    tagsOf: function (rec) { return (rec && rec.tags) || []; },
+    /* Every tag in use, for filters and autocomplete. */
+    allTags: function () {
+      var seen = {};
+      db.customers.concat(db.vendors).forEach(function (r) {
+        (r.tags || []).forEach(function (t) { if (t) seen[t] = (seen[t] || 0) + 1; });
+      });
+      return Object.keys(seen).sort(function (a, b) {
+        return seen[b] - seen[a] || a.localeCompare(b);
+      });
+    },
+    /* "a, b ,, c" → ["a","b","c"] — deduped, order preserved. */
+    parseTags: function (text) {
+      var out = [], seen = {};
+      String(text || '').split(',').forEach(function (t) {
+        t = t.trim();
+        if (t && !seen[t.toLowerCase()]) { seen[t.toLowerCase()] = 1; out.push(t); }
+      });
+      return out;
+    },
+    hasTag: function (rec, tag) {
+      return (rec.tags || []).some(function (t) { return t.toLowerCase() === String(tag).toLowerCase(); });
+    },
+
     /* session */
     me: function () {
       var u = find('users', meId);
@@ -526,6 +575,14 @@
 
     /* What a customer's billing actually looks like right now. */
     billingHealth: function (c) {
+      /* A free account owes nothing, so it must never read as unpaid or
+         overdue. This check comes first — before Stripe — because even a
+         pro bono client with a $0 Stripe record should say "Pro Bono". */
+      if (API.isFree(c)) {
+        var bt = API.billingType(c.billingType);
+        return { source: 'free', label: bt.label, tone: bt.tone,
+                 outstanding: 0, openCount: 0, overdue: false };
+      }
       if (!API.isOnStripe(c)) {
         return { source: 'manual', label: 'Not on Stripe', tone: 'b-grey',
                  outstanding: 0, openCount: 0, overdue: false };
@@ -619,6 +676,8 @@
       return db.customers.reduce(function (s, c) {
         var st = API.status(c.status);
         if (!st.won) return s;
+        if (!API.isRevenue(c)) return s;        // pro bono / internal / trial
+
         var v = Number(c.value) || 0;
         if (c.billingCycle === 'Monthly' || c.billingCycle === 'Retainer') return s + v;
         if (c.billingCycle === 'Quarterly') return s + v / 3;

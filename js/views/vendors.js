@@ -185,6 +185,7 @@
           [5, 4, 3, 2, 1].map(function (n) { return '<option value="' + n + '"' + (String(v.rating) === String(n) ? ' selected' : '') + '>' + n + ' / 5</option>'; }).join('') +
           '</select>') +
         U.field('Relationship Owner', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), v.ownerId, 'id', 'name') + '</select>') +
+        U.field('Tags', U.tagInput('tagsRaw', v.tags)) +
         U.field('Location', '<input class="input" name="address" value="' + U.esc(v.address || '') + '">') +
         U.field('Website', '<input class="input" name="website" placeholder="example.com" value="' + U.esc(v.website || '') + '">') +
         '<div class="field span-2"><label>Services They Supply</label>' + U.serviceChecks('services', v.services) + '</div>' +
@@ -196,6 +197,7 @@
         if (!data.name) { U.toast('Vendor name is required.', 'err'); return false; }
         data.value = Number(data.value) || 0;
         data.rating = Number(data.rating) || 0;
+        data.tags = S.parseTags(data.tagsRaw); delete data.tagsRaw;
         var note = data.openingNote; delete data.openingNote;
 
         if (isNew) {
