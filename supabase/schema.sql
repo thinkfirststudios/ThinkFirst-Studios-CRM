@@ -160,6 +160,11 @@ create table if not exists public.settings (
   currency  text not null default 'USD'
 );
 
+-- Monthly recurring revenue target, in cents to match how Stripe reports
+-- money. 0 means no goal set and the dashboard hides the tracker.
+alter table public.settings
+  add column if not exists "mrrGoalCents" bigint not null default 0;
+
 -- helpful indexes for the list views
 create index if not exists notes_entity_idx       on public.notes ("entityType", "entityId");
 create index if not exists work_orders_sched_idx  on public.work_orders ("scheduledDate");

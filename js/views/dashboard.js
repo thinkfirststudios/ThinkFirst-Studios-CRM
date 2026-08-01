@@ -26,11 +26,12 @@
        forgets to update a record. Fall back to the manual figure when
        Stripe is not connected or has no subscriptions yet. */
     var stripeSubs = S.all('stripeSubscriptions');
-    var useStripeMrr = S.stripeEnabled() && stripeSubs.length > 0;
-    var recurring = useStripeMrr ? S.cents(S.stripeMrr()) : S.money(S.mrr());
-    var recurringFoot = useStripeMrr
+    var mrrNow = S.recurringCents();
+    var recurring = S.cents(mrrNow.cents);
+    var recurringFoot = mrrNow.source === 'stripe'
       ? stripeSubs.filter(function (s) { return s.status === 'active'; }).length + ' active in Stripe'
       : won.length + ' paying accounts · from CRM values';
+    var goal = S.goalProgress();
 
     /* Money customers actually owe right now, straight from Stripe. */
     var openInvoices = S.all('stripeInvoices').filter(function (i) { return i.status === 'open'; });
@@ -70,6 +71,8 @@
           : kpi('Close Rate', closeRate + '%', won.length + ' won · ' + lost.length + ' lost', '')) +
         kpi('Overdue Work', String(overdue.length), overdue.length ? 'Needs attention today' : 'All clear', overdue.length ? 'danger' : 'ok') +
       '</div>' +
+
+      goalCard(goal) +
 
       '<div class="grid" style="grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);align-items:start">' +
 
@@ -146,5 +149,53 @@
     return '<div class="kpi ' + mod + '"><div class="kpi-label">' + U.esc(label) + '</div>' +
       '<div class="kpi-value">' + U.esc(value) + '</div>' +
       '<div class="kpi-foot">' + U.esc(foot) + '</div></div>';
+  }
+
+  /* ── MRR goal tracker ──────────────────────────────────────────
+     Hidden entirely until a goal is set — an empty progress bar is
+     worse than no progress bar. */
+  function goalCard(g) {
+    if (!g) {
+      return S.isAdmin()
+        ? '<div class="card" style="margin-bottom:14px"><div class="card-body split">' +
+            '<span class="hint">Set a monthly recurring revenue goal to track progress here.</span>' +
+            '<a class="btn btn-sm" href="#/admin" style="margin-left:auto">Set a goal</a>' +
+          '</div></div>'
+        : '';
+    }
+
+    /* How many more accounts at the current average would close the gap —
+       turns an abstract gap into a concrete number of sales. */
+    var subs = S.all('stripeSubscriptions').filter(function (s) { return s.status === 'active'; });
+    var avg = subs.length ? g.current / subs.length : 0;
+    var needed = (!g.hit && avg > 0) ? Math.ceil(g.remaining / avg) : 0;
+
+    return '<div class="card" style="margin-bottom:14px">' +
+      '<div class="card-head">' +
+        '<span class="card-title">Monthly Recurring Revenue Goal</span>' +
+        (g.hit ? U.badge('Goal reached', 'b-green') : U.badge(g.pct + '%', 'b-orange')) +
+        '<div class="page-actions"><span class="hint">' +
+          (g.source === 'stripe' ? 'live from Stripe' : 'from CRM contract values') +
+        '</span></div>' +
+      '</div>' +
+      '<div class="card-body">' +
+        '<div class="split" style="align-items:baseline;gap:10px">' +
+          '<span style="font-family:var(--font-display);font-size:30px;font-weight:700;color:var(--orange);line-height:1.1">' +
+            U.esc(S.cents(g.current)) + '</span>' +
+          '<span class="muted" style="font-size:14px">of ' + U.esc(S.cents(g.goal)) + '</span>' +
+        '</div>' +
+        '<div class="bar" style="margin-top:12px;height:9px"><i style="width:' + g.clamped + '%' +
+          (g.hit ? ';background:linear-gradient(90deg,var(--ok),#5fd99a)' : '') + '"></i></div>' +
+        '<div class="split" style="margin-top:9px;font-size:12.5px">' +
+          '<span class="muted">' +
+            (g.hit
+              ? 'Target passed by ' + U.esc(S.cents(g.current - g.goal)) + ' — time to raise it.'
+              : U.esc(S.cents(g.remaining)) + ' to go' +
+                (needed ? ' · about ' + needed + ' more account' + (needed === 1 ? '' : 's') +
+                          ' at your current average' : '')) +
+          '</span>' +
+          '<span class="mono muted" style="margin-left:auto">' + g.pct + '%</span>' +
+        '</div>' +
+      '</div></div>';
   }
 })(window);

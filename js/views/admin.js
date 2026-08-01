@@ -414,6 +414,10 @@
         '<div class="card-body"><div class="form-grid">' +
           U.field('Organization Name', '<input class="input" id="orgName" value="' + U.esc(s.orgName) + '">') +
           U.field('Currency', '<input class="input" id="currency" value="' + U.esc(s.currency) + '">') +
+          U.field('Monthly Recurring Revenue Goal ($)',
+            '<input class="input" type="number" min="0" step="100" id="mrrGoal" value="' +
+              U.esc(S.mrrGoalCents() / 100) + '" placeholder="10000">' +
+            '<div class="hint">Shown as a progress tracker on the home screen. Set 0 to hide it.</div>', true) +
         '</div><div style="margin-top:14px"><button class="btn btn-primary btn-sm" id="saveSettings">Save</button></div></div></div>' +
         '<div class="card"><div class="card-head"><span class="card-title">Where Data Lives</span></div><div class="card-body">' +
           (S.mode() === 'supabase'
@@ -431,7 +435,8 @@
     body.querySelector('#saveSettings').onclick = function () {
       S.saveSettings({
         orgName: body.querySelector('#orgName').value.trim(),
-        currency: body.querySelector('#currency').value.trim()
+        currency: body.querySelector('#currency').value.trim(),
+        mrrGoalCents: Math.round((Number(body.querySelector('#mrrGoal').value) || 0) * 100)
       });
       U.toast('Settings saved.', 'ok');
     };

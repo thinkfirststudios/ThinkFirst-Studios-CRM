@@ -572,6 +572,38 @@
       return find('stripeSyncState', 'stripe') || null;
     },
 
+    /* ── Recurring revenue, one definition ──────────────────────────
+       Everything that shows an MRR figure goes through here so the
+       dashboard, the goal tracker and the Billing screen can never
+       quote different numbers. Cents throughout, matching Stripe. */
+    recurringCents: function () {
+      if (API.stripeEnabled() && db.stripeSubscriptions.length) {
+        return { cents: API.stripeMrr(), source: 'stripe' };
+      }
+      return { cents: Math.round(API.mrr() * 100), source: 'crm' };
+    },
+
+    /* ── MRR goal ───────────────────────────────────────────────── */
+    mrrGoalCents: function () { return Number(db.settings.mrrGoalCents) || 0; },
+    setMrrGoal: function (dollars) {
+      API.saveSettings({ mrrGoalCents: Math.round((Number(dollars) || 0) * 100) });
+    },
+    goalProgress: function () {
+      var goal = API.mrrGoalCents();
+      if (!goal) return null;
+      var current = API.recurringCents();
+      var pct = Math.round((current.cents / goal) * 100);
+      return {
+        goal: goal,
+        current: current.cents,
+        source: current.source,
+        remaining: Math.max(0, goal - current.cents),
+        pct: pct,
+        clamped: Math.max(0, Math.min(100, pct)),
+        hit: current.cents >= goal
+      };
+    },
+
     /* Ask the Edge Function to pull everything already in Stripe. */
     stripeBackfill: function () {
       if (B.mode !== 'supabase') return Promise.reject(new Error('Connect Supabase first.'));
