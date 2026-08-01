@@ -118,8 +118,15 @@ function subscriptionRow(sub: Stripe.Subscription, customerId: string) {
     interval: price?.recurring?.interval ?? '',
     intervalCount: price?.recurring?.interval_count ?? 1,
     description: names.join(', '),
-    currentPeriodStart: dayOf((sub as any).current_period_start),
-    currentPeriodEnd: dayOf((sub as any).current_period_end),
+    /* Stripe moved the billing period off the subscription and onto its
+       items in the 2026-03-25 API versions. Backfill calls come back in
+       the version pinned above (period on the subscription) while webhooks
+       arrive in the account's own version (period on the item), so read
+       whichever is present rather than assuming one shape. */
+    currentPeriodStart: dayOf(
+      (sub as any).current_period_start ?? (item as any)?.current_period_start),
+    currentPeriodEnd: dayOf(
+      (sub as any).current_period_end ?? (item as any)?.current_period_end),
     cancelAtPeriodEnd: !!sub.cancel_at_period_end,
     createdAt: isoOf(sub.created),
     syncedAt: new Date().toISOString()
