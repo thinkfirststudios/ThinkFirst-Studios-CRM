@@ -21,6 +21,22 @@
     var overdue = wos.filter(S.isOverdue);
     var myWork = wos.filter(function (w) { return w.assigneeId === me.id && w.status !== 'complete'; });
 
+    /* Recurring revenue: prefer what Stripe actually bills over the
+       hand-entered contract values, which drift the moment someone
+       forgets to update a record. Fall back to the manual figure when
+       Stripe is not connected or has no subscriptions yet. */
+    var stripeSubs = S.all('stripeSubscriptions');
+    var useStripeMrr = S.stripeEnabled() && stripeSubs.length > 0;
+    var recurring = useStripeMrr ? S.cents(S.stripeMrr()) : S.money(S.mrr());
+    var recurringFoot = useStripeMrr
+      ? stripeSubs.filter(function (s) { return s.status === 'active'; }).length + ' active in Stripe'
+      : won.length + ' paying accounts · from CRM values';
+
+    /* Money customers actually owe right now, straight from Stripe. */
+    var openInvoices = S.all('stripeInvoices').filter(function (i) { return i.status === 'open'; });
+    var outstanding = openInvoices.reduce(function (s, i) { return s + (Number(i.amountRemainingCents) || 0); }, 0);
+    var lateInvoices = openInvoices.filter(function (i) { return i.dueDate && i.dueDate < today; });
+
     var billingSoon = customers.concat(vendors)
       .filter(function (r) { var d = S.daysUntil(r.billingDate); return d !== null && d <= 14; })
       .sort(function (a, b) { return (a.billingDate || '').localeCompare(b.billingDate || ''); });
@@ -42,9 +58,16 @@
       '</div>' +
 
       '<div class="grid g-4" style="margin-bottom:14px">' +
-        kpi('Open Pipeline', S.money(pipelineValue), open.length + ' active opportunities', 'accent') +
-        kpi('Recurring / mo', S.money(S.mrr()), won.length + ' paying accounts', 'ok') +
-        kpi('Close Rate', closeRate + '%', won.length + ' won · ' + lost.length + ' lost', '') +
+        kpi('Open Pipeline', S.money(pipelineValue),
+            pipelineValue ? open.length + ' active opportunities'
+                          : open.length + ' open · no contract values set', 'accent') +
+        kpi('Recurring / mo', recurring, recurringFoot, 'ok') +
+        (outstanding || lateInvoices.length
+          ? kpi('Outstanding', S.cents(outstanding),
+                lateInvoices.length ? lateInvoices.length + ' past due in Stripe'
+                                    : openInvoices.length + ' invoices open',
+                lateInvoices.length ? 'danger' : '')
+          : kpi('Close Rate', closeRate + '%', won.length + ' won · ' + lost.length + ' lost', '')) +
         kpi('Overdue Work', String(overdue.length), overdue.length ? 'Needs attention today' : 'All clear', overdue.length ? 'danger' : 'ok') +
       '</div>' +
 
