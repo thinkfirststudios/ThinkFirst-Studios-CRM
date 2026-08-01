@@ -16,7 +16,11 @@
       return;
     }
 
+    var extraTabs = cfg.extraTabs || [];
     var tab = (location.hash.split('?')[1] || '').indexOf('tab=notes') > -1 ? 'notes' : (root.__recTab || 'details');
+    /* a tab from another record type may still be selected — fall back */
+    if (['details', 'notes', 'work', 'activity'].indexOf(tab) < 0 &&
+        !extraTabs.some(function (t) { return t.id === tab; })) tab = 'details';
     var notes = S.notesFor(cfg.type, rec.id);
     var wos = S.workOrdersFor(cfg.type, rec.id);
     var openWos = wos.filter(function (w) { return w.status !== 'complete'; });
@@ -63,6 +67,9 @@
         tabBtn('details', 'Details', '') +
         tabBtn('notes', 'Notes', notes.length) +
         tabBtn('work', 'Work Orders', openWos.length) +
+        extraTabs.map(function (t) {
+          return tabBtn(t.id, t.label, t.count ? t.count(rec) : '');
+        }).join('') +
         tabBtn('activity', 'Activity', acts.length) +
       '</div>' +
 
@@ -152,9 +159,15 @@
         };
         U.bindTable(body, { onSort: function () {}, onRow: function (id) { location.hash = '#/workorders/' + id; } });
 
-      } else {
+      } else if (tab === 'activity') {
         body.innerHTML = '<div class="card"><div class="card-head"><span class="card-title">Activity History</span></div>' +
           '<div class="card-body">' + U.timeline(acts, 60) + '</div></div>';
+
+      } else {
+        var extra = extraTabs.filter(function (t) { return t.id === tab; })[0];
+        body.innerHTML = extra ? extra.render(rec) : '';
+        var link = body.querySelector('#linkStripe');
+        if (link) link.onclick = function () { cfg.onEdit(rec, function () { render(el, cfg); }); };
       }
     }
 

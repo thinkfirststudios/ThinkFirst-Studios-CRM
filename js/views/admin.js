@@ -32,7 +32,7 @@
       '</div>' +
 
       '<div class="tabs" id="adminTabs">' +
-        ['users', 'services', 'statuses', 'vendorTypes', 'settings', 'data', 'audit'].map(function (t) {
+        ['users', 'services', 'statuses', 'vendorTypes', 'stripe', 'settings', 'data', 'audit'].map(function (t) {
           return '<button data-t="' + t + '"' + (tab === t ? ' class="on"' : '') + '>' + U.esc(LABELS[t]) + '</button>';
         }).join('') +
       '</div><div id="adminBody"></div>';
@@ -46,7 +46,8 @@
 
   var LABELS = {
     users: 'Users & Roles', services: 'Service Catalog', statuses: 'Pipeline Statuses',
-    vendorTypes: 'Vendor Types', settings: 'Organization', data: 'Data & Backup', audit: 'Audit Log'
+    vendorTypes: 'Vendor Types', stripe: 'Stripe', settings: 'Organization',
+    data: 'Data & Backup', audit: 'Audit Log'
   };
 
   /* ── users ───────────────────────────────────────────────────── */
@@ -321,6 +322,88 @@
         }
       });
     }
+  };
+
+  /* ── stripe ──────────────────────────────────────────────────── */
+  PANELS.stripe = function (body) {
+    if (!S.stripeEnabled()) {
+      body.innerHTML = U.empty('Stripe needs the hosted backend',
+        'Connect Supabase first — the Stripe key has to live server-side, which offline mode has no way to do.');
+      return;
+    }
+
+    var sync = S.syncState();
+    var invoices = S.all('stripeInvoices');
+    var subs = S.all('stripeSubscriptions');
+    var linked = S.all('customers').filter(S.isOnStripe);
+    var unlinkedInv = S.unlinkedInvoices();
+    var neverSynced = !invoices.length && !subs.length && !(sync && sync.lastSyncAt);
+
+    body.innerHTML =
+      '<div class="grid g-4" style="margin-bottom:14px">' +
+        stat('Invoices Mirrored', invoices.length, unlinkedInv.length ? unlinkedInv.length + ' unmatched' : 'all matched') +
+        stat('Subscriptions', subs.length, subs.filter(function (s) { return s.status === 'active'; }).length + ' active') +
+        stat('Linked Customers', linked.length, 'of ' + S.all('customers').length + ' total') +
+        stat('Stripe MRR', S.cents(S.stripeMrr()), 'from active subscriptions') +
+      '</div>' +
+
+      '<div class="detail-cols">' +
+        '<div class="card"><div class="card-head"><span class="card-title">Sync</span>' +
+          '<div class="page-actions">' +
+            (sync && sync.lastError ? U.badge('Last run errored', 'b-red') :
+             neverSynced ? U.badge('Never synced', 'b-grey') : U.badge('Healthy', 'b-green')) +
+          '</div></div>' +
+          '<div class="card-body">' +
+            '<dl class="dl">' +
+              '<dt>Last webhook</dt><dd>' + (sync && sync.lastEventAt ? U.esc(U.fmtWhen(sync.lastEventAt)) : '<span class="muted">none yet</span>') + '</dd>' +
+              '<dt>Last backfill</dt><dd>' + (sync && sync.lastSyncAt ? U.esc(U.fmtWhen(sync.lastSyncAt)) : '<span class="muted">never</span>') + '</dd>' +
+              '<dt>Last error</dt><dd>' + (sync && sync.lastError ? '<span style="color:var(--danger)">' + U.esc(sync.lastError) + '</span>' : '<span class="muted">none</span>') + '</dd>' +
+            '</dl>' +
+            '<div class="split" style="margin-top:14px">' +
+              '<button class="btn btn-primary btn-sm" id="backfill">Pull everything from Stripe</button>' +
+              '<span class="hint">Safe to run repeatedly — it upserts on Stripe ids.</span>' +
+            '</div>' +
+          '</div></div>' +
+
+        '<div class="card"><div class="card-head"><span class="card-title">How This Works</span></div>' +
+          '<div class="card-body">' +
+            '<p class="hint" style="margin-top:0">Stripe is the source of truth for money. These tables are a ' +
+              'read-only mirror — the CRM cannot write to them, so it can never disagree with what you actually billed.</p>' +
+            '<p class="hint">A customer is linked by its <span class="mono">stripeCustomerId</span>. Unlinked customers ' +
+              'keep their manual billing fields and are labelled <em>Tracked manually</em> rather than unpaid.</p>' +
+            '<p class="hint">The API key is a restricted <span class="mono">read-only</span> key held in Supabase ' +
+              'secrets. It cannot charge, refund, or modify anything in Stripe.</p>' +
+          '</div></div>' +
+      '</div>' +
+
+      (unlinkedInv.length
+        ? '<div class="card" style="margin-top:14px"><div class="card-head">' +
+            '<span class="card-title">Unmatched Invoices</span><span class="kcol-count">' + unlinkedInv.length + '</span>' +
+            '<div class="page-actions"><span class="hint">Paste the Stripe customer id onto the matching CRM customer to link them</span></div></div>' +
+          U.table([
+            { key: 'number', label: 'Invoice', render: function (i) { return '<span class="mono">' + U.esc(i.number || i.id) + '</span>'; } },
+            { key: 'cus', label: 'Stripe Customer', render: function (i) { return '<span class="mono" style="font-size:11.5px">' + U.esc(i.stripeCustomerId) + '</span>'; } },
+            { key: 'status', label: 'Status', render: function (i) { return U.badge(i.status, i.status === 'paid' ? 'b-green' : 'b-yellow'); } },
+            { key: 'amt', label: 'Amount', cls: 'right', render: function (i) { return '<span class="mono">' + S.cents(i.amountDueCents) + '</span>'; } }
+          ], unlinkedInv.slice(0, 50), {}) +
+          '</div>'
+        : '');
+
+    body.querySelector('#backfill').onclick = function () {
+      var btn = this;
+      btn.disabled = true;
+      btn.textContent = 'Pulling…';
+      S.stripeBackfill().then(function (r) {
+        U.toast('Pulled ' + r.invoices + ' invoices and ' + r.subscriptions + ' subscriptions.', 'ok');
+        return S.boot();
+      }).then(function () {
+        root.render();
+      }).catch(function (e) {
+        U.toast('Backfill failed: ' + e.message, 'err');
+        btn.disabled = false;
+        btn.textContent = 'Pull everything from Stripe';
+      });
+    };
   };
 
   /* ── settings ────────────────────────────────────────────────── */

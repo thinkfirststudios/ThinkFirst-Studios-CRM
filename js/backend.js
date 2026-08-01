@@ -27,8 +27,16 @@
     activity: 'activity',
     statuses: 'statuses',
     vendorTypes: 'vendor_types',
-    settings: 'settings'
+    settings: 'settings',
+    /* Stripe mirror — read-only in the app, written only by the
+       stripe-sync Edge Function. */
+    stripeInvoices: 'stripe_invoices',
+    stripeSubscriptions: 'stripe_subscriptions',
+    stripeSyncState: 'stripe_sync_state'
   };
+
+  /* Tables the app must never try to write to. */
+  var READ_ONLY = { stripeInvoices: 1, stripeSubscriptions: 1, stripeSyncState: 1 };
   var COLLECTIONS = {};
   Object.keys(TABLES).forEach(function (c) { COLLECTIONS[TABLES[c]] = c; });
 
@@ -161,6 +169,10 @@
     write: function (coll, op, rec) {
       var table = TABLES[coll];
       if (!table || !client) return;
+      if (READ_ONLY[coll]) {
+        console.warn('CRM: ' + coll + ' mirrors Stripe and is not writable from the app.');
+        return;
+      }
 
       var q;
       if (op === 'delete') q = client.from(table).delete().eq('id', rec.id);
@@ -173,7 +185,11 @@
 
     /* Used by backup restore. */
     replaceAll: function (db) {
-      var colls = Object.keys(TABLES).filter(function (c) { return c !== 'settings'; });
+      /* Never wipe the Stripe mirror — it is not ours to restore, and the
+         Edge Function will repopulate it anyway. */
+      var colls = Object.keys(TABLES).filter(function (c) {
+        return c !== 'settings' && !READ_ONLY[c];
+      });
       return colls.reduce(function (chain, c) {
         return chain.then(function () {
           return client.from(TABLES[c]).delete().neq('id', '__none__').then(function () {
@@ -186,6 +202,26 @@
         });
       }, Promise.resolve()).then(function () {
         if (db.settings) return client.from('settings').upsert(clean(db.settings));
+      });
+    },
+
+    /* Call an Edge Function as the signed-in user, so the function can
+       check their role. Returns the parsed JSON body. */
+    invokeFunction: function (name, payload) {
+      if (!client) return Promise.reject(new Error('Not connected.'));
+      return client.functions.invoke(name, { body: payload }).then(function (r) {
+        if (r.error) {
+          /* supabase-js hides the response body on non-2xx — dig it out so
+             the user sees the real reason rather than "Edge Function error". */
+          var ctx = r.error.context;
+          if (ctx && typeof ctx.json === 'function') {
+            return ctx.json().then(function (body) {
+              throw new Error((body && body.error) || r.error.message);
+            }, function () { throw new Error(r.error.message); });
+          }
+          throw new Error(r.error.message);
+        }
+        return r.data;
       });
     },
 

@@ -48,6 +48,8 @@
         kpi('Past Due', String(overdue.length), overdue.length ? 'needs chasing' : 'nothing late', overdue.length ? 'danger' : 'ok') +
       '</div>' +
 
+      stripeStrip() +
+
       '<div class="card"><div class="card-head"><span class="card-title">Scheduled Billing</span>' +
         '<span class="kcol-count">' + rows.length + '</span>' +
         '<div class="page-actions"><button class="btn btn-sm" id="exportCsv">Export CSV</button></div></div>' +
@@ -87,7 +89,8 @@
     return {
       id: rec.id, kind: kind, name: rec.name, date: rec.billingDate,
       cycle: rec.billingCycle, amount: Number(rec.value) || 0,
-      status: rec.status, ownerId: rec.ownerId, services: rec.services
+      status: rec.status, ownerId: rec.ownerId, services: rec.services,
+      health: kind === 'customer' ? S.billingHealth(rec) : null
     };
   }
 
@@ -114,7 +117,21 @@
           var names = S.serviceNames(r.services);
           return names.length ? '<span class="muted" style="font-size:12px">' + U.esc(names.join(', ')) + '</span>' : '<span class="muted">—</span>';
         } },
-      { key: 'status', label: 'Status', sort: function (r) { return S.status(r.status).order; },
+      { key: 'payment', label: 'Payment', sort: function (r) { return r.health ? r.health.label : 'zz'; },
+        render: function (r) {
+          if (!r.health) return '<span class="muted">—</span>';
+          if (r.health.source === 'manual') {
+            /* Deliberately neutral: not linked to Stripe is not the same
+               as not paid, and must never read like a red flag. */
+            return '<span class="chip">Tracked manually</span>';
+          }
+          return U.badge(r.health.label, r.health.tone) +
+            (r.health.outstanding
+              ? '<div class="mono" style="font-size:11px;margin-top:3px;color:var(--text-3)">' +
+                S.cents(r.health.outstanding) + ' outstanding</div>'
+              : '');
+        } },
+      { key: 'status', label: 'Stage', sort: function (r) { return S.status(r.status).order; },
         render: function (r) { return U.statusBadge(r.status); } },
       { key: 'owner', label: 'Owner', sort: function (r) { return S.user(r.ownerId).name; },
         render: function (r) { return U.userCell(r.ownerId); } },
@@ -129,5 +146,49 @@
   function kpi(label, value, foot, mod) {
     return '<div class="kpi ' + mod + '"><div class="kpi-label">' + U.esc(label) + '</div>' +
       '<div class="kpi-value">' + U.esc(value) + '</div><div class="kpi-foot">' + U.esc(foot) + '</div></div>';
+  }
+
+  /* Real numbers from Stripe, shown only once the mirror has something in
+     it — an empty strip would just be noise before the first sync. */
+  function stripeStrip() {
+    if (!S.stripeEnabled()) return '';
+    var invoices = S.all('stripeInvoices');
+    var subs = S.all('stripeSubscriptions');
+    var sync = S.syncState();
+    if (!invoices.length && !subs.length) return '';
+
+    var open = invoices.filter(function (i) { return i.status === 'open'; });
+    var outstanding = open.reduce(function (s, i) { return s + (Number(i.amountRemainingCents) || 0); }, 0);
+    var today = S.today();
+    var late = open.filter(function (i) { return i.dueDate && i.dueDate < today; });
+    var paid30 = invoices.filter(function (i) {
+      return i.paidAt && i.paidAt >= new Date(Date.now() - 30 * 86400000).toISOString();
+    });
+    var collected = paid30.reduce(function (s, i) { return s + (Number(i.amountPaidCents) || 0); }, 0);
+    var unlinked = S.unlinkedInvoices().length;
+
+    return '<div class="card" style="margin-bottom:14px">' +
+      '<div class="card-head"><span class="card-title">From Stripe</span>' +
+        U.badge('Live', 'b-green') +
+        '<div class="page-actions"><span class="hint">' +
+          (sync && sync.lastEventAt ? 'last event ' + U.esc(U.fmtWhen(sync.lastEventAt))
+           : sync && sync.lastSyncAt ? 'last sync ' + U.esc(U.fmtWhen(sync.lastSyncAt))
+           : 'not synced yet') +
+        '</span></div></div>' +
+      '<div class="card-body"><div class="grid g-4">' +
+        kpi('Recurring / mo', S.cents(S.stripeMrr()),
+            subs.filter(function (s) { return s.status === 'active'; }).length + ' active subscriptions', 'accent') +
+        kpi('Collected · 30d', S.cents(collected), paid30.length + ' invoices paid', 'ok') +
+        kpi('Outstanding', S.cents(outstanding), open.length + ' invoices open', open.length ? '' : 'ok') +
+        kpi('Past Due', String(late.length),
+            late.length ? S.cents(late.reduce(function (s, i) { return s + i.amountRemainingCents; }, 0)) + ' late'
+                        : 'nothing late', late.length ? 'danger' : 'ok') +
+      '</div>' +
+      (unlinked
+        ? '<div class="hint" style="margin-top:12px">' + unlinked + ' invoice' + (unlinked === 1 ? '' : 's') +
+          ' could not be matched to a CRM customer. Open the customer and paste their Stripe ' +
+          'customer id to link them.</div>'
+        : '') +
+      '</div></div>';
   }
 })(window);

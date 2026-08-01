@@ -122,6 +122,12 @@
     root.RecordView.render(el, {
       coll: 'customers', type: 'customer', id: id, icon: ICON,
       backHref: '#/customers', backLabel: 'Customers',
+      extraTabs: S.stripeEnabled() ? [{
+        id: 'payments',
+        label: 'Payments',
+        count: function (c) { return S.invoicesFor(c.id).length; },
+        render: paymentsTab
+      }] : null,
       detailRows: function (c) {
         return row('Company', U.esc(c.name)) +
           row('Primary Contact', U.esc(c.contactName || '—')) +
@@ -143,6 +149,88 @@
     });
   }
   function row(k, v) { return '<dt>' + U.esc(k) + '</dt><dd>' + v + '</dd>'; }
+
+  /* ── Payments tab (Stripe mirror — read only) ────────────────── */
+  function paymentsTab(c) {
+    if (!S.isOnStripe(c)) {
+      return '<div class="card"><div class="card-head"><span class="card-title">Payments</span></div>' +
+        U.empty('Not linked to Stripe',
+          'This customer\'s billing is tracked by hand. Edit the record and paste their Stripe customer id (cus_…) to pull real invoices in.',
+          '<button class="btn btn-primary btn-sm" id="linkStripe">Edit record</button>') + '</div>';
+    }
+
+    var invoices = S.invoicesFor(c.id);
+    var subs = S.subscriptionsFor(c.id);
+    var health = S.billingHealth(c);
+
+    return '<div class="detail-cols"><div class="stack">' +
+      '<div class="card"><div class="card-head"><span class="card-title">Invoices</span>' +
+        '<span class="kcol-count">' + invoices.length + '</span>' +
+        '<div class="page-actions">' + U.badge(health.label, health.tone) + '</div></div>' +
+        (invoices.length ? U.table([
+          { key: 'number', label: 'Invoice', render: function (i) {
+              return (i.hostedInvoiceUrl
+                ? '<a class="link" href="' + U.esc(i.hostedInvoiceUrl) + '" target="_blank" rel="noopener">' +
+                  U.esc(i.number || i.id) + '</a>'
+                : '<span class="mono">' + U.esc(i.number || i.id) + '</span>') +
+                (i.description ? '<div class="muted" style="font-size:11.5px">' + U.esc(i.description) + '</div>' : '');
+            } },
+          { key: 'status', label: 'Status', render: function (i) { return invoiceBadge(i); } },
+          { key: 'due', label: 'Due', render: function (i) {
+              if (!i.dueDate) return '<span class="muted">—</span>';
+              var t = U.dueTone(i.dueDate, i.status === 'paid');
+              return '<div>' + U.fmtDateShort(i.dueDate) + '</div>' +
+                (i.status === 'open'
+                  ? '<span class="badge ' + (t.cls.indexOf('b-') === 0 ? t.cls : 'b-grey') + '" style="margin-top:3px">' +
+                    U.esc(t.text) + '</span>' : '');
+            } },
+          { key: 'amount', label: 'Amount', cls: 'right', render: function (i) {
+              return '<span class="mono strong">' + S.cents(i.amountDueCents) + '</span>' +
+                (i.status === 'open' && i.amountRemainingCents !== i.amountDueCents
+                  ? '<div class="muted" style="font-size:11px">' + S.cents(i.amountRemainingCents) + ' left</div>'
+                  : '');
+            } }
+        ], invoices, {}) : U.empty('No invoices yet', 'Nothing has been billed to this customer in Stripe.')) +
+      '</div></div>' +
+
+      '<div class="stack">' +
+        '<div class="card"><div class="card-head"><span class="card-title">Subscriptions</span></div>' +
+          '<div class="card-body">' +
+            (subs.length ? subs.map(function (s) {
+              var tone = s.status === 'active' ? 'b-green'
+                : s.status === 'past_due' || s.status === 'unpaid' ? 'b-red'
+                : s.status === 'trialing' ? 'b-blue' : 'b-grey';
+              return '<div style="padding:10px 0;border-bottom:1px solid var(--line)">' +
+                '<div class="split">' + U.badge(s.status, tone) +
+                  '<span class="mono strong" style="margin-left:auto">' + S.cents(s.amountCents) + '</span></div>' +
+                '<div style="margin-top:6px;font-size:12.5px">' + U.esc(s.description || 'Subscription') + '</div>' +
+                '<div class="muted" style="font-size:11.5px;margin-top:3px">every ' +
+                  (s.intervalCount > 1 ? s.intervalCount + ' ' : '') + U.esc(s.interval || '—') +
+                  (s.intervalCount > 1 ? 's' : '') +
+                  (s.currentPeriodEnd ? ' · renews ' + U.fmtDateShort(s.currentPeriodEnd) : '') + '</div>' +
+                (s.cancelAtPeriodEnd
+                  ? '<div style="margin-top:5px">' + U.badge('Cancels at period end', 'b-yellow') + '</div>' : '') +
+                '</div>';
+            }).join('') : '<span class="muted">No subscriptions.</span>') +
+          '</div></div>' +
+
+        '<div class="card"><div class="card-head"><span class="card-title">Stripe Link</span></div>' +
+          '<div class="card-body">' +
+            '<div class="mono" style="font-size:12px;word-break:break-all">' + U.esc(c.stripeCustomerId) + '</div>' +
+            '<div class="hint" style="margin-top:8px">These figures come straight from Stripe and cannot be edited here — ' +
+            'that is what keeps the CRM from drifting out of step with what you actually billed.</div>' +
+          '</div></div>' +
+      '</div></div>';
+  }
+
+  function invoiceBadge(i) {
+    var map = {
+      paid: ['Paid', 'b-green'], open: ['Open', 'b-yellow'], draft: ['Draft', 'b-grey'],
+      void: ['Void', 'b-grey'], uncollectible: ['Uncollectible', 'b-red']
+    };
+    var m = map[i.status] || [i.status || '—', 'b-grey'];
+    return U.badge(m[0], m[1]);
+  }
 
   /* ── form ────────────────────────────────────────────────────── */
   function openForm(c, done) {
@@ -167,6 +255,12 @@
         U.field('Lead Source', '<input class="input" name="source" value="' + U.esc(c.source || '') + '">') +
         U.field('Location', '<input class="input" name="address" value="' + U.esc(c.address || '') + '">') +
         U.field('Website', '<input class="input" name="website" placeholder="example.com" value="' + U.esc(c.website || '') + '">') +
+        (S.stripeEnabled()
+          ? U.field('Stripe Customer ID',
+              '<input class="input mono" name="stripeCustomerId" placeholder="cus_..." value="' +
+                U.esc(c.stripeCustomerId || '') + '">' +
+              '<div class="hint">Links this record to Stripe. Leave blank to keep billing tracked by hand.</div>', true)
+          : '') +
         '<div class="field span-2"><label>Services</label>' + U.serviceChecks('services', c.services) + '</div>' +
         (isNew ? '<div class="field span-2"><label>Opening Note (optional)</label>' +
           '<textarea class="input" name="openingNote" placeholder="Context the rest of the team should know…"></textarea></div>' : '') +

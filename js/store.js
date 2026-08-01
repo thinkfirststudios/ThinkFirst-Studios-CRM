@@ -68,7 +68,8 @@
   var ROLES = ['admin', 'manager', 'rep'];
 
   var EMPTY_COLLS = ['users', 'services', 'customers', 'vendors', 'workOrders',
-    'notes', 'timeEntries', 'dailyLogs', 'activity', 'statuses', 'vendorTypes'];
+    'notes', 'timeEntries', 'dailyLogs', 'activity', 'statuses', 'vendorTypes',
+    'stripeInvoices', 'stripeSubscriptions', 'stripeSyncState'];
 
   function emptyDb() {
     var db = { version: 1, settings: { id: 'org', orgName: 'ThinkFirst Studios', currency: 'USD' } };
@@ -494,6 +495,87 @@
     /* activity */
     activityFor: function (type, id) {
       return db.activity.filter(function (a) { return a.entityType === type && a.entityId === id; });
+    },
+
+    /* ── Stripe mirror (read-only; filled by the stripe-sync function) ──
+       A customer is "on Stripe" only once it carries a stripeCustomerId.
+       Everyone else stays on the manual billingDate/value fields, and the
+       UI has to keep the two visibly apart — an unlinked customer is not
+       an unpaid one. */
+    stripeEnabled: function () { return B.mode === 'supabase'; },
+    isOnStripe: function (c) { return !!(c && c.stripeCustomerId); },
+
+    invoicesFor: function (customerId) {
+      return db.stripeInvoices
+        .filter(function (i) { return i.customerId === customerId; })
+        .sort(function (a, b) { return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); });
+    },
+    subscriptionsFor: function (customerId) {
+      return db.stripeSubscriptions.filter(function (s) { return s.customerId === customerId; });
+    },
+    unlinkedInvoices: function () {
+      return db.stripeInvoices.filter(function (i) { return !i.customerId; });
+    },
+
+    /* cents → "$1,234.56" (Stripe reports the smallest currency unit) */
+    cents: function (n) {
+      return '$' + ((Number(n) || 0) / 100).toLocaleString('en-US', {
+        minimumFractionDigits: 2, maximumFractionDigits: 2
+      });
+    },
+
+    /* What a customer's billing actually looks like right now. */
+    billingHealth: function (c) {
+      if (!API.isOnStripe(c)) {
+        return { source: 'manual', label: 'Not on Stripe', tone: 'b-grey',
+                 outstanding: 0, openCount: 0, overdue: false };
+      }
+      var invoices = API.invoicesFor(c.id);
+      var open = invoices.filter(function (i) { return i.status === 'open'; });
+      var outstanding = open.reduce(function (s, i) { return s + (Number(i.amountRemainingCents) || 0); }, 0);
+      var today = API.today();
+      var overdue = open.some(function (i) { return i.dueDate && i.dueDate < today; });
+      var failed = invoices.some(function (i) {
+        return i.status === 'open' && Number(i.amountPaidCents) === 0 && i.dueDate && i.dueDate < today;
+      });
+
+      var label, tone;
+      if (overdue) { label = 'Past due'; tone = 'b-red'; }
+      else if (open.length) { label = 'Invoice open'; tone = 'b-yellow'; }
+      else if (invoices.length) { label = 'Paid up'; tone = 'b-green'; }
+      else { label = 'No invoices'; tone = 'b-grey'; }
+
+      return {
+        source: 'stripe', label: label, tone: tone,
+        outstanding: outstanding, openCount: open.length,
+        overdue: overdue, failed: failed,
+        lastPaid: invoices.filter(function (i) { return i.paidAt; })[0] || null
+      };
+    },
+
+    /* Recurring revenue straight from Stripe subscriptions, for comparison
+       against the hand-entered mrr() figure. */
+    stripeMrr: function () {
+      return db.stripeSubscriptions.reduce(function (s, sub) {
+        if (sub.status !== 'active' && sub.status !== 'trialing') return s;
+        var cents = Number(sub.amountCents) || 0;
+        var n = Number(sub.intervalCount) || 1;
+        if (sub.interval === 'month') return s + cents / n;
+        if (sub.interval === 'year') return s + cents / (12 * n);
+        if (sub.interval === 'week') return s + (cents * 52) / (12 * n);
+        if (sub.interval === 'day') return s + (cents * 365) / (12 * n);
+        return s;
+      }, 0);
+    },
+
+    syncState: function () {
+      return find('stripeSyncState', 'stripe') || null;
+    },
+
+    /* Ask the Edge Function to pull everything already in Stripe. */
+    stripeBackfill: function () {
+      if (B.mode !== 'supabase') return Promise.reject(new Error('Connect Supabase first.'));
+      return B.invokeFunction('stripe-sync', { action: 'backfill' });
     },
 
     /* money */

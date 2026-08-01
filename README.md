@@ -133,6 +133,45 @@ live in the database policies, not just the interface, so they hold even if some
 the API directly. In offline mode the acting-user switcher is a convenience, not
 authentication — it exists so you can see how multi-author notes behave.
 
+## Stripe
+
+Stripe is mirrored into the CRM so the Billing screen shows what customers
+*actually* paid, rather than dates somebody typed in. It is **read-only in one
+direction**: the CRM never writes to Stripe, and nothing in the app can write to
+the mirror tables — they have SELECT policies and no INSERT/UPDATE/DELETE
+policies, so only the Edge Function's service role can fill them. The CRM
+therefore cannot drift out of step with what you billed.
+
+Customers are linked by `stripeCustomerId`. Anyone without one keeps their manual
+billing fields and is labelled **Tracked manually** — deliberately *not* styled as
+unpaid, because "we don't bill them through Stripe" and "they haven't paid" are
+very different things.
+
+### Setup
+
+1. **Restricted API key.** Stripe → Developers → API keys → Create restricted key →
+   template **"Reporting, analytics, and accounting"** (read-only). Needs Read on
+   Customers, Invoices, Subscriptions, Charges, Products, Prices. Never use the
+   standard `sk_live_` secret key — it can move money.
+2. **Store it.** Supabase → Edge Functions → Secrets → `STRIPE_SECRET_KEY`.
+3. **Tables.** Run [`supabase/stripe.sql`](supabase/stripe.sql) in the SQL Editor.
+4. **Deploy the function:**
+   ```bash
+   npx supabase functions deploy stripe-sync --project-ref xfczbofrfsgumeicjuoy
+   ```
+5. **Webhook.** Stripe → Developers → Webhooks → Add endpoint → the function's URL
+   (`https://<ref>.supabase.co/functions/v1/stripe-sync`). Subscribe to
+   `invoice.paid`, `invoice.payment_failed`, `invoice.finalized`, `invoice.updated`,
+   `invoice.voided`, `customer.subscription.created/updated/deleted`.
+6. **Signing secret.** Copy the `whsec_…` → Supabase secret `STRIPE_WEBHOOK_SECRET`.
+   Until this is set the function rejects webhooks — without signature verification
+   anyone could POST a fake "paid" event.
+7. **Backfill.** Admin → Stripe → **Pull everything from Stripe**. Safe to re-run;
+   everything upserts on Stripe ids.
+
+Unmatched invoices (Stripe customers with no CRM counterpart) are listed in
+Admin → Stripe. The function auto-links by email once, then remembers.
+
 ## Backups
 
 **Admin → Data & Backup** exports the whole database as JSON and restores it, in either
