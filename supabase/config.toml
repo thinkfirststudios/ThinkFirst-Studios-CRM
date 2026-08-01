@@ -1,0 +1,14 @@
+project_id = "xfczbofrfsgumeicjuoy"
+
+# Stripe signs its webhooks with `stripe-signature`, not a Supabase JWT, so
+# the platform's JWT gate has to be off or every event is rejected with 401
+# before the function runs.
+#
+# The function is NOT unprotected as a result — it does its own checks:
+#   • webhooks must pass Stripe signature verification
+#   • the backfill path requires a signed-in user with the admin role
+#
+# Declared here rather than passed as --no-verify-jwt so a future deploy
+# cannot silently lose it.
+[functions.stripe-sync]
+verify_jwt = false

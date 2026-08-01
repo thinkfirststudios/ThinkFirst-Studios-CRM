@@ -155,10 +155,16 @@ very different things.
    standard `sk_live_` secret key — it can move money.
 2. **Store it.** Supabase → Edge Functions → Secrets → `STRIPE_SECRET_KEY`.
 3. **Tables.** Run [`supabase/stripe.sql`](supabase/stripe.sql) in the SQL Editor.
-4. **Deploy the function:**
+4. **Deploy the function.** From the project root (the folder holding `index.html`):
    ```bash
+   npx supabase login
    npx supabase functions deploy stripe-sync --project-ref xfczbofrfsgumeicjuoy
    ```
+   `login` opens a browser once. JWT verification is switched off for this
+   function in [`supabase/config.toml`](supabase/config.toml) — Stripe signs
+   webhooks with `stripe-signature`, not a Supabase JWT, so the platform gate
+   would reject every event before the code ran. The function does its own
+   checks instead: signature verification on webhooks, admin role on backfill.
 5. **Webhook.** Stripe → Developers → Webhooks → Add endpoint → the function's URL
    (`https://<ref>.supabase.co/functions/v1/stripe-sync`). Subscribe to
    `invoice.paid`, `invoice.payment_failed`, `invoice.finalized`, `invoice.updated`,
