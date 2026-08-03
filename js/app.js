@@ -8,7 +8,7 @@
   var viewEl = document.getElementById('view');
 
   var ROUTES = {
-    dashboard: 'dashboard', customers: 'customers', pipeline: 'pipeline',
+    dashboard: 'dashboard', leads: 'leads', customers: 'customers', pipeline: 'pipeline',
     tracker: 'tracker', workorders: 'workorders', vendors: 'vendors',
     billing: 'billing', admin: 'admin'
   };
@@ -106,7 +106,8 @@
     U.modal({
       title: 'Create new…',
       footer: null,
-      body: '<div class="grid g-3">' +
+      body: '<div class="grid g-2">' +
+        quickCard('lead', 'Lead', 'Someone you hope to sell to') +
         quickCard('customer', 'Customer', 'A company you sell to') +
         quickCard('vendor', 'Vendor', 'A partner you buy from') +
         quickCard('workorder', 'Work Order', 'A job to do today') +
@@ -116,7 +117,8 @@
           b.onclick = function () {
             U.closeModal();
             var kind = b.dataset.create;
-            if (kind === 'customer') root.Views.customers.openForm(null, render);
+            if (kind === 'lead') root.Views.leads.openForm(null, render);
+            else if (kind === 'customer') root.Views.customers.openForm(null, render);
             else if (kind === 'vendor') root.Views.vendors.openForm(null, render);
             else root.WorkOrderForm.open({}, render);
           };
@@ -140,6 +142,9 @@
 
     function match(text) { return (text || '').toLowerCase().indexOf(q) > -1; }
 
+    var leads = S.all('leads').filter(function (l) {
+      return match(l.name) || match(l.contactName) || match(l.email) || match(l.phone);
+    }).slice(0, 6);
     var customers = S.all('customers').filter(function (c) {
       return match(c.name) || match(c.contactName) || match(c.email) || match(c.phone);
     }).slice(0, 6);
@@ -152,6 +157,9 @@
     var notes = S.all('notes').filter(function (n) { return match(n.body); }).slice(0, 5);
 
     var html = '';
+    if (leads.length) html += group('Leads', leads.map(function (l) {
+      return item('#/leads/' + l.id, l.name, S.leadStatus(l.leadStatus).label);
+    }));
     if (customers.length) html += group('Customers', customers.map(function (c) {
       return item('#/customers/' + c.id, c.name, S.status(c.status).label);
     }));
@@ -162,7 +170,10 @@
       return item('#/workorders/' + w.id, w.title, S.recordName(w.entityType, w.entityId));
     }));
     if (notes.length) html += group('Notes', notes.map(function (n) {
-      var href = '#/' + (n.entityType === 'vendor' ? 'vendors' : n.entityType === 'workorder' ? 'workorders' : 'customers') + '/' + n.entityId;
+      var seg = n.entityType === 'vendor' ? 'vendors'
+        : n.entityType === 'workorder' ? 'workorders'
+        : n.entityType === 'lead' ? 'leads' : 'customers';
+      var href = '#/' + seg + '/' + n.entityId;
       return item(href, n.body.slice(0, 62) + (n.body.length > 62 ? '…' : ''), S.user(n.authorId).name);
     }));
 

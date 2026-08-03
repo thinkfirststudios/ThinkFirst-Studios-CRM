@@ -50,6 +50,44 @@ create table if not exists public.customers (
   "updatedAt"    timestamptz
 );
 
+-- Leads are their own object rather than customers in an early status.
+-- They arrive in bulk and most never convert; keeping them here means the
+-- customer count, pipeline value and billing calendar only ever describe
+-- real accounts. Conversion is one-way and recorded on both sides.
+create table if not exists public.leads (
+  id                    text primary key,
+  name                  text not null default '',
+  "contactName"         text not null default '',
+  "contactTitle"        text not null default '',
+  email                 text not null default '',
+  phone                 text not null default '',
+  "leadStatus"          text not null default 'new',   -- new|working|nurturing|qualified|unqualified|converted
+  rating                text not null default 'warm',  -- hot|warm|cold
+  source                text not null default '',
+  "ownerId"             text not null default '',
+  "estValue"            numeric not null default 0,
+  "nextFollowUp"        text not null default '',      -- 'YYYY-MM-DD'
+  "lastContactedAt"     text not null default '',
+  industry              text not null default '',
+  address               text not null default '',
+  website               text not null default '',
+  tags                  jsonb not null default '[]'::jsonb,
+  "convertedCustomerId" text not null default '',
+  "convertedAt"         text not null default '',
+  "createdAt"           timestamptz not null default now(),
+  "updatedAt"           timestamptz
+);
+
+-- The other half of the conversion link, so an account can always say
+-- where it came from even if the lead row is later deleted.
+alter table public.customers
+  add column if not exists "convertedFromLeadId" text not null default '';
+
+create index if not exists leads_status_idx    on public.leads ("leadStatus");
+create index if not exists leads_followup_idx  on public.leads ("nextFollowUp");
+create index if not exists leads_owner_idx     on public.leads ("ownerId");
+create index if not exists leads_email_idx     on public.leads (lower(email));
+
 create table if not exists public.vendors (
   id             text primary key,
   name           text not null default '',
@@ -260,7 +298,7 @@ do $$
 declare t text;
 begin
   foreach t in array array[
-    'profiles','customers','vendors','work_orders','notes','services',
+    'profiles','customers','vendors','leads','work_orders','notes','services',
     'time_entries','daily_logs','activity','statuses','vendor_types','settings'
   ] loop
     execute format('alter table public.%I enable row level security', t);
@@ -276,7 +314,7 @@ do $$
 declare t text;
 begin
   foreach t in array array[
-    'customers','vendors','work_orders','notes','time_entries','daily_logs','activity'
+    'customers','vendors','leads','work_orders','notes','time_entries','daily_logs','activity'
   ] loop
     execute format('drop policy if exists "team_insert" on public.%I', t);
     execute format('drop policy if exists "team_update" on public.%I', t);
@@ -326,7 +364,7 @@ do $$
 declare t text;
 begin
   foreach t in array array[
-    'profiles','customers','vendors','work_orders','notes','services',
+    'profiles','customers','vendors','leads','work_orders','notes','services',
     'time_entries','daily_logs','activity','statuses','vendor_types','settings'
   ] loop
     begin

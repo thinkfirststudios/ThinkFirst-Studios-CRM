@@ -21,7 +21,7 @@
 
   <div class="global-search">
     <svg viewBox="0 0 24 24" class="gs-icon" aria-hidden="true"><path d="M21 21l-4.35-4.35M11 19a8 8 0 110-16 8 8 0 010 16z"/></svg>
-    <input id="globalSearch" type="search" placeholder="Search customers, vendors, work orders…" autocomplete="off" spellcheck="false">
+    <input id="globalSearch" type="search" placeholder="Search leads, customers, vendors, work orders…" autocomplete="off" spellcheck="false">
     <kbd>/</kbd>
     <div id="gsResults" class="gs-results" hidden></div>
   </div>
@@ -49,6 +49,7 @@
   <!-- ── Object nav rail ─────────────────────────────────────────── -->
   <nav class="rail" id="rail">
     <a href="#/dashboard" data-nav="dashboard"><svg viewBox="0 0 24 24" class="ico"><path d="M3 12l9-9 9 9M5 10v10h5v-6h4v6h5V10"/></svg><span>Home</span></a>
+    <a href="#/leads" data-nav="leads"><svg viewBox="0 0 24 24" class="ico"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M22 11h-6"/></svg><span>Leads</span></a>
     <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24" class="ico"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg><span>Customers</span></a>
     <a href="#/pipeline" data-nav="pipeline"><svg viewBox="0 0 24 24" class="ico"><path d="M3 3v18h18M7 15V9M12 18V6M17 13V8"/></svg><span>Pipeline</span></a>
     <a href="#/tracker" data-nav="tracker"><svg viewBox="0 0 24 24" class="ico"><path d="M3 5h18v16H3zM3 9h18M8 3v4M16 3v4M8 14l2.5 2.5L16 12"/></svg><span>Daily Tracker</span></a>
@@ -74,6 +75,7 @@
 <script src="js/views/dashboard.js"></script>
 <script src="js/views/record.js"></script>
 <script src="js/views/customers.js"></script>
+<script src="js/views/leads.js"></script>
 <script src="js/views/pipeline.js"></script>
 <script src="js/views/tracker.js"></script>
 <script src="js/views/workorders.js"></script>

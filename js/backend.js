@@ -19,6 +19,7 @@
     users: 'profiles',
     customers: 'customers',
     vendors: 'vendors',
+    leads: 'leads',
     workOrders: 'work_orders',
     notes: 'notes',
     services: 'services',
@@ -74,6 +75,7 @@
       catch (e) { console.error('CRM: save failed', e); }
     },
     write: function () { /* persist() already wrote the whole db */ },
+    writeMany: function () { /* ditto */ },
     replaceAll: function (db) { Local.persist(db); return Promise.resolve(); },
     subscribe: function () {},
     session: function () { return null; },
@@ -181,6 +183,21 @@
       q.then(function (r) {
         if (r && r.error) fail(table, op, r.error.message);
       }, function (e) { fail(table, op, e.message); });
+    },
+
+    /* One round trip for a whole batch (bulk import). Chunked because a
+       single enormous request is the thing most likely to be rejected. */
+    writeMany: function (coll, rows) {
+      var table = TABLES[coll];
+      if (!table || !client || READ_ONLY[coll] || !rows || !rows.length) return;
+      var CHUNK = 200;
+      for (var i = 0; i < rows.length; i += CHUNK) {
+        (function (batch) {
+          client.from(table).upsert(batch.map(clean)).then(function (r) {
+            if (r && r.error) fail(table, 'import', r.error.message);
+          }, function (e) { fail(table, 'import', e.message); });
+        })(rows.slice(i, i + CHUNK));
+      }
     },
 
     /* Used by backup restore. */

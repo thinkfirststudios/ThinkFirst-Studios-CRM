@@ -48,13 +48,20 @@
 
     var followUps = customers.filter(function (c) { return c.status === 'followup'; });
 
+    /* Leads that need a touch today. Kept separate from the customer
+       follow-up list because chasing a lead and chasing an account are
+       different jobs, and merging them hides whichever is smaller. */
+    var leadQueue = S.leadsNeedingAttention();
+    var myLeadQueue = S.leadsNeedingAttention(me.id);
+
     el.innerHTML =
       '<div class="page-head">' +
         '<div>' +
           '<div class="eyebrow">' + U.esc(new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })) + '</div>' +
           '<h1 class="page-title">Good to see you, ' + U.esc(me.name.split(' ')[0]) + '.</h1>' +
           '<div class="page-sub">' + dueToday.length + ' work order' + (dueToday.length === 1 ? '' : 's') + ' on the board today' +
-            (overdue.length ? ' · <span style="color:var(--danger)">' + overdue.length + ' overdue</span>' : '') + '</div>' +
+            (overdue.length ? ' · <span style="color:var(--danger)">' + overdue.length + ' overdue</span>' : '') +
+            (leadQueue.length ? ' · ' + leadQueue.length + ' lead' + (leadQueue.length === 1 ? '' : 's') + ' to follow up' : '') + '</div>' +
         '</div>' +
         '<div class="page-actions">' +
           '<a class="btn" href="#/tracker">Open Daily Tracker</a>' +
@@ -105,6 +112,9 @@
         '</div>' +
 
         '<div class="stack">' +
+          /* Lead follow-ups */
+          leadCard(leadQueue, myLeadQueue) +
+
           /* Billing radar */
           '<div class="card">' +
             '<div class="card-head"><span class="card-title">Billing Radar · 14 Days</span>' +
@@ -136,6 +146,9 @@
     el.querySelectorAll('[data-wo]').forEach(function (n) {
       n.onclick = function () { location.hash = '#/workorders/' + n.dataset.wo; };
     });
+    el.querySelectorAll('[data-lead]').forEach(function (n) {
+      n.onclick = function () { location.hash = '#/leads/' + n.dataset.lead; };
+    });
 
     function woRow(w) {
       var t = U.dueTone(w.dueDate, w.status === 'complete');
@@ -154,6 +167,43 @@
     return '<div class="kpi ' + mod + '"><div class="kpi-label">' + U.esc(label) + '</div>' +
       '<div class="kpi-value">' + U.esc(value) + '</div>' +
       '<div class="kpi-foot">' + U.esc(foot) + '</div></div>';
+  }
+
+  /* ── lead follow-ups ─────────────────────────────────────────────
+     Yours first, then the rest of the team's, because the point of the
+     card is to tell you what to do — not to report on everyone. */
+  function leadCard(all, mine) {
+    if (!S.all('leads').length) return '';
+
+    var head = '<div class="card"><div class="card-head"><span class="card-title">Lead Follow-Ups</span>' +
+      (all.length ? '<span class="kcol-count">' + all.length + '</span>' : '') +
+      '<div class="page-actions"><a class="btn btn-sm" href="#/leads">All leads</a></div></div>';
+
+    if (!all.length) {
+      return head + '<div class="card-body split">' + U.badge('All clear', 'b-green') +
+        '<span class="hint">Every open lead has its next touch booked.</span></div></div>';
+    }
+
+    var others = all.filter(function (l) { return mine.indexOf(l) < 0; });
+    var show = mine.concat(others).slice(0, 6);
+
+    return head + show.map(function (l) {
+      var f = S.followUpState(l);
+      return '<div class="wo-row" data-lead="' + U.esc(l.id) + '" style="cursor:pointer">' +
+        '<span class="prio-flag" style="background:' +
+          (f.key === 'overdue' ? '#E5484D' : f.key === 'today' ? '#FA7700' : '#E8B931') + '"></span>' +
+        '<div class="wo-main"><div class="wo-title">' + U.esc(l.name) + '</div>' +
+          '<div class="wo-sub">' + U.esc(S.leadStatus(l.leadStatus).label) +
+            '<span>·</span><span>' + U.esc(S.user(l.ownerId).name.split(' ')[0]) + '</span>' +
+            (l.estValue ? '<span class="mono">' + S.money(l.estValue) + '</span>' : '') +
+          '</div></div>' +
+        '<div class="wo-side">' + U.badge(
+          f.key === 'overdue' ? Math.abs(f.days) + 'd late' : f.label, f.tone) + '</div></div>';
+    }).join('') +
+    (all.length > show.length
+      ? '<div class="card-body"><a class="link" href="#/leads">' + (all.length - show.length) +
+        ' more waiting →</a></div>' : '') +
+    '</div>';
   }
 
   /* ── MRR goal tracker ──────────────────────────────────────────

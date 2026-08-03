@@ -78,10 +78,56 @@
       hint: 'Not billing yet. Excluded until moved to Paid.' }
   ];
 
+  /* ── Leads ──────────────────────────────────────────────────────
+     A lead is deliberately NOT a customer with a different status.
+     Leads arrive in volume and most never become anything; mixing them
+     into customers would inflate the account count, drag unqualified
+     names through the pipeline board and the billing calendar, and make
+     "how many customers do we have" unanswerable. They convert into a
+     customer once, and that conversion is the number worth measuring. */
+  var LEAD_STATUSES = [
+    { id: 'new',         label: 'New',         tone: 'b-blue',   order: 1, open: true,
+      hint: 'Captured but not contacted yet.' },
+    { id: 'working',     label: 'Working',     tone: 'b-orange', order: 2, open: true,
+      hint: 'Actively reaching out.' },
+    { id: 'nurturing',   label: 'Nurturing',   tone: 'b-violet', order: 3, open: true,
+      hint: 'Interested but not now — keep warm.' },
+    { id: 'qualified',   label: 'Qualified',   tone: 'b-green',  order: 4, open: true,
+      hint: 'Real fit and real budget. Ready to convert.' },
+    { id: 'unqualified', label: 'Unqualified', tone: 'b-red',    order: 5, open: false,
+      hint: 'Not a fit. Closed without converting.' },
+    { id: 'converted',   label: 'Converted',   tone: 'b-green',  order: 6, open: false,
+      hint: 'Became a customer. Set automatically — do not pick by hand.' }
+  ];
+
+  var LEAD_RATINGS = [
+    { id: 'hot',  label: 'Hot',  tone: 'b-red',    order: 1 },
+    { id: 'warm', label: 'Warm', tone: 'b-orange', order: 2 },
+    { id: 'cold', label: 'Cold', tone: 'b-blue',   order: 3 }
+  ];
+
+  var LEAD_SOURCES = ['Referral', 'Website Form', 'Google Ads', 'Cold Outreach',
+    'Instagram', 'Facebook', 'LinkedIn', 'Networking', 'Walk-In', 'Repeat Client', 'List / Import'];
+
+  /* Follow-up urgency. "Unscheduled" ranks above "this week" on purpose:
+     a lead with no next touch booked is how leads quietly rot, and it
+     should look like a problem rather than a blank. */
+  var FOLLOW_UP = {
+    overdue:     { key: 'overdue',     label: 'Overdue',           tone: 'b-red',    rank: 0 },
+    today:       { key: 'today',       label: 'Due today',         tone: 'b-orange', rank: 1 },
+    unscheduled: { key: 'unscheduled', label: 'No follow-up set',  tone: 'b-yellow', rank: 2 },
+    soon:        { key: 'soon',        label: 'This week',         tone: 'b-blue',   rank: 3 },
+    scheduled:   { key: 'scheduled',   label: 'Scheduled',         tone: 'b-grey',   rank: 4 },
+    closed:      { key: 'closed',      label: 'Closed',            tone: 'b-grey',   rank: 5 }
+  };
+  function fuState(base, days) {
+    return { key: base.key, label: base.label, tone: base.tone, rank: base.rank, days: days };
+  }
+
   var BILLING_CYCLES = ['Monthly', 'Quarterly', 'Annual', 'One-Time', 'Retainer'];
   var ROLES = ['admin', 'manager', 'rep'];
 
-  var EMPTY_COLLS = ['users', 'services', 'customers', 'vendors', 'workOrders',
+  var EMPTY_COLLS = ['users', 'services', 'customers', 'vendors', 'leads', 'workOrders',
     'notes', 'timeEntries', 'dailyLogs', 'activity', 'statuses', 'vendorTypes',
     'stripeInvoices', 'stripeSubscriptions', 'stripeSyncState'];
 
@@ -159,6 +205,47 @@
         rating: 5, terms: '50% Deposit', address: 'Tempe, AZ', website: 'juniper.studio', createdAt: now() }
     ];
 
+    /* A spread of follow-up states so the "needs attention" logic is
+       visible the moment you open the screen: two overdue, one due
+       today, one never scheduled, one converted. */
+    var leads = [
+      { id: 'l_1', name: 'Saguaro Auto Spa', contactName: 'Luis Ferrer', contactTitle: 'Owner',
+        email: 'luis@saguaroauto.com', phone: '(602) 555-0301', leadStatus: 'working', rating: 'hot',
+        source: 'Referral', ownerId: 'u_sam', estValue: 3800, nextFollowUp: shift(-3), lastContactedAt: shift(-10),
+        industry: 'Automotive', address: 'Phoenix, AZ', website: 'saguaroauto.com', tags: ['Local'],
+        convertedCustomerId: '', convertedAt: '', createdAt: now() },
+      { id: 'l_2', name: 'Mesquite Grill House', contactName: 'Dana Whitmore', contactTitle: 'GM',
+        email: 'dana@mesquitegrill.com', phone: '(480) 555-0312', leadStatus: 'qualified', rating: 'hot',
+        source: 'Website Form', ownerId: 'u_jordan', estValue: 9200, nextFollowUp: shift(-1), lastContactedAt: shift(-4),
+        industry: 'Food & Bev', address: 'Gilbert, AZ', website: 'mesquitegrill.com', tags: ['Local', 'Referral'],
+        convertedCustomerId: '', convertedAt: '', createdAt: now() },
+      { id: 'l_3', name: 'Verde Valley Landscaping', contactName: 'Tomas Rivera', contactTitle: 'Owner',
+        email: 'tomas@verdevalleyland.com', phone: '(928) 555-0323', leadStatus: 'working', rating: 'warm',
+        source: 'Google Ads', ownerId: 'u_sam', estValue: 2400, nextFollowUp: today(), lastContactedAt: shift(-6),
+        industry: 'Home Services', address: 'Cottonwood, AZ', website: 'verdevalleyland.com', tags: [],
+        convertedCustomerId: '', convertedAt: '', createdAt: now() },
+      { id: 'l_4', name: 'Pinnacle Peak Orthodontics', contactName: 'Dr. Hana Kim', contactTitle: 'Practice Owner',
+        email: 'hana@pinnacleortho.com', phone: '(480) 555-0334', leadStatus: 'new', rating: 'warm',
+        source: 'List / Import', ownerId: 'u_sam', estValue: 0, nextFollowUp: '', lastContactedAt: '',
+        industry: 'Healthcare', address: 'Scottsdale, AZ', website: 'pinnacleortho.com', tags: [],
+        convertedCustomerId: '', convertedAt: '', createdAt: now() },
+      { id: 'l_5', name: 'Foothills Boutique', contactName: 'Serena Cole', contactTitle: 'Founder',
+        email: 'serena@foothillsboutique.com', phone: '(602) 555-0345', leadStatus: 'nurturing', rating: 'cold',
+        source: 'Instagram', ownerId: 'u_jordan', estValue: 1500, nextFollowUp: shift(21), lastContactedAt: shift(-14),
+        industry: 'Retail', address: 'Ahwatukee, AZ', website: 'foothillsboutique.com', tags: ['Local'],
+        convertedCustomerId: '', convertedAt: '', createdAt: now() },
+      { id: 'l_6', name: 'Desert Sky Insurance', contactName: 'Ray Nkemdirim', contactTitle: 'Agent',
+        email: 'ray@desertskyins.com', phone: '(623) 555-0356', leadStatus: 'unqualified', rating: 'cold',
+        source: 'Cold Outreach', ownerId: 'u_sam', estValue: 0, nextFollowUp: '', lastContactedAt: shift(-30),
+        industry: 'Insurance', address: 'Surprise, AZ', website: 'desertskyins.com', tags: [],
+        convertedCustomerId: '', convertedAt: '', createdAt: now() },
+      { id: 'l_7', name: 'Ironvale Fitness', contactName: 'Marcus Boone', contactTitle: 'Owner',
+        email: 'marcus@ironvale.fit', phone: '(602) 555-0154', leadStatus: 'converted', rating: 'hot',
+        source: 'Website Form', ownerId: 'u_sam', estValue: 4100, nextFollowUp: '', lastContactedAt: shift(-20),
+        industry: 'Fitness', address: 'Tempe, AZ', website: 'ironvale.fit', tags: [],
+        convertedCustomerId: 'c_6', convertedAt: now(), createdAt: now() }
+    ];
+
     var workOrders = [
       { id: 'w_1', title: 'Homepage wireframe review',        entityType: 'customer', entityId: 'c_1', assigneeId: 'u_riley', serviceId: 's_web',
         status: 'inprogress', priority: 'high',   scheduledDate: today(),   dueDate: today(),   estHours: 3, description: 'Walk Marcy through v2 wireframes and lock scope.', createdAt: now(), completedAt: '' },
@@ -191,7 +278,10 @@
       { id: uid('n'), entityType: 'customer', entityId: 'c_3', authorId: 'u_riley',  body: 'Priya leans toward the stamped/monoline direction. Avoid anything too script-y.', pinned: false, createdAt: now() },
       { id: uid('n'), entityType: 'customer', entityId: 'c_5', authorId: 'u_sam',    body: 'Lost to an in-house hire. Worth a check-in next spring — they liked the proposal but had no budget.', pinned: true, createdAt: now() },
       { id: uid('n'), entityType: 'vendor',   entityId: 'v_1', authorId: 'u_riley',  body: 'Redstone needs print files 5 business days ahead of any deadline. They do NOT rush without a 30% fee.', pinned: true, createdAt: now() },
-      { id: uid('n'), entityType: 'vendor',   entityId: 'v_3', authorId: 'u_alex',   body: 'Ravi hasn\'t signed the updated MSA yet. Do not assign new work until that\'s back.', pinned: true, createdAt: now() }
+      { id: uid('n'), entityType: 'vendor',   entityId: 'v_3', authorId: 'u_alex',   body: 'Ravi hasn\'t signed the updated MSA yet. Do not assign new work until that\'s back.', pinned: true, createdAt: now() },
+      { id: uid('n'), entityType: 'lead',     entityId: 'l_1', authorId: 'u_sam',    body: 'Luis wants a full rebrand plus a booking page. Said to call back after the 15th — his slow season starts then.', pinned: true, createdAt: now() },
+      { id: uid('n'), entityType: 'lead',     entityId: 'l_2', authorId: 'u_jordan', body: 'Dana has budget approved for Q4 and asked for a proposal. This one is ready to convert.', pinned: true, createdAt: now() },
+      { id: uid('n'), entityType: 'lead',     entityId: 'l_5', authorId: 'u_jordan', body: 'Not ready this year — revisit after the holiday season.', pinned: false, createdAt: now() }
     ];
 
     var db = emptyDb();
@@ -199,6 +289,7 @@
     db.services = services;
     db.customers = customers;
     db.vendors = vendors;
+    db.leads = leads;
     db.workOrders = workOrders;
     db.notes = notes;
     return db;
@@ -239,6 +330,26 @@
     }
   }
 
+  /* Make a loaded database safe to read from.
+
+     Data can arrive missing a whole collection: a browser holding a blob
+     saved before a feature existed, a backup restored from an older
+     export, a Supabase project where the newest table has not been
+     created yet. Without this, the first `db.leads.filter(...)` throws
+     and takes the entire screen down — so every collection the app
+     expects is guaranteed to exist, even if empty. */
+  function normalize(loaded) {
+    var out = loaded || {};
+    EMPTY_COLLS.forEach(function (c) { if (!Array.isArray(out[c])) out[c] = []; });
+    if (!out.settings || typeof out.settings !== 'object') {
+      out.settings = { id: 'org', orgName: 'ThinkFirst Studios', currency: 'USD' };
+    }
+    /* a brand-new project may have no reference rows yet */
+    if (!out.statuses.length) out.statuses = DEFAULT_STATUSES.slice();
+    if (!out.vendorTypes.length) out.vendorTypes = DEFAULT_VENDOR_TYPES.slice();
+    return out;
+  }
+
   /* ── boot ────────────────────────────────────────────────────── */
   function boot() {
     return B.init(B.config)
@@ -248,10 +359,7 @@
       })
       .then(function (loaded) {
         if (loaded) {
-          db = loaded;
-          /* a brand-new Supabase project may have no reference rows yet */
-          if (!db.statuses || !db.statuses.length) db.statuses = DEFAULT_STATUSES.slice();
-          if (!db.vendorTypes || !db.vendorTypes.length) db.vendorTypes = DEFAULT_VENDOR_TYPES.slice();
+          db = normalize(loaded);
         } else if (B.mode === 'local') {
           db = seed();
           B.persist(db);
@@ -325,6 +433,23 @@
     return obj;
   }
 
+  /* Bulk create — one write and one activity entry for the whole batch.
+     Importing 200 leads one at a time would fire 200 requests and bury
+     the activity feed under 200 identical lines. */
+  function insertMany(coll, rows, prefix, label) {
+    if (!rows.length) return [];
+    rows.forEach(function (r) {
+      r.id = r.id || uid(prefix || 'x');
+      r.createdAt = r.createdAt || now();
+      db[coll].push(r);
+    });
+    log('imported', coll, '', label || (rows.length + ' records'));
+    if (B.mode === 'local') B.persist(db);
+    else B.writeMany(coll, rows);
+    notify();
+    return rows;
+  }
+
   function update(coll, id, patch, label) {
     var rec = find(coll, id);
     if (!rec) return null;
@@ -359,7 +484,7 @@
     onChange: function (fn) { listeners.push(fn); },
 
     uid: uid, today: today, shift: shift, nowISO: now, initials: initials,
-    all: all, find: find, insert: insert, update: update, remove: remove,
+    all: all, find: find, insert: insert, insertMany: insertMany, update: update, remove: remove,
 
     /* reference */
     STATUSES: function () { return db.statuses.slice().sort(function (a, b) { return a.order - b.order; }); },
@@ -391,12 +516,167 @@
     isRevenue: function (c) { return API.billingType(c && c.billingType).revenue; },
     isFree: function (c) { return !API.isRevenue(c); },
 
+    /* ── leads ──────────────────────────────────────────────────── */
+    LEAD_STATUSES: LEAD_STATUSES,
+    LEAD_RATINGS: LEAD_RATINGS,
+    LEAD_SOURCES: LEAD_SOURCES,
+    FOLLOW_UP: FOLLOW_UP,
+    leadStatus: function (id) {
+      for (var i = 0; i < LEAD_STATUSES.length; i++) if (LEAD_STATUSES[i].id === id) return LEAD_STATUSES[i];
+      return LEAD_STATUSES[0];
+    },
+    leadRating: function (id) {
+      for (var i = 0; i < LEAD_RATINGS.length; i++) if (LEAD_RATINGS[i].id === id) return LEAD_RATINGS[i];
+      return LEAD_RATINGS[1];                 // warm
+    },
+    /* Still in play — not converted, not written off. */
+    isLeadOpen: function (l) { return API.leadStatus(l && l.leadStatus).open; },
+    isConverted: function (l) { return !!(l && l.convertedCustomerId); },
+
+    /* Where a lead sits against its next touch. */
+    followUpState: function (l) {
+      if (!API.isLeadOpen(l)) return fuState(FOLLOW_UP.closed, null);
+      if (!l.nextFollowUp) return fuState(FOLLOW_UP.unscheduled, null);
+      var d = API.daysUntil(l.nextFollowUp);
+      if (d < 0) return fuState(FOLLOW_UP.overdue, d);
+      if (d === 0) return fuState(FOLLOW_UP.today, 0);
+      if (d <= 7) return fuState(FOLLOW_UP.soon, d);
+      return fuState(FOLLOW_UP.scheduled, d);
+    },
+    openLeads: function () { return db.leads.filter(API.isLeadOpen); },
+    /* Overdue, due today, or never scheduled — sorted most urgent first. */
+    leadsNeedingAttention: function (userId) {
+      return db.leads.filter(function (l) {
+        if (userId && l.ownerId !== userId) return false;
+        var k = API.followUpState(l).key;
+        return k === 'overdue' || k === 'today' || k === 'unscheduled';
+      }).sort(function (a, b) {
+        var fa = API.followUpState(a), fb = API.followUpState(b);
+        return fa.rank - fb.rank || String(a.nextFollowUp || '').localeCompare(String(b.nextFollowUp || ''));
+      });
+    },
+    leadStats: function () {
+      var converted = db.leads.filter(function (l) { return l.leadStatus === 'converted'; });
+      var unqualified = db.leads.filter(function (l) { return l.leadStatus === 'unqualified'; });
+      var open = API.openLeads();
+      /* Rate over decided leads only. Counting leads still in play as
+         failures would make the number fall every time you add one. */
+      var decided = converted.length + unqualified.length;
+      return {
+        total: db.leads.length,
+        open: open.length,
+        qualified: db.leads.filter(function (l) { return l.leadStatus === 'qualified'; }).length,
+        converted: converted.length,
+        unqualified: unqualified.length,
+        convRate: decided ? Math.round((converted.length / decided) * 100) : 0,
+        attention: API.leadsNeedingAttention().length,
+        value: open.reduce(function (s, l) { return s + (Number(l.estValue) || 0); }, 0)
+      };
+    },
+
+    /* Record a touch and book the next one in a single step, so nobody
+       logs a call and leaves the lead with no next action. */
+    logContact: function (id, opts) {
+      var l = find('leads', id);
+      if (!l) return null;
+      opts = opts || {};
+      var patch = {
+        lastContactedAt: opts.date || today(),
+        nextFollowUp: opts.nextFollowUp || ''
+      };
+      if (opts.leadStatus) patch.leadStatus = opts.leadStatus;
+      update('leads', id, patch, 'contacted ' + l.name);
+      if (opts.note) API.addNote('lead', id, opts.note);
+      return find('leads', id);
+    },
+
+    /* Lead → customer. One direction, once. */
+    convertLead: function (id, overrides) {
+      var lead = find('leads', id);
+      if (!lead) throw new Error('That lead no longer exists.');
+      if (lead.convertedCustomerId) {
+        var already = find('customers', lead.convertedCustomerId);
+        throw new Error(lead.name + ' was already converted' +
+          (already ? ' to ' + already.name + '.' : '.'));
+      }
+      var o = overrides || {};
+      var customer = {
+        name: o.name || lead.name,
+        contactName: lead.contactName || '',
+        email: lead.email || '',
+        phone: lead.phone || '',
+        status: o.status || 'new',
+        ownerId: o.ownerId || lead.ownerId || (meId || ''),
+        services: o.services || [],
+        billingDate: o.billingDate || '',
+        billingCycle: o.billingCycle || 'Monthly',
+        value: Number(o.value != null && o.value !== '' ? o.value : lead.estValue) || 0,
+        billingType: o.billingType || 'paid',
+        tags: (lead.tags || []).slice(),
+        industry: lead.industry || '',
+        source: lead.source || '',
+        address: lead.address || '',
+        website: lead.website || '',
+        stripeCustomerId: '',
+        convertedFromLeadId: lead.id
+      };
+      var created = insert('customers', customer, 'c', customer.name);
+
+      /* Move the notes rather than copy them. The sales conversation now
+         belongs to the account, and two editable copies would drift. */
+      var moved = 0;
+      db.notes.forEach(function (n) {
+        if (n.entityType !== 'lead' || n.entityId !== lead.id) return;
+        n.entityType = 'customer';
+        n.entityId = created.id;
+        push('notes', 'update', n);
+        moved++;
+      });
+
+      update('leads', id, {
+        leadStatus: 'converted',
+        convertedCustomerId: created.id,
+        convertedAt: now(),
+        nextFollowUp: ''
+      }, lead.name + ' converted');
+
+      API.addNote('customer', created.id,
+        'Converted from lead “' + lead.name + '”' +
+        (lead.source ? ' (source: ' + lead.source + ')' : '') +
+        (moved ? '. ' + moved + ' lead note' + (moved === 1 ? '' : 's') + ' moved across.' : '.'));
+
+      log('converted', 'leads', lead.id, lead.name + ' → customer');
+      notify();
+      return created;
+    },
+
+    /* Same key the importer dedupes on: email, then domain, then name. */
+    leadKey: function (rec) {
+      if (!rec) return '';
+      if (rec.email) return 'e:' + String(rec.email).trim().toLowerCase();
+      if (rec.website) {
+        var d = String(rec.website).trim().toLowerCase()
+          .replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+        if (d) return 'd:' + d;
+      }
+      return 'n:' + String(rec.name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+    },
+    /* Existing leads AND customers — re-importing a list must not create a
+       second lead for somebody you already sold to. */
+    knownKeys: function () {
+      var keys = {};
+      db.leads.forEach(function (l) { keys[API.leadKey(l)] = l; });
+      db.customers.forEach(function (c) { keys[API.leadKey(c)] = c; });
+      delete keys['n:'];
+      return keys;
+    },
+
     /* ── tags ───────────────────────────────────────────────────── */
     tagsOf: function (rec) { return (rec && rec.tags) || []; },
     /* Every tag in use, for filters and autocomplete. */
     allTags: function () {
       var seen = {};
-      db.customers.concat(db.vendors).forEach(function (r) {
+      db.customers.concat(db.vendors, db.leads).forEach(function (r) {
         (r.tags || []).forEach(function (t) { if (t) seen[t] = (seen[t] || 0) + 1; });
       });
       return Object.keys(seen).sort(function (a, b) {
@@ -696,7 +976,10 @@
     importJSON: function (text) {
       var incoming = JSON.parse(text);
       if (!incoming.customers || !incoming.users) throw new Error('That file does not look like a CRM backup.');
-      db = incoming;
+      /* An older backup will be missing whatever collections did not exist
+         when it was taken. Fill them in rather than restoring a database
+         with holes in it. */
+      db = normalize(incoming);
       if (B.mode === 'local') { B.persist(db); notify(); return Promise.resolve(); }
       return B.replaceAll(db).then(notify);
     },
