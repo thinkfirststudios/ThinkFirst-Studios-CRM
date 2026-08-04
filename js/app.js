@@ -302,7 +302,9 @@
     console.error(err);
     /* A backend that is configured but unreachable must not silently fall
        back to local storage — that would look like the team's data vanished. */
-    if (root.Auth) root.Auth.screen({ fatal: err.message });
+    /* Pass the error object, not just its text — it carries the list of
+       tables that could not be read. */
+    if (root.Auth) root.Auth.screen({ fatal: err });
     else viewEl.innerHTML = U.empty('Could not start', err.message);
   });
 })(window);

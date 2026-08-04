@@ -48,6 +48,10 @@
   var COLLECTIONS = {};
   Object.keys(TABLES).forEach(function (c) { COLLECTIONS[TABLES[c]] = c; });
 
+  /* PostgREST's wording for "that table is not in the database". A
+       missing table is a setup step; anything else is a real failure. */
+  var MISSING_TABLE = /schema cache|Could not find the table|does not exist|relation .* does not exist/i;
+
   /* Fields the app carries in memory but that have no column. */
   var STRIP = ['__local'];
 
@@ -149,15 +153,35 @@
       return client.auth.signOut().then(function () { session = null; });
     },
 
-    /* Pull every table into the shape the store expects. */
+    /* Pull every table into the shape the store expects.
+
+       Every table is reported, not just the first one to fail. Throwing
+       on the first missing table means fixing them one at a time, with a
+       round trip to the SQL editor for each — which is exactly what
+       happens after an update that adds several tables at once. */
     hydrate: function () {
       var colls = Object.keys(TABLES);
       return Promise.all(colls.map(function (c) {
         return client.from(TABLES[c]).select('*').then(function (r) {
-          if (r.error) throw new Error(TABLES[c] + ': ' + r.error.message);
+          if (r.error) return { __fail: TABLES[c], __msg: r.error.message };
           return r.data || [];
+        }, function (e) {
+          return { __fail: TABLES[c], __msg: (e && e.message) || String(e) };
         });
       })).then(function (results) {
+        var failed = results.filter(function (r) { return r && r.__fail; });
+        if (failed.length) {
+          var err = new Error(failed.map(function (f) {
+            return f.__fail + ': ' + f.__msg;
+          }).join('\n'));
+          err.missingTables = failed
+            .filter(function (f) { return MISSING_TABLE.test(f.__msg); })
+            .map(function (f) { return f.__fail; });
+          err.failedTables = failed.map(function (f) { return f.__fail; });
+          err.totalTables = colls.length;
+          throw err;
+        }
+
         var db = { version: 1 };
         colls.forEach(function (c, i) { db[c] = results[i]; });
 

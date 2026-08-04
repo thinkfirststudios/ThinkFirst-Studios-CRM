@@ -48,9 +48,30 @@
 
   /* Boot failed. The person may well already be signed in, so this is a
      status screen with a way forward — not a sign-in form. */
-  function fatalScreen(message) {
-    var setup = isMissingSchema(message);
+  function fatalScreen(err) {
+    var message = (err && err.message) || String(err || 'Unknown error');
+    /* hydrate() reports every table it could not read, so name them.
+       Saying "this project has no CRM tables" when one table out of
+       eighteen is missing sends someone hunting for the wrong problem. */
+    var missing = (err && err.missingTables) || null;
+    var setup = missing ? missing.length > 0 : isMissingSchema(message);
+    var fresh = missing && err.totalTables && missing.length >= err.totalTables - 2;
     var signedIn = !!B.session();
+
+    var explain;
+    if (!setup) {
+      explain = 'The CRM could not reach its database. Nothing has been lost — ' +
+        'it stopped rather than falling back to local data.';
+    } else if (fresh || !missing) {
+      explain = 'You are signed in, but this project has no CRM tables yet. Run ' +
+        '<span class="mono">supabase/schema.sql</span> in the Supabase SQL Editor, then retry.';
+    } else {
+      explain = 'Your database is a version behind this app. ' +
+        (missing.length === 1 ? 'One table it needs is missing' : missing.length + ' tables it needs are missing') +
+        ': <span class="mono">' + missing.map(esc).join('</span>, <span class="mono">') + '</span>. ' +
+        'Re-run <span class="mono">supabase/schema.sql</span> — it only adds what is absent and ' +
+        'never deletes anything — then retry.';
+    }
 
     var wrap = document.createElement('div');
     wrap.className = 'auth-wrap';
@@ -63,13 +84,11 @@
           '<img src="assets/thinkfirst-mark.svg" alt="">' +
           '<div class="brand-text">THINKFIRST<em>STUDIOS</em></div>' +
         '</div>' +
-        '<h1 class="auth-title">' + (setup ? 'One setup step left' : 'Could not start') + '</h1>' +
-        '<p class="auth-sub">' + (setup
-          ? 'You are signed in, but this project has no CRM tables yet. Run <span class="mono">supabase/schema.sql</span> ' +
-            'in the Supabase SQL Editor, then come back and retry.'
-          : 'The CRM could not reach its database. Nothing has been lost — it stopped rather than falling back to local data.') +
-        '</p>' +
-        '<div class="auth-error">' + esc(message) + '</div>' +
+        '<h1 class="auth-title">' +
+          (!setup ? 'Could not start' : fresh || !missing ? 'One setup step left' : 'Database needs updating') +
+        '</h1>' +
+        '<p class="auth-sub">' + explain + '</p>' +
+        '<div class="auth-error" style="white-space:pre-wrap">' + esc(message) + '</div>' +
         '<div class="stack" style="gap:9px;margin-top:18px">' +
           '<button class="btn btn-primary" id="auRetry" style="justify-content:center;padding:10px">Retry</button>' +
           (signedIn ? '<button class="btn btn-ghost btn-sm" id="auOut" style="justify-content:center">Sign out</button>' : '') +
