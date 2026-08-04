@@ -419,6 +419,7 @@
                   ' <span class="muted" style="font-size:11.5px">' + U.esc(status.hint) + '</span>') +
                 row('Rating', U.badge(rating.label, rating.tone)) +
                 row('Source', U.esc(l.source || '—')) +
+                row('Came From', outreachOrigin(l)) +
                 row('Estimated Value', l.estValue ? '<span class="mono">' + S.money(l.estValue) + '</span>' : '—') +
                 row('Next Follow-Up', l.nextFollowUp ? U.fmtDate(l.nextFollowUp) : '<span class="muted">Not scheduled</span>') +
                 row('Last Contacted', l.lastContactedAt ? U.fmtDate(l.lastContactedAt) : '<span class="muted">Never</span>') +
@@ -454,6 +455,21 @@
   }
 
   function row(k, v) { return '<dt>' + U.esc(k) + '</dt><dd>' + v + '</dd>'; }
+
+  /* Which outreach touch produced this lead, if any. This is the middle
+     link in group -> lead -> account -> won deal; without it the
+     outreach performance table cannot tell you anything. */
+  function outreachOrigin(l) {
+    if (!l.outreachId) return '<span class="muted">—</span>';
+    var o = S.find('outreach', l.outreachId);
+    if (!o) return '<span class="muted">A logged outreach touch (since deleted)</span>';
+    var g = o.groupId ? S.outreachGroup(o.groupId) : null;
+    var ch = S.outreachChannel(o.channel);
+    return U.badge(ch.label, ch.tone) +
+      (g ? ' <a class="link" href="#/outreach">' + U.esc(g.name) + '</a>' : '') +
+      ' <span class="muted" style="font-size:11.5px">· ' + U.esc(S.outreachKind(o.kind).label) +
+      ' on ' + U.esc(U.fmtDateShort(o.date)) + '</span>';
+  }
   function href(w) { return /^https?:\/\//i.test(w) ? w : 'https://' + w; }
 
   function convertedBanner(l) {

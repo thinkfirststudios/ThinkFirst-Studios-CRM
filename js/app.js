@@ -8,7 +8,7 @@
   var viewEl = document.getElementById('view');
 
   var ROUTES = {
-    dashboard: 'dashboard', leads: 'leads', accounts: 'accounts',
+    dashboard: 'dashboard', leads: 'leads', outreach: 'outreach', accounts: 'accounts',
     contacts: 'contacts', opportunities: 'opportunities', activities: 'activities',
     pipeline: 'pipeline', tracker: 'tracker', workorders: 'workorders',
     vendors: 'vendors', billing: 'billing', admin: 'admin',

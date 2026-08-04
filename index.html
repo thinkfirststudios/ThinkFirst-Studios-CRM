@@ -48,7 +48,13 @@
 <!-- ── Object tabs ───────────────────────────────────────────────── -->
 <nav class="tabbar" id="tabbar">
   <a href="#/dashboard" data-nav="dashboard"><svg viewBox="0 0 24 24" class="ico"><path d="M3 12l9-9 9 9M5 10v10h5v-6h4v6h5V10"/></svg>Home</a>
-  <a href="#/leads" data-nav="leads"><svg viewBox="0 0 24 24" class="ico"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M22 11h-6"/></svg>Leads</a>
+  <div class="tabgroup" data-nav="leads outreach">
+    <button type="button"><svg viewBox="0 0 24 24" class="ico"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M22 11h-6"/></svg>Leads<svg viewBox="0 0 24 24" class="caret"><path d="M6 9l6 6 6-6"/></svg></button>
+    <div class="tabmenu">
+      <a href="#/leads" data-nav="leads">All Leads</a>
+      <a href="#/outreach" data-nav="outreach">Daily Outreach</a>
+    </div>
+  </div>
   <a href="#/accounts" data-nav="accounts"><svg viewBox="0 0 24 24" class="ico"><path d="M3 21V8l7-5 7 5v13M3 21h18M13 21v-6h4v6M7 11h2M7 15h2"/></svg>Accounts</a>
   <a href="#/contacts" data-nav="contacts"><svg viewBox="0 0 24 24" class="ico"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Contacts</a>
 
@@ -96,6 +102,7 @@
 <script src="js/views/contacts.js"></script>
 <script src="js/views/opportunities.js"></script>
 <script src="js/views/leads.js"></script>
+<script src="js/views/outreach.js"></script>
 <script src="js/views/pipeline.js"></script>
 <script src="js/views/tracker.js"></script>
 <script src="js/views/workorders.js"></script>

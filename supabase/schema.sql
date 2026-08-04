@@ -187,6 +187,60 @@ create index if not exists leads_followup_idx  on public.leads ("nextFollowUp");
 create index if not exists leads_owner_idx     on public.leads ("ownerId");
 create index if not exists leads_email_idx     on public.leads (lower(email));
 
+-- ── Daily outreach ────────────────────────────────────────────────
+-- Posting in Nextdoor and Facebook groups is a daily habit, so it is
+-- tracked as two things: the communities you post in, and each
+-- individual touch. Every lead that comes out of one keeps a link back,
+-- which is what turns a chore list into a record of which groups are
+-- actually worth the time.
+
+create table if not exists public.outreach_groups (
+  id            text primary key,
+  name          text not null default '',
+  channel       text not null default 'facebook',  -- nextdoor|facebook|instagram|linkedin|reddit|other
+  url           text not null default '',
+  area          text not null default '',
+  "memberCount" numeric not null default 0,
+  -- Minimum days between posts. Most groups remove you for ignoring
+  -- their limit, so the board will not suggest a group inside this gap.
+  "cadenceDays" integer not null default 7,
+  rules         text not null default '',
+  notes         text not null default '',
+  active        boolean not null default true,
+  "ownerId"     text not null default '',
+  "createdAt"   timestamptz not null default now(),
+  "updatedAt"   timestamptz
+);
+
+create table if not exists public.outreach (
+  id          text primary key,
+  date        text not null default '',            -- 'YYYY-MM-DD'
+  channel     text not null default '',
+  "groupId"   text not null default '',
+  kind        text not null default 'comment',     -- recommendation|comment|post|dm|follow
+  summary     text not null default '',
+  url         text not null default '',
+  responses   numeric not null default 0,
+  "userId"    text not null default '',
+  "createdAt" timestamptz not null default now(),
+  "updatedAt" timestamptz
+);
+
+-- Which touch produced this lead. Leads count themselves rather than the
+-- outreach row holding a tally, so the two can never drift apart.
+alter table public.leads
+  add column if not exists "outreachId" text not null default '';
+
+-- Touches per day to aim for. 0 means no target, and any day with at
+-- least one touch then counts as a day you showed up.
+alter table public.settings
+  add column if not exists "outreachDailyGoal" integer not null default 0;
+
+create index if not exists outreach_date_idx    on public.outreach (date desc);
+create index if not exists outreach_group_idx   on public.outreach ("groupId", date desc);
+create index if not exists outreach_user_idx    on public.outreach ("userId", date desc);
+create index if not exists leads_outreach_idx   on public.leads ("outreachId");
+
 create table if not exists public.vendors (
   id             text primary key,
   name           text not null default '',
@@ -398,7 +452,7 @@ declare t text;
 begin
   foreach t in array array[
     'profiles','customers','contacts','opportunities','tasks','vendors','leads',
-    'work_orders','notes','services',
+    'outreach_groups','outreach','work_orders','notes','services',
     'time_entries','daily_logs','activity','statuses','vendor_types','settings'
   ] loop
     execute format('alter table public.%I enable row level security', t);
@@ -415,7 +469,7 @@ declare t text;
 begin
   foreach t in array array[
     'customers','contacts','opportunities','tasks','vendors','leads',
-    'work_orders','notes','time_entries','daily_logs','activity'
+    'outreach_groups','outreach','work_orders','notes','time_entries','daily_logs','activity'
   ] loop
     execute format('drop policy if exists "team_insert" on public.%I', t);
     execute format('drop policy if exists "team_update" on public.%I', t);
@@ -466,7 +520,7 @@ declare t text;
 begin
   foreach t in array array[
     'profiles','customers','contacts','opportunities','tasks','vendors','leads',
-    'work_orders','notes','services',
+    'outreach_groups','outreach','work_orders','notes','services',
     'time_entries','daily_logs','activity','statuses','vendor_types','settings'
   ] loop
     begin

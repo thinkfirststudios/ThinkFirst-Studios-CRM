@@ -25,6 +25,8 @@
     tasks: 'tasks',
     vendors: 'vendors',
     leads: 'leads',
+    outreachGroups: 'outreach_groups',
+    outreach: 'outreach',
     workOrders: 'work_orders',
     notes: 'notes',
     services: 'services',

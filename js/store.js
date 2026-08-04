@@ -187,11 +187,39 @@
       hint: 'A meeting at a time.' }
   ];
 
+  /* ── Daily outreach ─────────────────────────────────────────────
+     Posting in Nextdoor and Facebook groups is a habit, not a project:
+     the whole value is in doing it every day and in knowing which
+     communities actually produce business. So two records — the places
+     you post (outreachGroups) and each individual touch (outreach) —
+     and every lead that comes out of one keeps a link back to it. */
+  var OUTREACH_CHANNELS = [
+    { id: 'nextdoor',  label: 'Nextdoor',       tone: 'b-green',  order: 1 },
+    { id: 'facebook',  label: 'Facebook Group', tone: 'b-blue',   order: 2 },
+    { id: 'instagram', label: 'Instagram',      tone: 'b-violet', order: 3 },
+    { id: 'linkedin',  label: 'LinkedIn',       tone: 'b-blue',   order: 4 },
+    { id: 'reddit',    label: 'Reddit',         tone: 'b-orange', order: 5 },
+    { id: 'other',     label: 'Other',          tone: 'b-grey',   order: 6 }
+  ];
+
+  var OUTREACH_KINDS = [
+    { id: 'recommendation', label: 'Recommendation reply', tone: 'b-green',
+      hint: 'Answering "anyone know a good…". The highest-intent thing you can do.' },
+    { id: 'comment', label: 'Helpful comment', tone: 'b-blue',
+      hint: 'Answering a question without pitching.' },
+    { id: 'post',    label: 'Post',            tone: 'b-orange',
+      hint: 'Something you published to the group.' },
+    { id: 'dm',      label: 'Direct message',  tone: 'b-violet',
+      hint: 'Reaching out to one person.' },
+    { id: 'follow',  label: 'Follow-up',       tone: 'b-grey',
+      hint: 'Circling back on an earlier thread.' }
+  ];
+
   var BILLING_CYCLES = ['Monthly', 'Quarterly', 'Annual', 'One-Time', 'Retainer'];
   var ROLES = ['admin', 'manager', 'rep'];
 
   var EMPTY_COLLS = ['users', 'services', 'customers', 'contacts', 'opportunities',
-    'tasks', 'vendors', 'leads', 'workOrders',
+    'tasks', 'vendors', 'leads', 'outreachGroups', 'outreach', 'workOrders',
     'notes', 'timeEntries', 'dailyLogs', 'activity', 'statuses', 'vendorTypes',
     'stripeInvoices', 'stripeSubscriptions', 'stripeSyncState'];
 
@@ -364,17 +392,17 @@
         email: 'luis@saguaroauto.com', phone: '(602) 555-0301', leadStatus: 'working', rating: 'hot',
         source: 'Referral', ownerId: 'u_sam', estValue: 3800, nextFollowUp: shift(-3), lastContactedAt: shift(-10),
         industry: 'Automotive', address: 'Phoenix, AZ', website: 'saguaroauto.com', tags: ['Local'],
-        convertedCustomerId: '', convertedAt: '', createdAt: now() },
+        outreachId: 'or_3', convertedCustomerId: '', convertedAt: '', createdAt: now() },
       { id: 'l_2', name: 'Mesquite Grill House', contactName: 'Dana Whitmore', contactTitle: 'GM',
         email: 'dana@mesquitegrill.com', phone: '(480) 555-0312', leadStatus: 'qualified', rating: 'hot',
         source: 'Website Form', ownerId: 'u_jordan', estValue: 9200, nextFollowUp: shift(-1), lastContactedAt: shift(-4),
         industry: 'Food & Bev', address: 'Gilbert, AZ', website: 'mesquitegrill.com', tags: ['Local', 'Referral'],
-        convertedCustomerId: '', convertedAt: '', createdAt: now() },
+        outreachId: 'or_6', convertedCustomerId: '', convertedAt: '', createdAt: now() },
       { id: 'l_3', name: 'Verde Valley Landscaping', contactName: 'Tomas Rivera', contactTitle: 'Owner',
         email: 'tomas@verdevalleyland.com', phone: '(928) 555-0323', leadStatus: 'working', rating: 'warm',
         source: 'Google Ads', ownerId: 'u_sam', estValue: 2400, nextFollowUp: today(), lastContactedAt: shift(-6),
         industry: 'Home Services', address: 'Cottonwood, AZ', website: 'verdevalleyland.com', tags: [],
-        convertedCustomerId: '', convertedAt: '', createdAt: now() },
+        outreachId: 'or_8', convertedCustomerId: '', convertedAt: '', createdAt: now() },
       { id: 'l_4', name: 'Pinnacle Peak Orthodontics', contactName: 'Dr. Hana Kim', contactTitle: 'Practice Owner',
         email: 'hana@pinnacleortho.com', phone: '(480) 555-0334', leadStatus: 'new', rating: 'warm',
         source: 'List / Import', ownerId: 'u_sam', estValue: 0, nextFollowUp: '', lastContactedAt: '',
@@ -395,6 +423,63 @@
         source: 'Website Form', ownerId: 'u_sam', estValue: 4100, nextFollowUp: '', lastContactedAt: shift(-20),
         industry: 'Fitness', address: 'Tempe, AZ', website: 'ironvale.fit', tags: [],
         convertedCustomerId: 'c_6', convertedAt: now(), createdAt: now() }
+    ];
+
+    /* Cadence matters more than it looks: most Facebook groups have a
+       posting limit and will remove you for ignoring it, so each group
+       carries the minimum gap between posts and the board refuses to
+       suggest one that is still cooling off. */
+    var outreachGroups = [
+      { id: 'og_1', name: 'Mesa / Gilbert Neighbors', channel: 'nextdoor', url: 'nextdoor.com',
+        area: 'Mesa, AZ', memberCount: 4200, cadenceDays: 3, active: true, ownerId: 'u_alex',
+        rules: 'Business posts only in the Business section. Recommendation replies are fine anywhere.',
+        notes: 'Best source of "who do you recommend" threads.', createdAt: now() },
+      { id: 'og_2', name: 'Phoenix Small Business Owners', channel: 'facebook', url: 'facebook.com/groups/phxsmallbiz',
+        area: 'Phoenix, AZ', memberCount: 18400, cadenceDays: 7, active: true, ownerId: 'u_alex',
+        rules: 'Promo posts Fridays ONLY. One per week. Instant ban for more.',
+        notes: '', createdAt: now() },
+      { id: 'og_3', name: 'East Valley Contractors & Trades', channel: 'facebook', url: 'facebook.com/groups/evtrades',
+        area: 'Gilbert, AZ', memberCount: 6100, cadenceDays: 5, active: true, ownerId: 'u_sam',
+        rules: 'No direct selling. Answer questions and let people come to you.',
+        notes: 'Roofers and HVAC — our best-fitting audience.', createdAt: now() },
+      { id: 'og_4', name: 'Scottsdale Neighborhood', channel: 'nextdoor', url: 'nextdoor.com',
+        area: 'Scottsdale, AZ', memberCount: 3300, cadenceDays: 3, active: true, ownerId: 'u_sam',
+        rules: '', notes: '', createdAt: now() },
+      { id: 'og_5', name: 'AZ Restaurant & Cafe Owners', channel: 'facebook', url: 'facebook.com/groups/azrestaurants',
+        area: 'Statewide', memberCount: 9700, cadenceDays: 7, active: true, ownerId: 'u_jordan',
+        rules: 'Introduce yourself before posting anything promotional.',
+        notes: 'Never posted here yet.', createdAt: now() }
+    ];
+
+    /* Four days running, today included — enough to show a live streak. */
+    var outreach = [
+      { id: 'or_1', date: today(), channel: 'nextdoor', groupId: 'og_1', kind: 'recommendation',
+        summary: 'Replied to "need a website for my landscaping business" — sent the portfolio link.',
+        url: '', responses: 2, userId: 'u_alex', createdAt: now() },
+      { id: 'or_2', date: today(), channel: 'facebook', groupId: 'og_3', kind: 'comment',
+        summary: 'Answered a question about Google Business Profile verification.',
+        url: '', responses: 1, userId: 'u_alex', createdAt: now() },
+      { id: 'or_3', date: shift(-1), channel: 'nextdoor', groupId: 'og_1', kind: 'recommendation',
+        summary: 'Recommendation thread for "web designer near Mesa".',
+        url: '', responses: 3, userId: 'u_alex', createdAt: now() },
+      { id: 'or_4', date: shift(-1), channel: 'facebook', groupId: 'og_2', kind: 'post',
+        summary: 'Friday promo slot — before/after of the Copperline site.',
+        url: '', responses: 5, userId: 'u_alex', createdAt: now() },
+      { id: 'or_5', date: shift(-1), channel: 'nextdoor', groupId: 'og_4', kind: 'comment',
+        summary: 'Helped someone troubleshoot their Squarespace domain.',
+        url: '', responses: 0, userId: 'u_sam', createdAt: now() },
+      { id: 'or_6', date: shift(-2), channel: 'facebook', groupId: 'og_3', kind: 'recommendation',
+        summary: 'Roofer asked who builds sites for contractors.',
+        url: '', responses: 4, userId: 'u_alex', createdAt: now() },
+      { id: 'or_7', date: shift(-2), channel: 'nextdoor', groupId: 'og_1', kind: 'dm',
+        summary: 'Followed up with the auto spa owner from last week.',
+        url: '', responses: 1, userId: 'u_alex', createdAt: now() },
+      { id: 'or_8', date: shift(-3), channel: 'facebook', groupId: 'og_3', kind: 'comment',
+        summary: 'Explained why their site was slow — offered a free audit.',
+        url: '', responses: 2, userId: 'u_alex', createdAt: now() },
+      { id: 'or_9', date: shift(-3), channel: 'nextdoor', groupId: 'og_4', kind: 'recommendation',
+        summary: 'Dentist looking for a rebrand.',
+        url: '', responses: 1, userId: 'u_alex', createdAt: now() }
     ];
 
     var workOrders = [
@@ -444,6 +529,9 @@
     db.tasks = tasks;
     db.vendors = vendors;
     db.leads = leads;
+    db.outreachGroups = outreachGroups;
+    db.outreach = outreach;
+    db.settings.outreachDailyGoal = 2;
     db.workOrders = workOrders;
     db.notes = notes;
     return db;
@@ -902,6 +990,182 @@
       if (type === 'workorder') { var w = find('workOrders', id); return w ? w.title : 'Unknown work order'; }
       var a = find('customers', id);
       return a ? a.name : 'Unknown account';
+    },
+
+    /* ── daily outreach ─────────────────────────────────────────── */
+    OUTREACH_CHANNELS: OUTREACH_CHANNELS,
+    OUTREACH_KINDS: OUTREACH_KINDS,
+    outreachChannel: function (id) {
+      for (var i = 0; i < OUTREACH_CHANNELS.length; i++) if (OUTREACH_CHANNELS[i].id === id) return OUTREACH_CHANNELS[i];
+      return OUTREACH_CHANNELS[OUTREACH_CHANNELS.length - 1];
+    },
+    outreachKind: function (id) {
+      for (var i = 0; i < OUTREACH_KINDS.length; i++) if (OUTREACH_KINDS[i].id === id) return OUTREACH_KINDS[i];
+      return OUTREACH_KINDS[0];
+    },
+    outreachGroup: function (id) {
+      return find('outreachGroups', id) || { id: id, name: 'Unassigned', channel: 'other', cadenceDays: 7 };
+    },
+    activeGroups: function () {
+      return db.outreachGroups.filter(function (g) { return g.active !== false; });
+    },
+
+    /* Daily target. 0 means no target, and the tracker then counts any
+       day with at least one touch as a day you showed up. */
+    outreachGoal: function () { return Number(db.settings.outreachDailyGoal) || 0; },
+    setOutreachGoal: function (n) {
+      API.saveSettings({ outreachDailyGoal: Math.max(0, Math.round(Number(n) || 0)) });
+    },
+
+    outreachOn: function (date, userId) {
+      return db.outreach.filter(function (o) {
+        if (o.date !== date) return false;
+        return !userId || o.userId === userId;
+      });
+    },
+    outreachFor: function (groupId) {
+      return db.outreach.filter(function (o) { return o.groupId === groupId; })
+        .sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
+    },
+    lastOutreachDate: function (groupId) {
+      var list = API.outreachFor(groupId);
+      return list.length ? list[0].date : '';
+    },
+
+    /* Consecutive days the target was met.
+
+       Counting starts at yesterday when today is not done yet — a streak
+       that resets to zero every morning until the first post of the day
+       tells you nothing and punishes you for waking up. */
+    outreachStreak: function (userId) {
+      var goal = API.outreachGoal();
+      var need = goal > 0 ? goal : 1;
+      var counts = {};
+      db.outreach.forEach(function (o) {
+        if (userId && o.userId !== userId) return;
+        if (!o.date) return;
+        counts[o.date] = (counts[o.date] || 0) + 1;
+      });
+
+      var todayKey = today();
+      var todayCount = counts[todayKey] || 0;
+      var todayMet = todayCount >= need;
+
+      var d = new Date(todayKey + 'T00:00:00');
+      if (!todayMet) d.setDate(d.getDate() - 1);
+
+      var days = 0;
+      /* Bounded so a corrupt date can never spin here forever. */
+      for (var guard = 0; guard < 3650; guard++) {
+        var key = d.toISOString().slice(0, 10);
+        if ((counts[key] || 0) >= need) { days++; d.setDate(d.getDate() - 1); }
+        else break;
+      }
+      return {
+        days: days, todayCount: todayCount, todayMet: todayMet,
+        goal: need, hasGoal: goal > 0,
+        remaining: Math.max(0, need - todayCount)
+      };
+    },
+
+    /* Where to post next. A group you have never touched ranks above one
+       that is merely overdue; a group inside its cooldown is not offered
+       at all, because most groups remove you for posting too often. */
+    groupState: function (g) {
+      var cadence = Number(g.cadenceDays) || 7;
+      var last = API.lastOutreachDate(g.id);
+      if (!last) {
+        return { key: 'never', label: 'Never posted', tone: 'b-yellow', rank: 0, daysSince: null, wait: 0 };
+      }
+      var daysSince = -API.daysUntil(last);
+      if (daysSince >= cadence) {
+        return { key: 'due', label: daysSince + 'd since last', tone: 'b-orange', rank: 1, daysSince: daysSince, wait: 0 };
+      }
+      return {
+        key: 'cooling', label: 'Wait ' + (cadence - daysSince) + 'd', tone: 'b-grey',
+        rank: 2, daysSince: daysSince, wait: cadence - daysSince
+      };
+    },
+    groupsDue: function () {
+      return API.activeGroups().filter(function (g) {
+        return API.groupState(g).key !== 'cooling';
+      }).sort(function (a, b) {
+        var sa = API.groupState(a), sb = API.groupState(b);
+        return sa.rank - sb.rank || (sb.daysSince || 9999) - (sa.daysSince || 9999);
+      });
+    },
+
+    /* The attribution chain: touch → lead → account → won deal. Without
+       this the tracker is just a chore list. */
+    leadsFromOutreach: function (outreachId) {
+      return db.leads.filter(function (l) { return l.outreachId === outreachId; });
+    },
+    leadsFromGroup: function (groupId) {
+      var ids = {};
+      API.outreachFor(groupId).forEach(function (o) { ids[o.id] = 1; });
+      return db.leads.filter(function (l) { return l.outreachId && ids[l.outreachId]; });
+    },
+    /* Rolled up per group or per channel over a window of days. */
+    outreachStats: function (opts) {
+      opts = opts || {};
+      var since = opts.days ? shift(-opts.days) : '';
+      var list = db.outreach.filter(function (o) {
+        if (since && o.date < since) return false;
+        if (opts.userId && o.userId !== opts.userId) return false;
+        if (opts.groupId && o.groupId !== opts.groupId) return false;
+        if (opts.channel && o.channel !== opts.channel) return false;
+        return true;
+      });
+
+      var leadIds = {};
+      list.forEach(function (o) {
+        API.leadsFromOutreach(o.id).forEach(function (l) { leadIds[l.id] = l; });
+      });
+      var leads = Object.keys(leadIds).map(function (k) { return leadIds[k]; });
+      var converted = leads.filter(function (l) { return !!l.convertedCustomerId; });
+
+      /* What the work actually earned: won deals on the accounts those
+         leads became. */
+      var wonValue = 0;
+      converted.forEach(function (l) {
+        API.opportunitiesFor(l.convertedCustomerId).forEach(function (o) {
+          if (API.oppStage(o.stage).won) wonValue += Number(o.amount) || 0;
+        });
+      });
+
+      return {
+        touches: list.length,
+        responses: list.reduce(function (s, o) { return s + (Number(o.responses) || 0); }, 0),
+        leads: leads.length,
+        converted: converted.length,
+        wonValue: wonValue,
+        /* Leads per touch — the number that says whether a group is
+           worth the time it costs. */
+        yield: list.length ? Math.round((leads.length / list.length) * 100) : 0
+      };
+    },
+
+    logOutreach: function (rec) {
+      var g = rec.groupId ? find('outreachGroups', rec.groupId) : null;
+      var o = {
+        id: uid('or'),
+        date: rec.date || today(),
+        /* Channel follows the group so the two can never disagree. */
+        channel: (g && g.channel) || rec.channel || 'other',
+        groupId: rec.groupId || '',
+        kind: rec.kind || 'comment',
+        summary: rec.summary || '',
+        url: rec.url || '',
+        responses: Number(rec.responses) || 0,
+        userId: meId || '',
+        createdAt: now()
+      };
+      db.outreach.push(o);
+      log('reached out', 'outreach', o.id,
+        (g ? g.name : API.outreachChannel(o.channel).label) + ' — ' + API.outreachKind(o.kind).label);
+      push('outreach', 'insert', o);
+      notify();
+      return o;
     },
 
     /* ── leads ──────────────────────────────────────────────────── */

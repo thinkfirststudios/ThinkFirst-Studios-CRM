@@ -102,6 +102,7 @@
         '</div>' +
 
         '<div class="stack">' +
+          outreachCard(S.outreachStreak(me.id)) +
           leadCard(leadQueue, S.leadsNeedingAttention(me.id)) +
           '<div class="card">' +
             '<div class="card-head"><span class="card-title">Billing Radar · 14 Days</span>' +
@@ -221,6 +222,39 @@
         '<div class="wo-side"><span class="badge ' +
           (t.cls.indexOf('b-') === 0 ? t.cls : 'b-grey') + '">' + U.esc(t.text) + '</span></div></div>';
     }).join('') + '</div>';
+  }
+
+  /* ── daily outreach ──────────────────────────────────────────────
+     A habit only holds if the prompt is somewhere you already look, so
+     the nudge lives on Home rather than only on its own screen. */
+  function outreachCard(s) {
+    if (!S.all('outreachGroups').length && !S.all('outreach').length) return '';
+
+    var due = S.groupsDue().slice(0, 3);
+    var pct = s.hasGoal ? Math.min(100, Math.round((s.todayCount / s.goal) * 100)) : 0;
+
+    return '<div class="card">' +
+      '<div class="card-head"><span class="card-title">Daily Outreach</span>' +
+        (s.days ? U.badge(s.days + '-day streak', s.todayMet ? 'b-green' : 'b-orange') : '') +
+        '<div class="page-actions"><a class="btn btn-sm" href="#/outreach">Open</a></div></div>' +
+      '<div class="card-body">' +
+        (s.hasGoal
+          ? '<div class="split" style="align-items:baseline;gap:8px">' +
+              '<span style="font-family:var(--font-display);font-size:24px;font-weight:700;line-height:1;color:' +
+                (s.todayMet ? 'var(--ok)' : 'var(--orange)') + '">' + s.todayCount + '</span>' +
+              '<span class="muted" style="font-size:13px">of ' + s.goal + ' today</span>' +
+            '</div>' +
+            '<div class="bar" style="margin-top:10px;height:7px"><i style="width:' + pct + '%' +
+              (s.todayMet ? ';background:linear-gradient(90deg,var(--ok),#5fd99a)' : '') + '"></i></div>'
+          : '<div class="split"><span class="strong">' + s.todayCount + '</span>' +
+            '<span class="muted" style="font-size:12.5px">logged today</span></div>') +
+        (s.todayMet
+          ? '<div class="hint" style="margin-top:10px">Done for today.</div>'
+          : due.length
+            ? '<div class="hint" style="margin-top:10px">Next up: ' +
+              U.esc(due.map(function (g) { return g.name; }).join(', ')) + '</div>'
+            : '<div class="hint" style="margin-top:10px">Every group is inside its posting cooldown.</div>') +
+      '</div></div>';
   }
 
   /* ── lead follow-ups ─────────────────────────────────────────────
