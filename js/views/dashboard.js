@@ -6,73 +6,70 @@
 
   root.Views.dashboard = function (el) {
     var me = S.me();
-    var customers = S.all('customers');
+    var accounts = S.accounts();
     var vendors = S.all('vendors');
     var wos = S.all('workOrders');
     var today = S.today();
 
-    var open = customers.filter(function (c) { return S.status(c.status).open; });
-    var won = customers.filter(function (c) { return S.status(c.status).won; });
-    var lost = customers.filter(function (c) { return c.status === 'lost'; });
-    var freeAccounts = customers.filter(S.isFree);
-    /* Pro bono and internal work is real work but not pipeline money. */
-    var pipelineValue = open.filter(S.isRevenue)
-      .reduce(function (s, c) { return s + (Number(c.value) || 0); }, 0);
-    var openPaying = open.filter(S.isRevenue).length;
-    var closeRate = (won.length + lost.length) ? Math.round(won.length / (won.length + lost.length) * 100) : 0;
+    var opp = S.oppStats();
+    var freeAccounts = accounts.filter(S.isFree);
 
-    var dueToday = wos.filter(function (w) { return w.status !== 'complete' && (w.scheduledDate === today || w.dueDate === today); });
     var overdue = wos.filter(S.isOverdue);
-    var myWork = wos.filter(function (w) { return w.assigneeId === me.id && w.status !== 'complete'; });
+    var dueToday = wos.filter(function (w) {
+      return w.status !== 'complete' && (w.scheduledDate === today || w.dueDate === today);
+    });
 
-    /* Recurring revenue: prefer what Stripe actually bills over the
-       hand-entered contract values, which drift the moment someone
-       forgets to update a record. Fall back to the manual figure when
-       Stripe is not connected or has no subscriptions yet. */
+    /* My activities and my deals — this screen answers "what do I do
+       now", so it leads with mine and only then shows the team's. */
+    var myTasks = S.openTasks({ assigneeId: me.id });
+    var myOverdueTasks = myTasks.filter(function (t) { return S.taskState(t).key === 'overdue'; });
+    var leadQueue = S.leadsNeedingAttention();
+
+    /* Deals with a close date inside two weeks — the ones that either
+       land or slip this fortnight. */
+    var closingSoon = S.openOpportunities().filter(function (o) {
+      var d = S.daysUntil(o.closeDate);
+      return d !== null && d <= 14;
+    }).sort(function (a, b) { return String(a.closeDate).localeCompare(String(b.closeDate)); });
+
     var stripeSubs = S.all('stripeSubscriptions');
     var mrrNow = S.recurringCents();
     var recurring = S.cents(mrrNow.cents);
     var recurringFoot = mrrNow.source === 'stripe'
       ? stripeSubs.filter(function (s) { return s.status === 'active'; }).length + ' active in Stripe'
-      : won.length + ' paying accounts · from CRM values';
+      : accounts.filter(S.isCustomerAccount).length + ' customer accounts · from contracts';
     var goal = S.goalProgress();
 
-    /* Money customers actually owe right now, straight from Stripe. */
     var openInvoices = S.all('stripeInvoices').filter(function (i) { return i.status === 'open'; });
     var outstanding = openInvoices.reduce(function (s, i) { return s + (Number(i.amountRemainingCents) || 0); }, 0);
     var lateInvoices = openInvoices.filter(function (i) { return i.dueDate && i.dueDate < today; });
 
-    var billingSoon = customers.concat(vendors)
+    var billingSoon = accounts.concat(vendors)
       .filter(function (r) { var d = S.daysUntil(r.billingDate); return d !== null && d <= 14; })
       .sort(function (a, b) { return (a.billingDate || '').localeCompare(b.billingDate || ''); });
-
-    var followUps = customers.filter(function (c) { return c.status === 'followup'; });
-
-    /* Leads that need a touch today. Kept separate from the customer
-       follow-up list because chasing a lead and chasing an account are
-       different jobs, and merging them hides whichever is smaller. */
-    var leadQueue = S.leadsNeedingAttention();
-    var myLeadQueue = S.leadsNeedingAttention(me.id);
 
     el.innerHTML =
       '<div class="page-head">' +
         '<div>' +
           '<div class="eyebrow">' + U.esc(new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })) + '</div>' +
           '<h1 class="page-title">Good to see you, ' + U.esc(me.name.split(' ')[0]) + '.</h1>' +
-          '<div class="page-sub">' + dueToday.length + ' work order' + (dueToday.length === 1 ? '' : 's') + ' on the board today' +
-            (overdue.length ? ' · <span style="color:var(--danger)">' + overdue.length + ' overdue</span>' : '') +
-            (leadQueue.length ? ' · ' + leadQueue.length + ' lead' + (leadQueue.length === 1 ? '' : 's') + ' to follow up' : '') + '</div>' +
+          '<div class="page-sub">' +
+            myTasks.length + ' open activit' + (myTasks.length === 1 ? 'y' : 'ies') + ' assigned to you' +
+            (myOverdueTasks.length ? ' · <span style="color:var(--danger)">' + myOverdueTasks.length + ' overdue</span>' : '') +
+            ' · ' + dueToday.length + ' work order' + (dueToday.length === 1 ? '' : 's') + ' on the board' +
+            (leadQueue.length ? ' · ' + leadQueue.length + ' lead' + (leadQueue.length === 1 ? '' : 's') + ' to follow up' : '') +
+          '</div>' +
         '</div>' +
         '<div class="page-actions">' +
-          '<a class="btn" href="#/tracker">Open Daily Tracker</a>' +
-          '<a class="btn btn-primary" href="#/customers?new=1">New Customer</a>' +
+          '<a class="btn" href="#/pipeline">Pipeline</a>' +
+          '<a class="btn" href="#/tracker">Daily Tracker</a>' +
+          '<a class="btn btn-primary" href="#/leads?new=1">New Lead</a>' +
         '</div>' +
       '</div>' +
 
       '<div class="grid g-4" style="margin-bottom:14px">' +
-        kpi('Open Pipeline', S.money(pipelineValue),
-            (pipelineValue ? openPaying + ' active opportunities'
-                           : openPaying + ' open · no contract values set') +
+        kpi('Open Pipeline', S.money(opp.openValue),
+            opp.open + ' deal' + (opp.open === 1 ? '' : 's') + ' · ' + S.money(opp.weighted) + ' weighted' +
             (freeAccounts.length ? ' · ' + freeAccounts.length + ' free' : ''), 'accent') +
         kpi('Recurring / mo', recurring, recurringFoot, 'ok') +
         (outstanding || lateInvoices.length
@@ -80,8 +77,10 @@
                 lateInvoices.length ? lateInvoices.length + ' past due in Stripe'
                                     : openInvoices.length + ' invoices open',
                 lateInvoices.length ? 'danger' : '')
-          : kpi('Close Rate', closeRate + '%', won.length + ' won · ' + lost.length + ' lost', '')) +
-        kpi('Overdue Work', String(overdue.length), overdue.length ? 'Needs attention today' : 'All clear', overdue.length ? 'danger' : 'ok') +
+          : kpi('Win Rate', opp.winRate + '%', opp.won + ' won · ' + opp.lost + ' lost', '')) +
+        kpi('Overdue Work', String(overdue.length),
+            overdue.length ? 'Needs attention today' : 'All clear',
+            overdue.length ? 'danger' : 'ok') +
       '</div>' +
 
       goalCard(goal) +
@@ -89,49 +88,36 @@
       '<div class="grid" style="grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);align-items:start">' +
 
         '<div class="stack">' +
-          /* My work */
+          myActivityCard(myTasks) +
+          closingCard(closingSoon, opp) +
           '<div class="card">' +
             '<div class="card-head"><span class="card-title">My Open Work Orders</span>' +
               '<div class="page-actions"><a class="btn btn-sm" href="#/workorders">View all</a></div></div>' +
-            (myWork.length ? myWork.slice(0, 6).map(woRow).join('') :
-              '<div class="empty" style="padding:30px"><div>Nothing assigned to you. Nice.</div></div>') +
-          '</div>' +
-
-          /* Follow ups */
-          '<div class="card">' +
-            '<div class="card-head"><span class="card-title">Follow Ups Waiting On You</span>' +
-              '<span class="kcol-count">' + followUps.length + '</span>' +
-              '<div class="page-actions"><a class="btn btn-sm" href="#/pipeline">Pipeline</a></div></div>' +
-            (followUps.length ? U.table([
-              { key: 'name', label: 'Customer', render: function (c) { return '<span class="link">' + U.esc(c.name) + '</span>'; } },
-              { key: 'owner', label: 'Owner', render: function (c) { return U.userCell(c.ownerId); } },
-              { key: 'value', label: 'Value', cls: 'right', render: function (c) { return '<span class="mono">' + S.money(c.value) + '</span>'; } },
-              { key: 'billing', label: 'Next Billing', render: function (c) { var t = U.dueTone(c.billingDate); return '<span class="' + (t.cls.indexOf('b-') === 0 ? 'badge ' + t.cls : t.cls) + '">' + U.esc(t.text) + '</span>'; } }
-            ], followUps, { rowLink: true }) : '<div class="empty" style="padding:30px"><div>No follow ups queued.</div></div>') +
+            (function () {
+              var mine = wos.filter(function (w) { return w.assigneeId === me.id && w.status !== 'complete'; });
+              return mine.length ? mine.slice(0, 5).map(woRow).join('')
+                : '<div class="empty" style="padding:30px"><div>Nothing assigned to you. Nice.</div></div>';
+            })() +
           '</div>' +
         '</div>' +
 
         '<div class="stack">' +
-          /* Lead follow-ups */
-          leadCard(leadQueue, myLeadQueue) +
-
-          /* Billing radar */
+          leadCard(leadQueue, S.leadsNeedingAttention(me.id)) +
           '<div class="card">' +
             '<div class="card-head"><span class="card-title">Billing Radar · 14 Days</span>' +
               '<div class="page-actions"><a class="btn btn-sm" href="#/billing">All</a></div></div>' +
-            (billingSoon.length ? '<div>' + billingSoon.slice(0, 7).map(function (r) {
+            (billingSoon.length ? '<div>' + billingSoon.slice(0, 6).map(function (r) {
               var isVendor = r.vendorType !== undefined;
               var t = U.dueTone(r.billingDate);
               return '<div class="wo-row"><div class="wo-main">' +
                 '<div class="wo-title">' + U.esc(r.name) + '</div>' +
-                '<div class="wo-sub">' + U.badge(isVendor ? 'Vendor' : 'Customer', isVendor ? 'b-violet' : 'b-blue') +
+                '<div class="wo-sub">' + U.badge(isVendor ? 'Vendor' : 'Account', isVendor ? 'b-violet' : 'b-blue') +
                   '<span>' + U.esc(r.billingCycle || '—') + '</span>' +
                   '<span class="mono">' + S.money(r.value) + '</span></div>' +
                 '</div><div class="wo-side"><span class="badge ' + (t.cls.indexOf('b-') === 0 ? t.cls : 'b-grey') + '">' + U.esc(t.text) + '</span></div></div>';
             }).join('') + '</div>' : '<div class="empty" style="padding:30px"><div>Nothing bills in the next two weeks.</div></div>') +
           '</div>' +
 
-          /* Team activity */
           '<div class="card">' +
             '<div class="card-head"><span class="card-title">Team Activity</span></div>' +
             '<div class="card-body">' + U.timeline(S.all('activity'), 12) + '</div>' +
@@ -139,15 +125,25 @@
         '</div>' +
       '</div>';
 
-    /* row clicks */
-    el.querySelectorAll('tr.row-link').forEach(function (tr, i) {
-      tr.onclick = function () { location.hash = '#/customers/' + followUps[i].id; };
-    });
     el.querySelectorAll('[data-wo]').forEach(function (n) {
       n.onclick = function () { location.hash = '#/workorders/' + n.dataset.wo; };
     });
     el.querySelectorAll('[data-lead]').forEach(function (n) {
       n.onclick = function () { location.hash = '#/leads/' + n.dataset.lead; };
+    });
+    el.querySelectorAll('[data-opp]').forEach(function (n) {
+      n.onclick = function () { location.hash = '#/opportunities/' + n.dataset.opp; };
+    });
+    el.querySelectorAll('[data-tasklink]').forEach(function (n) {
+      n.onclick = function () { location.hash = n.dataset.tasklink; };
+    });
+    el.querySelectorAll('[data-donetask]').forEach(function (n) {
+      n.onclick = function (e) {
+        e.stopPropagation();
+        S.completeTask(n.dataset.donetask, true);
+        U.toast('Marked complete.', 'ok');
+        root.render();
+      };
     });
 
     function woRow(w) {
@@ -156,7 +152,7 @@
       return '<div class="wo-row" data-wo="' + U.esc(w.id) + '" style="cursor:pointer">' +
         '<span class="prio-flag" style="background:' + p.color + '"></span>' +
         '<div class="wo-main"><div class="wo-title">' + U.esc(w.title) + '</div>' +
-          '<div class="wo-sub">' + U.esc(S.recordName(w.entityType, w.entityId)) +
+          '<div class="wo-sub">' + U.esc(S.entityLabel(w.entityType, w.entityId)) +
             '<span>·</span><span>' + U.esc(S.service(w.serviceId).name) + '</span></div></div>' +
         '<div class="wo-side">' + U.woBadge(w.status) +
           '<span class="badge ' + (t.cls.indexOf('b-') === 0 ? t.cls : 'b-grey') + '">' + U.esc(t.text) + '</span></div></div>';
@@ -167,6 +163,64 @@
     return '<div class="kpi ' + mod + '"><div class="kpi-label">' + U.esc(label) + '</div>' +
       '<div class="kpi-value">' + U.esc(value) + '</div>' +
       '<div class="kpi-foot">' + U.esc(foot) + '</div></div>';
+  }
+
+  /* ── my activities ─────────────────────────────────────────────
+     Tasks, calls and meetings assigned to me, most urgent first, with
+     a one-click tick so clearing the list does not need a page change. */
+  function myActivityCard(list) {
+    var head = '<div class="card"><div class="card-head"><span class="card-title">My Activities</span>' +
+      (list.length ? '<span class="kcol-count">' + list.length + '</span>' : '') +
+      '<div class="page-actions"><a class="btn btn-sm" href="#/activities">All activities</a></div></div>';
+
+    if (!list.length) {
+      return head + '<div class="empty" style="padding:30px"><div>Nothing on your list. ' +
+        'Log a call or schedule a task from any record.</div></div></div>';
+    }
+
+    return head + list.slice(0, 6).map(function (t) {
+      var s = S.taskState(t);
+      var kind = S.taskKind(t.kind);
+      return '<div class="wo-row">' +
+        '<span class="act-check" data-donetask="' + U.esc(t.id) + '" title="Mark complete"></span>' +
+        '<div class="wo-main" data-tasklink="' + U.esc(S.entityHref(t.entityType, t.entityId)) + '" style="cursor:pointer">' +
+          '<div class="wo-title">' + U.esc(t.subject) + '</div>' +
+          '<div class="wo-sub">' + U.badge(kind.label, kind.tone) +
+            '<span>' + U.esc(S.entityLabel(t.entityType, t.entityId)) + '</span>' +
+            (t.startTime ? '<span>' + U.esc(t.startTime) + '</span>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="wo-side">' + U.badge(s.label, s.tone) + '</div></div>';
+    }).join('') +
+    (list.length > 6
+      ? '<div class="card-body"><a class="link" href="#/activities">' + (list.length - 6) + ' more →</a></div>'
+      : '') + '</div>';
+  }
+
+  /* ── deals closing soon ────────────────────────────────────────── */
+  function closingCard(list, stats) {
+    if (!S.all('opportunities').length) return '';
+    var head = '<div class="card"><div class="card-head"><span class="card-title">Closing Within 14 Days</span>' +
+      (list.length ? '<span class="kcol-count">' + list.length + '</span>' : '') +
+      '<div class="page-actions"><a class="btn btn-sm" href="#/pipeline">Pipeline</a></div></div>';
+
+    if (!list.length) {
+      return head + '<div class="empty" style="padding:30px"><div>' +
+        (stats.open ? 'No deals are due to close in the next two weeks.' : 'No open deals.') +
+        '</div></div></div>';
+    }
+
+    return head + list.slice(0, 5).map(function (o) {
+      var stage = S.oppStage(o.stage);
+      var t = U.dueTone(o.closeDate);
+      return '<div class="wo-row" data-opp="' + U.esc(o.id) + '" style="cursor:pointer">' +
+        '<div class="wo-main"><div class="wo-title">' + U.esc(o.name) + '</div>' +
+          '<div class="wo-sub">' + U.badge(stage.label, stage.tone) +
+            '<span>' + U.esc(S.accountName(o.accountId)) + '</span>' +
+            '<span class="mono">' + S.money(o.amount) + '</span></div></div>' +
+        '<div class="wo-side"><span class="badge ' +
+          (t.cls.indexOf('b-') === 0 ? t.cls : 'b-grey') + '">' + U.esc(t.text) + '</span></div></div>';
+    }).join('') + '</div>';
   }
 
   /* ── lead follow-ups ─────────────────────────────────────────────
@@ -222,7 +276,10 @@
     /* How many more accounts at the current average would close the gap —
        turns an abstract gap into a concrete number of sales. */
     var subs = S.all('stripeSubscriptions').filter(function (s) { return s.status === 'active'; });
-    var avg = subs.length ? g.current / subs.length : 0;
+    var payers = subs.length || S.accounts().filter(function (a) {
+      return S.isCustomerAccount(a) && S.isRevenue(a) && Number(a.value);
+    }).length;
+    var avg = payers ? g.current / payers : 0;
     var needed = (!g.hit && avg > 0) ? Math.ceil(g.remaining / avg) : 0;
 
     return '<div class="card" style="margin-bottom:14px">' +
@@ -230,7 +287,7 @@
         '<span class="card-title">Monthly Recurring Revenue Goal</span>' +
         (g.hit ? U.badge('Goal reached', 'b-green') : U.badge(g.pct + '%', 'b-orange')) +
         '<div class="page-actions"><span class="hint">' +
-          (g.source === 'stripe' ? 'live from Stripe' : 'from CRM contract values') +
+          (g.source === 'stripe' ? 'live from Stripe' : 'from account contract values') +
         '</span></div>' +
       '</div>' +
       '<div class="card-body">' +

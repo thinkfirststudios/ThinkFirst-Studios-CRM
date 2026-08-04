@@ -131,7 +131,35 @@
   function detail(el, id) {
     root.RecordView.render(el, {
       coll: 'vendors', type: 'vendor', id: id, icon: ICON,
-      backHref: '#/vendors', backLabel: 'Vendors',
+      backHref: '#/vendors', backLabel: 'Vendors', objectLabel: 'Vendor',
+
+      badges: function (v) {
+        return U.statusBadge(v.status) +
+          U.badge(S.vendorType(v.vendorType).label, 'b-violet', true) +
+          U.tagChips(v.tags) +
+          (v.terms ? '<span class="chip">' + U.esc(v.terms) + '</span>' : '') +
+          (v.website ? '<a class="chip" href="https://' + U.esc(v.website) + '" target="_blank" rel="noopener">' + U.esc(v.website) + '</a>' : '') +
+          (v.address ? '<span>' + U.esc(v.address) + '</span>' : '');
+      },
+
+      highlights: function (v) {
+        var t = U.dueTone(v.billingDate);
+        return [
+          { label: 'Primary Contact', value: U.esc(v.contactName || '—') },
+          { label: 'Phone', value: v.phone ? '<a href="tel:' + U.esc(v.phone) + '">' + U.esc(v.phone) + '</a>' : '—' },
+          { label: 'Email', value: v.email
+              ? '<a href="mailto:' + U.esc(v.email) + '" style="color:var(--orange)">' + U.esc(v.email) + '</a>' : '—' },
+          { label: 'Next Payment', value: v.billingDate
+              ? U.fmtDate(v.billingDate) + ' <span class="badge ' +
+                (t.cls.indexOf('b-') === 0 ? t.cls : 'b-grey') + '" style="margin-left:6px">' + U.esc(t.text) + '</span>'
+              : '—' },
+          { label: 'Spend', value: '<span class="mono">' + S.money(v.value) + '</span> <span class="muted">/ ' +
+              U.esc(v.billingCycle || '—') + '</span>' },
+          { label: 'Terms', value: U.esc(v.terms || '—') },
+          { label: 'Owner', value: U.userCell(v.ownerId) }
+        ];
+      },
+
       detailRows: function (v) {
         return row('Vendor', U.esc(v.name)) +
           row('Vendor Type', U.badge(S.vendorType(v.vendorType).label, 'b-violet')) +

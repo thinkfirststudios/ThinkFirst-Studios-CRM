@@ -4,6 +4,18 @@
   var S = root.Store, U = root.UI;
   root.Views = root.Views || {};
 
+  /* Work can hang off an account, a deal or a vendor. Deals matter here:
+     delivery is usually scoped to the thing that was sold, and pinning
+     it to the account instead loses which sale it belonged to. */
+  var ENTITY_KINDS = [
+    { id: 'customer',    label: 'Account',     list: function () { return S.accounts(); },
+      name: function (r) { return r.name; } },
+    { id: 'opportunity', label: 'Opportunity', list: function () { return S.all('opportunities'); },
+      name: function (r) { return r.name + ' · ' + S.accountName(r.accountId); } },
+    { id: 'vendor',      label: 'Vendor',      list: function () { return S.all('vendors'); },
+      name: function (r) { return r.name; } }
+  ];
+
   var st = { q: '', status: 'open', assignee: '', scope: 'all', sortKey: 'due', sortDir: 1 };
 
   /* Column set reused by the record page's Work Orders tab. */
@@ -122,7 +134,7 @@
         '<div class="record-icon"><svg viewBox="0 0 24 24" class="ico"><path d="M20 7h-3V5a2 2 0 00-2-2H9a2 2 0 00-2 2v2H4a1 1 0 00-1 1v11a1 1 0 001 1h16a1 1 0 001-1V8a1 1 0 00-1-1zM9 7V5h6v2"/></svg></div>' +
         '<div style="min-width:0"><h1 class="record-name">' + U.esc(w.title) + '</h1>' +
           '<div class="record-meta">' + U.woBadge(w.status) + U.badge(p.label, p.tone) +
-            '<a class="link" href="#/' + (w.entityType === 'vendor' ? 'vendors' : 'customers') + '/' + U.esc(w.entityId) + '">' +
+            '<a class="link" href="' + U.esc(S.entityHref(w.entityType, w.entityId)) + '">' +
               U.esc(S.recordName(w.entityType, w.entityId)) + '</a>' +
             '<span class="chip">' + U.esc(S.service(w.serviceId).name) + '</span></div></div>' +
         '<div class="page-actions">' +
@@ -201,9 +213,10 @@
       body: '<div class="form-grid">' +
         U.field('Title *', '<input class="input" name="title" value="' + U.esc(w.title || '') + '" placeholder="What needs doing?">', true) +
         U.field('Related To', '<select class="input" name="entityType">' +
-          '<option value="customer"' + (w.entityType === 'customer' ? ' selected' : '') + '>Customer</option>' +
-          '<option value="vendor"' + (w.entityType === 'vendor' ? ' selected' : '') + '>Vendor</option></select>') +
-        U.field('Account *', '<select class="input" name="entityId" id="entitySel"></select>') +
+          ENTITY_KINDS.map(function (k) {
+            return '<option value="' + k.id + '"' + (w.entityType === k.id ? ' selected' : '') + '>' + k.label + '</option>';
+          }).join('') + '</select>') +
+        U.field('Record *', '<select class="input" name="entityId" id="entitySel"></select>') +
         U.field('Service', '<select class="input" name="serviceId"><option value="">—</option>' +
           U.options(S.all('services'), w.serviceId, 'id', 'name') + '</select>') +
         U.field('Assignee', '<select class="input" name="assigneeId">' + U.options(S.activeUsers(), w.assigneeId, 'id', 'name') + '</select>') +
@@ -217,7 +230,7 @@
       onOk: function (b) {
         var v = U.values(b);
         if (!v.title) { U.toast('Give the work order a title.', 'err'); return false; }
-        if (!v.entityId) { U.toast('Pick an account.', 'err'); return false; }
+        if (!v.entityId) { U.toast('Pick the record this work belongs to.', 'err'); return false; }
         v.estHours = Number(v.estHours) || 0;
         if (isNew) { S.insert('workOrders', v, 'w', v.title); U.toast('Work order created.', 'ok'); }
         else { S.update('workOrders', w.id, v, v.title); U.toast('Saved.', 'ok'); }
@@ -225,12 +238,17 @@
       }
     });
 
-    /* the Account dropdown follows the Related To toggle */
+    /* the record dropdown follows the Related To toggle */
     var typeSel = box.querySelector('[name=entityType]');
     var entSel = box.querySelector('#entitySel');
     function fillAccounts() {
-      var list = typeSel.value === 'vendor' ? S.all('vendors') : S.all('customers');
-      entSel.innerHTML = '<option value="">— select —</option>' + U.options(list, w.entityId, 'id', 'name');
+      var kind = ENTITY_KINDS.filter(function (k) { return k.id === typeSel.value; })[0] || ENTITY_KINDS[0];
+      var list = kind.list();
+      entSel.innerHTML = '<option value="">— select —</option>' +
+        list.map(function (r) {
+          return '<option value="' + U.esc(r.id) + '"' + (r.id === w.entityId ? ' selected' : '') + '>' +
+            U.esc(kind.name(r)) + '</option>';
+        }).join('');
     }
     typeSel.onchange = fillAccounts;
     fillAccounts();

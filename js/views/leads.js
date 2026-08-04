@@ -244,7 +244,7 @@
           var x = S.leadStatus(l.leadStatus);
           return U.badge(x.label, x.tone) +
             (l.convertedCustomerId
-              ? '<div style="margin-top:3px"><a class="link" style="font-size:11px" href="#/customers/' +
+              ? '<div style="margin-top:3px"><a class="link" style="font-size:11px" href="#/accounts/' +
                 U.esc(l.convertedCustomerId) + '">view account →</a></div>'
               : '');
         } },
@@ -461,11 +461,11 @@
     return '<div class="card" style="margin-bottom:12px;border-color:rgba(47,191,113,.4)">' +
       '<div class="card-body split">' + U.badge('Converted', 'b-green') +
         '<span>This lead became ' +
-          (c ? '<a class="link" href="#/customers/' + U.esc(c.id) + '">' + U.esc(c.name) + '</a>'
+          (c ? '<a class="link" href="#/accounts/' + U.esc(c.id) + '">' + U.esc(c.name) + '</a>'
              : 'a customer that has since been deleted') +
           (l.convertedAt ? ' on ' + U.esc(U.fmtDate(l.convertedAt)) : '') + '. ' +
           'Its notes moved with it.</span>' +
-        (c ? '<a class="btn btn-sm" href="#/customers/' + U.esc(c.id) + '" style="margin-left:auto">Open account</a>' : '') +
+        (c ? '<a class="btn btn-sm" href="#/accounts/' + U.esc(c.id) + '" style="margin-left:auto">Open account</a>' : '') +
       '</div></div>';
   }
 
@@ -590,38 +590,90 @@
     });
   }
 
-  /* ── convert ─────────────────────────────────────────────────── */
+  /* ── convert ─────────────────────────────────────────────────────
+     Salesforce's conversion: one lead becomes an Account, a Contact and
+     an Opportunity. Each is optional to a degree — the lead may turn
+     out to be a second person at a company already on the books, and
+     not every lead worth keeping is a live deal today. */
   function openConvert(l, done) {
+    var accounts = S.accounts().slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+    /* If a company with this name is already an account, offer it —
+       converting into a duplicate is the classic way to end up with
+       "Acme Roofing" twice and half the history on each. */
+    var dupe = accounts.filter(function (a) {
+      return a.name.toLowerCase().replace(/[^a-z0-9]/g, '') ===
+             String(l.name).toLowerCase().replace(/[^a-z0-9]/g, '');
+    })[0];
+
     U.modal({
       title: 'Convert ' + l.name,
       wide: true,
-      okText: 'Convert to Customer',
+      okText: 'Convert Lead',
       body: '<p style="margin:0 0 14px;color:var(--text-2);font-size:13px">' +
-          'This creates a customer record and moves this lead\'s notes onto it. ' +
-          'The lead stays as the record of where the account came from. It can only be done once.</p>' +
+          'This creates an <strong>account</strong>, a <strong>contact</strong> and an ' +
+          '<strong>opportunity</strong>, and moves this lead\'s notes and open activities across. ' +
+          'The lead stays as the record of where the business came from. It can only be done once.</p>' +
+
+        (dupe ? '<div class="card" style="margin-bottom:14px;border-color:rgba(232,185,49,.45)">' +
+          '<div class="card-body split">' + U.badge('Possible duplicate', 'b-yellow') +
+          '<span style="font-size:12.5px">An account called <strong>' + U.esc(dupe.name) +
+          '</strong> already exists. Attach to it below rather than creating a second one.</span>' +
+          '</div></div>' : '') +
+
         '<div class="form-grid">' +
-        U.field('Account Name', '<input class="input" name="name" value="' + U.esc(l.name) + '">') +
-        U.field('Pipeline Status', '<select class="input" name="status">' + U.options(S.STATUSES(), 'new') + '</select>') +
+        U.field('Account',
+          '<select class="input" name="accountId">' +
+            '<option value="">— create a new account —</option>' +
+            accounts.map(function (a) {
+              return '<option value="' + U.esc(a.id) + '"' + (dupe && a.id === dupe.id ? ' selected' : '') + '>' +
+                U.esc(a.name) + '</option>';
+            }).join('') +
+          '</select>' +
+          '<div class="hint">Pick an existing account if this person works somewhere you already deal with.</div>') +
+        U.field('New Account Name', '<input class="input" name="accountName" value="' + U.esc(l.name) + '">') +
+        U.field('Contact Name',
+          '<input class="input" name="contactName" value="' + U.esc(l.contactName || '') + '">' +
+          '<div class="hint">Leave blank to skip creating a contact.</div>') +
+        U.field('Role in Deal',
+          '<select class="input" name="contactRole"><option value="">—</option>' +
+            S.CONTACT_ROLES.map(function (r) { return '<option value="' + U.esc(r) + '">' + U.esc(r) + '</option>'; }).join('') +
+          '</select>') +
+        U.field('Owner', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), l.ownerId, 'id', 'name') + '</select>') +
         U.field('Billing Type',
           '<select class="input" name="billingType">' + U.options(S.BILLING_TYPES, 'paid') + '</select>' +
-          '<div class="hint">Pick Pro Bono if you are doing this one for free — it stays out of revenue.</div>') +
-        U.field('Account Owner', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), l.ownerId, 'id', 'name') + '</select>') +
-        U.field('Contract Value ($)', '<input class="input" type="number" min="0" step="50" name="value" value="' + U.esc(l.estValue || 0) + '">') +
-        U.field('Billing Cycle', '<select class="input" name="billingCycle">' + U.options(S.BILLING_CYCLES, 'Monthly') + '</select>') +
-        U.field('First Billing Date', '<input class="input" type="date" name="billingDate" value="">') +
+          '<div class="hint">Pro Bono keeps the account out of revenue.</div>') +
+
+        '<div class="field span-2"><label class="check" style="width:fit-content">' +
+          '<input type="checkbox" name="createOpportunity" checked>Create an opportunity</label></div>' +
+        U.field('Opportunity Name',
+          '<input class="input" name="oppName" value="' + U.esc(l.name + ' — New Business') + '">') +
+        U.field('Type',
+          '<select class="input" name="oppType">' +
+            S.OPP_TYPES.map(function (t) { return '<option value="' + U.esc(t) + '">' + U.esc(t) + '</option>'; }).join('') +
+          '</select>') +
+        U.field('Stage', '<select class="input" name="stage">' +
+          U.options(S.OPP_STAGES.filter(function (s) { return s.open; }), 'qualification') + '</select>') +
+        U.field('Amount ($)', '<input class="input" type="number" min="0" step="50" name="amount" value="' + U.esc(l.estValue || 0) + '">') +
+        U.field('Expected Close', '<input class="input" type="date" name="closeDate" value="' + U.esc(S.shift(30)) + '">') +
         '<div class="field span-2"><label>Services</label>' + U.serviceChecks('services', []) + '</div>' +
       '</div>',
       onOk: function (box) {
         var v = U.values(box);
-        var created;
+        v.createOpportunity = Array.isArray(v.createOpportunity)
+          ? v.createOpportunity.length > 0 : !!v.createOpportunity;
+        var out;
         try {
-          created = S.convertLead(l.id, v);
+          out = S.convertLead(l.id, v);
         } catch (err) {
           U.toast(err.message, 'err');
           return false;
         }
-        U.toast(created.name + ' is now a customer.', 'ok');
-        location.hash = '#/customers/' + created.id;
+        U.toast(out.account.name + ' converted' +
+          (out.opportunity ? ' — opportunity created.' : '.'), 'ok');
+        /* Land on the deal if there is one; that is what gets worked next. */
+        location.hash = out.opportunity
+          ? '#/opportunities/' + out.opportunity.id
+          : '#/accounts/' + out.account.id;
         done();
       }
     });

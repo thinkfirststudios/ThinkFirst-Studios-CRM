@@ -29,6 +29,16 @@
   function initials(name) {
     return (name || '?').split(/\s+/).slice(0, 2).map(function (p) { return p[0]; }).join('').toUpperCase();
   }
+  /* "Dan Whitaker" → {first:'Dan', last:'Whitaker'}. With no space at all
+     the whole string becomes the last name, since that is the half every
+     CRM treats as required. Either way first + ' ' + last round-trips to
+     what was typed, so the split never mangles a name it cannot parse. */
+  function splitName(full) {
+    var s = String(full || '').trim();
+    var i = s.indexOf(' ');
+    if (i < 0) return { first: '', last: s };
+    return { first: s.slice(0, i), last: s.slice(i + 1).trim() };
+  }
 
   /* ── reference defaults (also seeded server-side by schema.sql) ── */
   var DEFAULT_STATUSES = [
@@ -124,10 +134,64 @@
     return { key: base.key, label: base.label, tone: base.tone, rank: base.rank, days: days };
   }
 
+  /* ── Accounts, Contacts, Opportunities ──────────────────────────
+     The Salesforce split: the company, the people at it, and the deals.
+     One record per company was the original design and it could not
+     hold a second contact or a second deal — a repeat client had to
+     overwrite the history of the first sale to record the next one.
+
+     NAMING: the Account object is still stored under its original name
+     (`customers` table, `customers` collection, entityType 'customer').
+     Renaming it would have meant rewriting entityType on every existing
+     note and work order, and re-pointing the Stripe mirror and its Edge
+     Function — a cascade of changes to live data for a cosmetic gain.
+     Everything the user sees says "Account"; only the storage keeps the
+     older word. S.ACCOUNTS / S.ACCOUNT_TYPE below are the seam. */
+  var ACCOUNT_TYPES = [
+    { id: 'prospect', label: 'Prospect',        tone: 'b-blue',   order: 1,
+      hint: 'No closed deal yet.' },
+    { id: 'customer', label: 'Customer',        tone: 'b-green',  order: 2,
+      hint: 'Has won business with us.' },
+    { id: 'partner',  label: 'Partner',         tone: 'b-violet', order: 3,
+      hint: 'We work alongside them rather than sell to them.' },
+    { id: 'former',   label: 'Former Customer', tone: 'b-grey',   order: 4,
+      hint: 'Was a customer, no longer active.' }
+  ];
+
+  /* Deal stages. Probability drives the weighted forecast, which is the
+     only number that answers "what will we actually close". */
+  var OPP_STAGES = [
+    { id: 'prospecting',   label: 'Prospecting',   tone: 'b-grey',   order: 1, probability: 10,  open: true,  won: false },
+    { id: 'qualification', label: 'Qualification', tone: 'b-blue',   order: 2, probability: 25,  open: true,  won: false },
+    { id: 'proposal',      label: 'Proposal',      tone: 'b-orange', order: 3, probability: 50,  open: true,  won: false },
+    { id: 'negotiation',   label: 'Negotiation',   tone: 'b-yellow', order: 4, probability: 75,  open: true,  won: false },
+    { id: 'closedwon',     label: 'Closed Won',    tone: 'b-green',  order: 5, probability: 100, open: false, won: true  },
+    { id: 'closedlost',    label: 'Closed Lost',   tone: 'b-red',    order: 6, probability: 0,   open: false, won: false }
+  ];
+
+  var OPP_TYPES = ['New Business', 'Renewal', 'Upsell / Expansion', 'Replacement'];
+
+  var CONTACT_ROLES = ['Decision Maker', 'Economic Buyer', 'Technical Buyer',
+    'Influencer', 'Champion', 'Billing Contact', 'Day-to-Day Contact'];
+
+  /* ── Activities ─────────────────────────────────────────────────
+     Task, Event and logged Call, as in Salesforce. One table: they
+     share every field that matters and differ only in whether they
+     have a time and whether they start life already done. */
+  var TASK_KINDS = [
+    { id: 'task',  label: 'Task',  tone: 'b-blue',   verb: 'New Task',
+      hint: 'Something to do by a date.' },
+    { id: 'call',  label: 'Call',  tone: 'b-green',  verb: 'Log a Call',
+      hint: 'A call that already happened — logged as done.' },
+    { id: 'event', label: 'Event', tone: 'b-violet', verb: 'New Event',
+      hint: 'A meeting at a time.' }
+  ];
+
   var BILLING_CYCLES = ['Monthly', 'Quarterly', 'Annual', 'One-Time', 'Retainer'];
   var ROLES = ['admin', 'manager', 'rep'];
 
-  var EMPTY_COLLS = ['users', 'services', 'customers', 'vendors', 'leads', 'workOrders',
+  var EMPTY_COLLS = ['users', 'services', 'customers', 'contacts', 'opportunities',
+    'tasks', 'vendors', 'leads', 'workOrders',
     'notes', 'timeEntries', 'dailyLogs', 'activity', 'statuses', 'vendorTypes',
     'stripeInvoices', 'stripeSubscriptions', 'stripeSyncState'];
 
@@ -185,6 +249,93 @@
       { id: 'c_8', name: 'Northline HVAC',        contactName: 'Greg Tomlin',   email: 'greg@northlinehvac.com', phone: '(623) 555-0126',
         status: 'active',   ownerId: 'u_jordan', services: ['s_ads', 's_seo', 's_care'],  billingDate: shift(6),  billingCycle: 'Monthly',  value: 2950,
         industry: 'Home Services', source: 'Referral', address: 'Peoria, AZ', website: 'northlinehvac.com', createdAt: now() }
+    ];
+
+    /* An account is a Prospect until it has won business. */
+    customers.forEach(function (c) {
+      c.accountType = c.status === 'active' ? 'customer' : c.status === 'lost' ? 'former' : 'prospect';
+    });
+
+    /* Several accounts carry more than one person, which is the whole
+       point of splitting contacts out of the account record. */
+    var contacts = [
+      { id: 'ct_1', accountId: 'c_1', firstName: 'Marcy',  lastName: 'Delgado', title: 'Managing Broker',
+        email: 'marcy@sonoranridge.com', phone: '(602) 555-0188', role: 'Decision Maker', isPrimary: true,  ownerId: 'u_sam',    tags: [], createdAt: now() },
+      { id: 'ct_2', accountId: 'c_1', firstName: 'Rhonda', lastName: 'Pike',    title: 'Office Manager',
+        email: 'ap@sonoranridge.com',    phone: '(602) 555-0189', role: 'Billing Contact', isPrimary: false, ownerId: 'u_sam',    tags: [], createdAt: now() },
+      { id: 'ct_3', accountId: 'c_2', firstName: 'Dan',    lastName: 'Whitaker', title: 'Owner',
+        email: 'dan@copperlineroofing.com', phone: '(480) 555-0142', role: 'Decision Maker', isPrimary: true, ownerId: 'u_jordan', tags: [], createdAt: now() },
+      { id: 'ct_4', accountId: 'c_2', firstName: 'Elena',  lastName: 'Moss',    title: 'Operations Lead',
+        email: 'elena@copperlineroofing.com', phone: '(480) 555-0143', role: 'Day-to-Day Contact', isPrimary: false, ownerId: 'u_jordan', tags: [], createdAt: now() },
+      { id: 'ct_5', accountId: 'c_3', firstName: 'Priya',  lastName: 'Nair',    title: 'Founder',
+        email: 'priya@velacoffee.com',  phone: '(602) 555-0119', role: 'Decision Maker', isPrimary: true,  ownerId: 'u_sam',    tags: [], createdAt: now() },
+      { id: 'ct_6', accountId: 'c_4', firstName: 'Ted',    lastName: 'Halstead', title: 'Managing Partner',
+        email: 'ted@halsteadlegal.com', phone: '(623) 555-0177', role: 'Economic Buyer', isPrimary: true,  ownerId: 'u_jordan', tags: [], createdAt: now() },
+      { id: 'ct_7', accountId: 'c_6', firstName: 'Marcus', lastName: 'Boone',   title: 'Owner',
+        email: 'marcus@ironvale.fit',   phone: '(602) 555-0154', role: 'Decision Maker', isPrimary: true,  ownerId: 'u_sam',    tags: [], createdAt: now() },
+      { id: 'ct_8', accountId: 'c_7', firstName: 'Nina',   lastName: 'Alvarez', title: 'Creative Director',
+        email: 'nina@cactusbloom.co',   phone: '(480) 555-0135', role: 'Champion', isPrimary: true,  ownerId: 'u_jordan', tags: [], createdAt: now() },
+      { id: 'ct_9', accountId: 'c_8', firstName: 'Greg',   lastName: 'Tomlin',  title: 'General Manager',
+        email: 'greg@northlinehvac.com', phone: '(623) 555-0126', role: 'Decision Maker', isPrimary: true, ownerId: 'u_jordan', tags: [], createdAt: now() },
+      { id: 'ct_10', accountId: 'c_5', firstName: 'Dr. Ana', lastName: 'Ruiz',  title: 'Practice Owner',
+        email: 'ana@brightpathdental.com', phone: '(480) 555-0163', role: 'Decision Maker', isPrimary: true, ownerId: 'u_sam', tags: [], createdAt: now() }
+    ];
+
+    /* c_2 has two: the original sale and a live upsell. That pair is
+       exactly what the old one-deal-per-customer model could not hold. */
+    var opportunities = [
+      { id: 'op_1', name: 'Sonoran Ridge — Website + SEO',     accountId: 'c_1', contactId: 'ct_1', stage: 'proposal',
+        amount: 7700, closeDate: shift(12), ownerId: 'u_sam',    type: 'New Business', leadSource: 'Referral',
+        services: ['s_web', 's_seo'], nextStep: 'Send revised scope with the Sept 15 date locked.', createdAt: now() },
+      { id: 'op_2', name: 'Copperline — Ads + Care Plan',      accountId: 'c_2', contactId: 'ct_3', stage: 'closedwon',
+        amount: 2650, closeDate: shift(-40), ownerId: 'u_jordan', type: 'New Business', leadSource: 'Google Ads',
+        services: ['s_ads', 's_care', 's_social'], nextStep: '', createdAt: now(), closedAt: now() },
+      { id: 'op_3', name: 'Copperline — Video Package',        accountId: 'c_2', contactId: 'ct_4', stage: 'negotiation',
+        amount: 3200, closeDate: shift(9), ownerId: 'u_jordan', type: 'Upsell / Expansion', leadSource: 'Repeat Client',
+        services: ['s_video'], nextStep: 'Dan wants the shoot before the busy season — confirm crew.', createdAt: now() },
+      { id: 'op_4', name: 'Vela Coffee — Brand + Photography', accountId: 'c_3', contactId: 'ct_5', stage: 'qualification',
+        amount: 5600, closeDate: shift(24), ownerId: 'u_sam',    type: 'New Business', leadSource: 'Instagram',
+        services: ['s_brand', 's_photo'], nextStep: 'Present the two remaining marks.', createdAt: now() },
+      { id: 'op_5', name: 'Halstead — SEO Renewal',            accountId: 'c_4', contactId: 'ct_6', stage: 'closedwon',
+        amount: 1450, closeDate: shift(-15), ownerId: 'u_jordan', type: 'Renewal', leadSource: 'Referral',
+        services: ['s_seo', 's_care'], nextStep: '', createdAt: now(), closedAt: now() },
+      { id: 'op_6', name: 'Bright Path — Website Build',       accountId: 'c_5', contactId: 'ct_10', stage: 'closedlost',
+        amount: 6500, closeDate: shift(-30), ownerId: 'u_sam',    type: 'New Business', leadSource: 'Cold Outreach',
+        services: ['s_web'], nextStep: '', lostReason: 'Hired in-house instead. No budget this cycle.', createdAt: now(), closedAt: now() },
+      { id: 'op_7', name: 'Ironvale — Social + Video',         accountId: 'c_6', contactId: 'ct_7', stage: 'prospecting',
+        amount: 4100, closeDate: shift(38), ownerId: 'u_sam',    type: 'New Business', leadSource: 'Website Form',
+        services: ['s_social', 's_video'], nextStep: 'Book the discovery call.', createdAt: now() },
+      { id: 'op_8', name: 'Cactus Bloom — Full Retainer',      accountId: 'c_7', contactId: 'ct_8', stage: 'negotiation',
+        amount: 13400, closeDate: shift(6), ownerId: 'u_jordan', type: 'New Business', leadSource: 'Referral',
+        services: ['s_brand', 's_web', 's_auto'], nextStep: 'Nina wants the automation line item revisited.', createdAt: now() },
+      { id: 'op_9', name: 'Northline — Ads + SEO Renewal',     accountId: 'c_8', contactId: 'ct_9', stage: 'closedwon',
+        amount: 2950, closeDate: shift(-8), ownerId: 'u_jordan', type: 'Renewal', leadSource: 'Referral',
+        services: ['s_ads', 's_seo', 's_care'], nextStep: '', createdAt: now(), closedAt: now() }
+    ];
+
+    var tasks = [
+      { id: 'tk_1', kind: 'task',  subject: 'Send revised scope to Marcy', status: 'open', priority: 'high',
+        dueDate: shift(-1), entityType: 'opportunity', entityId: 'op_1', assigneeId: 'u_sam',
+        description: 'Include the Sept 15 launch date and the reduced page count.', createdById: 'u_sam', createdAt: now() },
+      { id: 'tk_2', kind: 'call',  subject: 'Called Dan re: video package', status: 'completed', priority: 'normal',
+        dueDate: shift(-2), entityType: 'opportunity', entityId: 'op_3', assigneeId: 'u_jordan',
+        description: 'Wants the shoot done before September. Asked for a crew of two.', createdById: 'u_jordan',
+        completedAt: now(), createdAt: now() },
+      { id: 'tk_3', kind: 'event', subject: 'Discovery call — Ironvale', status: 'open', priority: 'normal',
+        dueDate: today(), startTime: '14:00', endTime: '14:45', entityType: 'opportunity', entityId: 'op_7',
+        assigneeId: 'u_sam', description: 'Content pillars and posting cadence.', createdById: 'u_sam', createdAt: now() },
+      { id: 'tk_4', kind: 'task',  subject: 'Chase the signed MSA from Pike & Co.', status: 'open', priority: 'urgent',
+        dueDate: shift(-4), entityType: 'vendor', entityId: 'v_3', assigneeId: 'u_alex',
+        description: '', createdById: 'u_alex', createdAt: now() },
+      { id: 'tk_5', kind: 'task',  subject: 'Quarterly check-in with Ted', status: 'open', priority: 'low',
+        dueDate: shift(5), entityType: 'customer', entityId: 'c_4', assigneeId: 'u_jordan',
+        description: '', createdById: 'u_jordan', createdAt: now() },
+      { id: 'tk_6', kind: 'call',  subject: 'Left voicemail for Nina', status: 'completed', priority: 'normal',
+        dueDate: shift(-3), entityType: 'opportunity', entityId: 'op_8', assigneeId: 'u_jordan',
+        description: 'No answer. Following up by email.', createdById: 'u_jordan', completedAt: now(), createdAt: now() },
+      { id: 'tk_7', kind: 'task',  subject: 'Prep the Cactus Bloom contract', status: 'open', priority: 'high',
+        dueDate: today(), entityType: 'opportunity', entityId: 'op_8', assigneeId: 'u_jordan',
+        description: '', createdById: 'u_jordan', createdAt: now() }
     ];
 
     var vendors = [
@@ -288,6 +439,9 @@
     db.users = users;
     db.services = services;
     db.customers = customers;
+    db.contacts = contacts;
+    db.opportunities = opportunities;
+    db.tasks = tasks;
     db.vendors = vendors;
     db.leads = leads;
     db.workOrders = workOrders;
@@ -347,6 +501,18 @@
     /* a brand-new project may have no reference rows yet */
     if (!out.statuses.length) out.statuses = DEFAULT_STATUSES.slice();
     if (!out.vendorTypes.length) out.vendorTypes = DEFAULT_VENDOR_TYPES.slice();
+
+    /* Accounts saved before the object split carry no accountType, and
+       an unclassified account with no opportunities reads as a Prospect
+       — which would drop every paying client out of MRR the moment this
+       version loads. Derive it from the old status field here, using the
+       same rule as the SQL migration, so the figures stay right even if
+       that migration has not been run yet. */
+    out.customers.forEach(function (c) {
+      if (c.accountType) return;
+      c.accountType = c.status === 'active' ? 'customer'
+        : c.status === 'lost' ? 'former' : 'prospect';
+    });
     return out;
   }
 
@@ -483,7 +649,7 @@
     save: save,
     onChange: function (fn) { listeners.push(fn); },
 
-    uid: uid, today: today, shift: shift, nowISO: now, initials: initials,
+    uid: uid, today: today, shift: shift, nowISO: now, initials: initials, splitName: splitName,
     all: all, find: find, insert: insert, insertMany: insertMany, update: update, remove: remove,
 
     /* reference */
@@ -515,6 +681,228 @@
     /* Does this account count toward money? */
     isRevenue: function (c) { return API.billingType(c && c.billingType).revenue; },
     isFree: function (c) { return !API.isRevenue(c); },
+
+    /* ── accounts ───────────────────────────────────────────────────
+       The Account object lives in the `customers` collection; see the
+       note by ACCOUNT_TYPES. Use these rather than hard-coding the
+       older word, so the seam stays in one place. */
+    ACCOUNTS: 'customers',
+    ACCOUNT_TYPE: 'customer',
+    ACCOUNT_TYPES: ACCOUNT_TYPES,
+    accountType: function (id) {
+      for (var i = 0; i < ACCOUNT_TYPES.length; i++) if (ACCOUNT_TYPES[i].id === id) return ACCOUNT_TYPES[i];
+      return ACCOUNT_TYPES[0];                 // unset means Prospect
+    },
+    accounts: function () { return db.customers; },
+    account: function (id) { return find('customers', id); },
+    accountName: function (id) {
+      var a = find('customers', id);
+      return a ? a.name : 'Unknown account';
+    },
+    /* An account is a customer once it has won a deal. Derived rather
+       than typed in, so it cannot disagree with the pipeline. */
+    deriveAccountType: function (a) {
+      if (!a) return 'prospect';
+      /* A stored classification wins. Partner and Former are judgements
+         somebody made deliberately, and Customer has to be settable by
+         hand too: plenty of accounts bill every month without anyone
+         having logged the deal that started it. Winning a deal only
+         ever promotes an account that is still an unclassified
+         prospect. */
+      if (a.accountType === 'partner' || a.accountType === 'former' || a.accountType === 'customer') {
+        return a.accountType;
+      }
+      var won = API.opportunitiesFor(a.id).some(function (o) { return API.oppStage(o.stage).won; });
+      return won ? 'customer' : 'prospect';
+    },
+    isCustomerAccount: function (a) { return API.deriveAccountType(a) === 'customer'; },
+
+    /* ── contacts ───────────────────────────────────────────────── */
+    CONTACT_ROLES: CONTACT_ROLES,
+    contactName: function (c) {
+      if (!c) return 'Unknown';
+      var n = ((c.firstName || '') + ' ' + (c.lastName || '')).trim();
+      return n || c.email || 'Unnamed contact';
+    },
+    contact: function (id) { return find('contacts', id); },
+    contactsFor: function (accountId) {
+      return db.contacts.filter(function (c) { return c.accountId === accountId; })
+        .sort(function (a, b) {
+          if (!!a.isPrimary !== !!b.isPrimary) return a.isPrimary ? -1 : 1;
+          return API.contactName(a).localeCompare(API.contactName(b));
+        });
+    },
+    primaryContact: function (accountId) {
+      var list = API.contactsFor(accountId);
+      return list.filter(function (c) { return c.isPrimary; })[0] || list[0] || null;
+    },
+    /* Exactly one primary per account, enforced on write — two "primary"
+       contacts is the same as none when you are deciding who to call. */
+    setPrimaryContact: function (id) {
+      var c = find('contacts', id);
+      if (!c) return;
+      db.contacts.forEach(function (o) {
+        if (o.accountId !== c.accountId) return;
+        var want = o.id === id;
+        if (!!o.isPrimary === want) return;
+        o.isPrimary = want;
+        push('contacts', 'update', o);
+      });
+      log('updated', 'contacts', id, API.contactName(c) + ' set as primary contact');
+      notify();
+    },
+
+    /* ── opportunities ──────────────────────────────────────────── */
+    OPP_STAGES: OPP_STAGES,
+    OPP_TYPES: OPP_TYPES,
+    oppStage: function (id) {
+      for (var i = 0; i < OPP_STAGES.length; i++) if (OPP_STAGES[i].id === id) return OPP_STAGES[i];
+      return OPP_STAGES[0];
+    },
+    opportunitiesFor: function (accountId) {
+      return db.opportunities.filter(function (o) { return o.accountId === accountId; })
+        .sort(function (a, b) {
+          var ao = API.oppStage(a.stage).open, bo = API.oppStage(b.stage).open;
+          if (ao !== bo) return ao ? -1 : 1;                 // live deals first
+          return String(a.closeDate || '').localeCompare(String(b.closeDate || ''));
+        });
+    },
+    openOpportunities: function () {
+      return db.opportunities.filter(function (o) { return API.oppStage(o.stage).open; });
+    },
+    /* Amount weighted by the stage's probability — what you can
+       reasonably expect to land, rather than the sum of every hope. */
+    weightedPipeline: function (list) {
+      return (list || API.openOpportunities()).reduce(function (s, o) {
+        return s + (Number(o.amount) || 0) * (API.oppStage(o.stage).probability / 100);
+      }, 0);
+    },
+    oppStats: function () {
+      var open = API.openOpportunities();
+      var won = db.opportunities.filter(function (o) { return API.oppStage(o.stage).won; });
+      var lost = db.opportunities.filter(function (o) {
+        return !API.oppStage(o.stage).open && !API.oppStage(o.stage).won;
+      });
+      var decided = won.length + lost.length;
+      var today_ = today();
+      return {
+        open: open.length,
+        openValue: open.reduce(function (s, o) { return s + (Number(o.amount) || 0); }, 0),
+        weighted: API.weightedPipeline(open),
+        won: won.length,
+        wonValue: won.reduce(function (s, o) { return s + (Number(o.amount) || 0); }, 0),
+        lost: lost.length,
+        winRate: decided ? Math.round((won.length / decided) * 100) : 0,
+        /* A deal whose close date has passed but which is still open is
+           not forecast — it is a date nobody updated. */
+        slipping: open.filter(function (o) { return o.closeDate && o.closeDate < today_; }).length
+      };
+    },
+    setOppStage: function (id, stage) {
+      var o = find('opportunities', id);
+      if (!o) return null;
+      var st = API.oppStage(stage);
+      var patch = { stage: stage, closedAt: st.open ? '' : now() };
+      update('opportunities', id, patch, o.name + ' → ' + st.label);
+      return find('opportunities', id);
+    },
+
+    /* ── activities (task / call / event) ───────────────────────── */
+    TASK_KINDS: TASK_KINDS,
+    taskKind: function (id) {
+      for (var i = 0; i < TASK_KINDS.length; i++) if (TASK_KINDS[i].id === id) return TASK_KINDS[i];
+      return TASK_KINDS[0];
+    },
+    isTaskDone: function (t) { return t && t.status === 'completed'; },
+    taskState: function (t) {
+      if (API.isTaskDone(t)) return { key: 'done', label: 'Completed', tone: 'b-grey', rank: 4 };
+      if (!t.dueDate) return { key: 'undated', label: 'No date', tone: 'b-grey', rank: 3 };
+      var d = API.daysUntil(t.dueDate);
+      if (d < 0) return { key: 'overdue', label: Math.abs(d) + 'd overdue', tone: 'b-red', rank: 0, days: d };
+      if (d === 0) return { key: 'today', label: 'Today', tone: 'b-orange', rank: 1, days: 0 };
+      return { key: 'upcoming', label: 'in ' + d + ' day' + (d === 1 ? '' : 's'), tone: 'b-blue', rank: 2, days: d };
+    },
+    tasksFor: function (type, id) {
+      return db.tasks.filter(function (t) { return t.entityType === type && t.entityId === id; })
+        .sort(function (a, b) {
+          if (API.isTaskDone(a) !== API.isTaskDone(b)) return API.isTaskDone(a) ? 1 : -1;
+          return String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'));
+        });
+    },
+    /* Salesforce's "Upcoming & Overdue" — everything still to do,
+       most urgent first. */
+    openTasks: function (opts) {
+      opts = opts || {};
+      return db.tasks.filter(function (t) {
+        if (API.isTaskDone(t)) return false;
+        if (opts.assigneeId && t.assigneeId !== opts.assigneeId) return false;
+        if (opts.entityType && (t.entityType !== opts.entityType || t.entityId !== opts.entityId)) return false;
+        return true;
+      }).sort(function (a, b) {
+        var ra = API.taskState(a).rank, rb = API.taskState(b).rank;
+        return ra - rb || String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'));
+      });
+    },
+    completedTasksFor: function (type, id) {
+      return db.tasks.filter(function (t) {
+        return t.entityType === type && t.entityId === id && API.isTaskDone(t);
+      }).sort(function (a, b) { return String(b.completedAt || '').localeCompare(String(a.completedAt || '')); });
+    },
+    addTask: function (rec) {
+      var t = {
+        id: uid('tk'),
+        kind: rec.kind || 'task',
+        subject: rec.subject || '',
+        description: rec.description || '',
+        /* A logged call describes something that already happened, so it
+           is created complete. A task or event is work still to come. */
+        status: rec.kind === 'call' ? 'completed' : (rec.status || 'open'),
+        priority: rec.priority || 'normal',
+        dueDate: rec.dueDate || today(),
+        startTime: rec.startTime || '',
+        endTime: rec.endTime || '',
+        entityType: rec.entityType || '',
+        entityId: rec.entityId || '',
+        assigneeId: rec.assigneeId || meId || '',
+        createdById: meId || '',
+        completedAt: rec.kind === 'call' ? now() : '',
+        createdAt: now()
+      };
+      db.tasks.push(t);
+      log(t.kind === 'call' ? 'logged a call' : 'scheduled', t.entityType, t.entityId, t.subject);
+      push('tasks', 'insert', t);
+      notify();
+      return t;
+    },
+    completeTask: function (id, done) {
+      var t = find('tasks', id);
+      if (!t) return null;
+      var want = done === undefined ? true : !!done;
+      update('tasks', id, {
+        status: want ? 'completed' : 'open',
+        completedAt: want ? now() : ''
+      }, (want ? 'completed ' : 'reopened ') + t.subject);
+      return find('tasks', id);
+    },
+    /* Every route that can own an activity, so one panel serves them all. */
+    entityHref: function (type, id) {
+      var seg = type === 'vendor' ? 'vendors'
+        : type === 'lead' ? 'leads'
+        : type === 'opportunity' ? 'opportunities'
+        : type === 'contact' ? 'contacts'
+        : type === 'workorder' ? 'workorders'
+        : 'accounts';
+      return '#/' + seg + '/' + id;
+    },
+    entityLabel: function (type, id) {
+      if (type === 'lead') { var l = find('leads', id); return l ? l.name : 'Unknown lead'; }
+      if (type === 'opportunity') { var o = find('opportunities', id); return o ? o.name : 'Unknown deal'; }
+      if (type === 'contact') { var c = find('contacts', id); return c ? API.contactName(c) : 'Unknown contact'; }
+      if (type === 'vendor') { var v = find('vendors', id); return v ? v.name : 'Unknown vendor'; }
+      if (type === 'workorder') { var w = find('workOrders', id); return w ? w.title : 'Unknown work order'; }
+      var a = find('customers', id);
+      return a ? a.name : 'Unknown account';
+    },
 
     /* ── leads ──────────────────────────────────────────────────── */
     LEAD_STATUSES: LEAD_STATUSES,
@@ -590,7 +978,9 @@
       return find('leads', id);
     },
 
-    /* Lead → customer. One direction, once. */
+    /* Lead → Account + Contact + Opportunity, the way Salesforce
+       converts. One direction, once. The opportunity is optional: not
+       every lead you decide to keep is a live deal today. */
     convertLead: function (id, overrides) {
       var lead = find('leads', id);
       if (!lead) throw new Error('That lead no longer exists.');
@@ -600,27 +990,73 @@
           (already ? ' to ' + already.name + '.' : '.'));
       }
       var o = overrides || {};
-      var customer = {
-        name: o.name || lead.name,
-        contactName: lead.contactName || '',
-        email: lead.email || '',
-        phone: lead.phone || '',
-        status: o.status || 'new',
-        ownerId: o.ownerId || lead.ownerId || (meId || ''),
-        services: o.services || [],
-        billingDate: o.billingDate || '',
-        billingCycle: o.billingCycle || 'Monthly',
-        value: Number(o.value != null && o.value !== '' ? o.value : lead.estValue) || 0,
-        billingType: o.billingType || 'paid',
-        tags: (lead.tags || []).slice(),
-        industry: lead.industry || '',
-        source: lead.source || '',
-        address: lead.address || '',
-        website: lead.website || '',
-        stripeCustomerId: '',
-        convertedFromLeadId: lead.id
-      };
-      var created = insert('customers', customer, 'c', customer.name);
+
+      /* 1. The Account — or an existing one, when this lead turned out
+         to be a second contact at a company already on the books. */
+      var account = o.accountId ? find('customers', o.accountId) : null;
+      if (!account) {
+        account = insert('customers', {
+          name: o.accountName || lead.name,
+          contactName: lead.contactName || '',
+          email: lead.email || '',
+          phone: lead.phone || '',
+          status: 'new',
+          accountType: 'prospect',
+          ownerId: o.ownerId || lead.ownerId || (meId || ''),
+          services: [],
+          billingDate: '',
+          billingCycle: o.billingCycle || 'Monthly',
+          value: 0,
+          billingType: o.billingType || 'paid',
+          tags: (lead.tags || []).slice(),
+          industry: lead.industry || '',
+          source: lead.source || '',
+          address: lead.address || '',
+          website: lead.website || '',
+          stripeCustomerId: '',
+          convertedFromLeadId: lead.id
+        }, 'c', o.accountName || lead.name);
+      }
+
+      /* 2. The Contact — the person, split off the company. */
+      var contact = null;
+      var person = (o.contactName !== undefined ? o.contactName : lead.contactName) || '';
+      if (person || lead.email) {
+        var parts = splitName(person || lead.email);
+        contact = insert('contacts', {
+          accountId: account.id,
+          firstName: parts.first,
+          lastName: parts.last,
+          title: lead.contactTitle || '',
+          email: lead.email || '',
+          phone: lead.phone || '',
+          role: o.contactRole || '',
+          isPrimary: !API.primaryContact(account.id),
+          ownerId: account.ownerId,
+          tags: [],
+          convertedFromLeadId: lead.id
+        }, 'ct', API.contactName({ firstName: parts.first, lastName: parts.last }));
+      }
+
+      /* 3. The Opportunity. */
+      var opp = null;
+      if (o.createOpportunity !== false) {
+        opp = insert('opportunities', {
+          name: o.oppName || (account.name + ' — ' + (o.oppType || 'New Business')),
+          accountId: account.id,
+          contactId: contact ? contact.id : '',
+          stage: o.stage || 'qualification',
+          amount: Number(o.amount != null && o.amount !== '' ? o.amount : lead.estValue) || 0,
+          closeDate: o.closeDate || shift(30),
+          ownerId: account.ownerId,
+          type: o.oppType || 'New Business',
+          leadSource: lead.source || '',
+          services: o.services || [],
+          nextStep: '',
+          description: '',
+          closedAt: ''
+        }, 'op', o.oppName || account.name);
+      }
 
       /* Move the notes rather than copy them. The sales conversation now
          belongs to the account, and two editable copies would drift. */
@@ -628,26 +1064,38 @@
       db.notes.forEach(function (n) {
         if (n.entityType !== 'lead' || n.entityId !== lead.id) return;
         n.entityType = 'customer';
-        n.entityId = created.id;
+        n.entityId = account.id;
         push('notes', 'update', n);
         moved++;
       });
 
+      /* Open activities follow the lead's owner to the new account so
+         nothing scheduled quietly falls off the board. */
+      db.tasks.forEach(function (t) {
+        if (t.entityType !== 'lead' || t.entityId !== lead.id) return;
+        t.entityType = opp ? 'opportunity' : 'customer';
+        t.entityId = opp ? opp.id : account.id;
+        push('tasks', 'update', t);
+      });
+
       update('leads', id, {
         leadStatus: 'converted',
-        convertedCustomerId: created.id,
+        convertedCustomerId: account.id,
+        convertedContactId: contact ? contact.id : '',
+        convertedOpportunityId: opp ? opp.id : '',
         convertedAt: now(),
         nextFollowUp: ''
       }, lead.name + ' converted');
 
-      API.addNote('customer', created.id,
+      API.addNote('customer', account.id,
         'Converted from lead “' + lead.name + '”' +
-        (lead.source ? ' (source: ' + lead.source + ')' : '') +
-        (moved ? '. ' + moved + ' lead note' + (moved === 1 ? '' : 's') + ' moved across.' : '.'));
+        (lead.source ? ' (source: ' + lead.source + ')' : '') + '.' +
+        (moved ? ' ' + moved + ' lead note' + (moved === 1 ? '' : 's') + ' moved across.' : ''));
 
-      log('converted', 'leads', lead.id, lead.name + ' → customer');
+      log('converted', 'leads', lead.id, lead.name + ' → account' +
+        (contact ? ' + contact' : '') + (opp ? ' + opportunity' : ''));
       notify();
-      return created;
+      return { account: account, contact: contact, opportunity: opp };
     },
 
     /* Same key the importer dedupes on: email, then domain, then name. */
@@ -724,12 +1172,18 @@
     service: function (id) { return find('services', id) || { id: id, name: '—', rate: 0 }; },
     serviceNames: function (ids) { return (ids || []).map(function (id) { return API.service(id).name; }); },
 
-    /* records */
-    record: function (type, id) { return find(type === 'vendor' ? 'vendors' : 'customers', id); },
-    recordName: function (type, id) {
-      var r = API.record(type, id);
-      return r ? r.name : 'Unknown';
+    /* records — work orders and activities can hang off any object, so
+       these resolve by entityType rather than assuming account/vendor. */
+    record: function (type, id) {
+      var coll = type === 'vendor' ? 'vendors'
+        : type === 'lead' ? 'leads'
+        : type === 'opportunity' ? 'opportunities'
+        : type === 'contact' ? 'contacts'
+        : type === 'workorder' ? 'workOrders'
+        : 'customers';
+      return find(coll, id);
     },
+    recordName: function (type, id) { return API.entityLabel(type, id); },
 
     /* notes */
     notesFor: function (type, id) {
@@ -952,10 +1406,13 @@
       n = Number(n) || 0;
       return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 });
     },
+    /* Recurring revenue comes from the ACCOUNT's contract, not from
+       opportunity amounts. A deal is a one-off event with a close date;
+       what the account pays every month is a separate, ongoing fact.
+       Conflating them would count a $13k signing as $13k a month. */
     mrr: function () {
       return db.customers.reduce(function (s, c) {
-        var st = API.status(c.status);
-        if (!st.won) return s;
+        if (!API.isCustomerAccount(c)) return s;
         if (!API.isRevenue(c)) return s;        // pro bono / internal / trial
 
         var v = Number(c.value) || 0;

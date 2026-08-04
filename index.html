@@ -21,7 +21,7 @@
 
   <div class="global-search">
     <svg viewBox="0 0 24 24" class="gs-icon" aria-hidden="true"><path d="M21 21l-4.35-4.35M11 19a8 8 0 110-16 8 8 0 010 16z"/></svg>
-    <input id="globalSearch" type="search" placeholder="Search leads, customers, vendors, work orders…" autocomplete="off" spellcheck="false">
+    <input id="globalSearch" type="search" placeholder="Search accounts, contacts, deals, leads…" autocomplete="off" spellcheck="false">
     <kbd>/</kbd>
     <div id="gsResults" class="gs-results" hidden></div>
   </div>
@@ -45,20 +45,37 @@
   </div>
 </header>
 
-<div class="shell">
-  <!-- ── Object nav rail ─────────────────────────────────────────── -->
-  <nav class="rail" id="rail">
-    <a href="#/dashboard" data-nav="dashboard"><svg viewBox="0 0 24 24" class="ico"><path d="M3 12l9-9 9 9M5 10v10h5v-6h4v6h5V10"/></svg><span>Home</span></a>
-    <a href="#/leads" data-nav="leads"><svg viewBox="0 0 24 24" class="ico"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M22 11h-6"/></svg><span>Leads</span></a>
-    <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24" class="ico"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg><span>Customers</span></a>
-    <a href="#/pipeline" data-nav="pipeline"><svg viewBox="0 0 24 24" class="ico"><path d="M3 3v18h18M7 15V9M12 18V6M17 13V8"/></svg><span>Pipeline</span></a>
-    <a href="#/tracker" data-nav="tracker"><svg viewBox="0 0 24 24" class="ico"><path d="M3 5h18v16H3zM3 9h18M8 3v4M16 3v4M8 14l2.5 2.5L16 12"/></svg><span>Daily Tracker</span></a>
-    <a href="#/workorders" data-nav="workorders"><svg viewBox="0 0 24 24" class="ico"><path d="M20 7h-3V5a2 2 0 00-2-2H9a2 2 0 00-2 2v2H4a1 1 0 00-1 1v11a1 1 0 001 1h16a1 1 0 001-1V8a1 1 0 00-1-1zM9 7V5h6v2"/></svg><span>Work Orders</span></a>
-    <a href="#/vendors" data-nav="vendors"><svg viewBox="0 0 24 24" class="ico"><path d="M3 21V9l9-6 9 6v12M9 21v-7h6v7"/></svg><span>Vendors</span></a>
-    <a href="#/billing" data-nav="billing"><svg viewBox="0 0 24 24" class="ico"><path d="M2 7h20v12H2zM2 11h20M6 15h4"/></svg><span>Billing</span></a>
-    <a href="#/admin" data-nav="admin" class="rail-admin"><svg viewBox="0 0 24 24" class="ico"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.7 1.7 0 00.34 1.88l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.88-.34 1.7 1.7 0 00-1 1.56V21a2 2 0 11-4 0v-.09A1.7 1.7 0 008 19.4a1.7 1.7 0 00-1.88.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.7 1.7 0 003.62 15a1.7 1.7 0 00-1.56-1H2a2 2 0 110-4h.09A1.7 1.7 0 003.6 8.9a1.7 1.7 0 00-.33-1.88l-.06-.06a2 2 0 112.83-2.83l.06.06A1.7 1.7 0 009 4.6a1.7 1.7 0 001-1.56V3a2 2 0 114 0v.09a1.7 1.7 0 001 1.56 1.7 1.7 0 001.88-.34l.06-.06a2 2 0 112.83 2.83l-.06.06A1.7 1.7 0 0019.4 9v0a1.7 1.7 0 001.56 1H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.51 1z"/></svg><span>Admin</span></a>
-  </nav>
+<!-- ── Object tabs ───────────────────────────────────────────────── -->
+<nav class="tabbar" id="tabbar">
+  <a href="#/dashboard" data-nav="dashboard"><svg viewBox="0 0 24 24" class="ico"><path d="M3 12l9-9 9 9M5 10v10h5v-6h4v6h5V10"/></svg>Home</a>
+  <a href="#/leads" data-nav="leads"><svg viewBox="0 0 24 24" class="ico"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M22 11h-6"/></svg>Leads</a>
+  <a href="#/accounts" data-nav="accounts"><svg viewBox="0 0 24 24" class="ico"><path d="M3 21V8l7-5 7 5v13M3 21h18M13 21v-6h4v6M7 11h2M7 15h2"/></svg>Accounts</a>
+  <a href="#/contacts" data-nav="contacts"><svg viewBox="0 0 24 24" class="ico"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Contacts</a>
 
+  <div class="tabgroup" data-nav="opportunities pipeline">
+    <button type="button"><svg viewBox="0 0 24 24" class="ico"><path d="M3 3v18h18M7 15V9M12 18V6M17 13V8"/></svg>Opportunities<svg viewBox="0 0 24 24" class="caret"><path d="M6 9l6 6 6-6"/></svg></button>
+    <div class="tabmenu">
+      <a href="#/opportunities" data-nav="opportunities">All Opportunities</a>
+      <a href="#/pipeline" data-nav="pipeline">Pipeline Board</a>
+    </div>
+  </div>
+
+  <a href="#/activities" data-nav="activities"><svg viewBox="0 0 24 24" class="ico"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Activities</a>
+
+  <div class="tabgroup" data-nav="tracker workorders vendors">
+    <button type="button"><svg viewBox="0 0 24 24" class="ico"><path d="M20 7h-3V5a2 2 0 00-2-2H9a2 2 0 00-2 2v2H4a1 1 0 00-1 1v11a1 1 0 001 1h16a1 1 0 001-1V8a1 1 0 00-1-1zM9 7V5h6v2"/></svg>Delivery<svg viewBox="0 0 24 24" class="caret"><path d="M6 9l6 6 6-6"/></svg></button>
+    <div class="tabmenu">
+      <a href="#/tracker" data-nav="tracker">Daily Tracker</a>
+      <a href="#/workorders" data-nav="workorders">Work Orders</a>
+      <a href="#/vendors" data-nav="vendors">Vendors</a>
+    </div>
+  </div>
+
+  <a href="#/billing" data-nav="billing"><svg viewBox="0 0 24 24" class="ico"><path d="M2 7h20v12H2zM2 11h20M6 15h4"/></svg>Billing</a>
+  <a href="#/admin" data-nav="admin"><svg viewBox="0 0 24 24" class="ico"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.7 1.7 0 00.34 1.88l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.88-.34 1.7 1.7 0 00-1 1.56V21a2 2 0 11-4 0v-.09A1.7 1.7 0 008 19.4a1.7 1.7 0 00-1.88.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.7 1.7 0 003.62 15a1.7 1.7 0 00-1.56-1H2a2 2 0 110-4h.09A1.7 1.7 0 003.6 8.9a1.7 1.7 0 00-.33-1.88l-.06-.06a2 2 0 112.83-2.83l.06.06A1.7 1.7 0 009 4.6a1.7 1.7 0 001-1.56V3a2 2 0 114 0v.09a1.7 1.7 0 001 1.56 1.7 1.7 0 001.88-.34l.06-.06a2 2 0 112.83 2.83l-.06.06A1.7 1.7 0 0019.4 9v0a1.7 1.7 0 001.56 1H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.51 1z"/></svg>Admin</a>
+</nav>
+
+<div class="shell">
   <main class="main" id="view"></main>
 </div>
 
@@ -73,8 +90,11 @@
 <script src="js/auth.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/views/dashboard.js"></script>
+<script src="js/views/activities.js"></script>
 <script src="js/views/record.js"></script>
 <script src="js/views/customers.js"></script>
+<script src="js/views/contacts.js"></script>
+<script src="js/views/opportunities.js"></script>
 <script src="js/views/leads.js"></script>
 <script src="js/views/pipeline.js"></script>
 <script src="js/views/tracker.js"></script>

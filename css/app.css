@@ -33,7 +33,7 @@
   --font-mono:'JetBrains Mono',ui-monospace,'Cascadia Mono',Consolas,monospace;
 
   --r:10px; --r-sm:6px; --r-lg:16px;
-  --rail-w:212px; --top-h:56px;
+  --top-h:56px; --tab-h:42px;
   --shadow:0 10px 30px rgba(0,0,0,.45);
 }
 
@@ -122,23 +122,46 @@ svg.ico,.gs-icon{width:16px;height:16px;fill:none;stroke:currentColor;stroke-wid
 .menu-item small{margin-left:auto;color:var(--text-3);font-size:11px}
 
 /* ── Shell / rail ───────────────────────────────────────────────── */
-.shell{display:flex;padding-top:var(--top-h);min-height:100%}
-.rail{
-  position:fixed;top:var(--top-h);bottom:0;left:0;width:var(--rail-w);z-index:50;
-  background:var(--surface);border-right:1px solid var(--line);
-  padding:14px 10px;display:flex;flex-direction:column;gap:2px;overflow:auto;
-}
-.rail a{
-  display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:var(--r-sm);
-  color:var(--text-2);font-size:13px;font-weight:500;transition:.14s;position:relative;
-}
-.rail a:hover{background:var(--surface-2);color:var(--text)}
-.rail a.active{background:linear-gradient(90deg,var(--orange-glow),transparent);color:var(--text)}
-.rail a.active::before{content:"";position:absolute;left:-10px;top:6px;bottom:6px;width:3px;background:var(--orange);border-radius:0 3px 3px 0}
-.rail a.active .ico{color:var(--orange)}
-.rail-admin{margin-top:auto;border-top:1px solid var(--line);padding-top:14px!important;border-radius:0}
+.shell{display:block;padding-top:calc(var(--top-h) + var(--tab-h));min-height:100%}
 
-.main{flex:1;margin-left:var(--rail-w);min-width:0;padding:20px 24px 64px}
+/* ── Object tab bar ──────────────────────────────────────────────
+   Salesforce puts every object across the top rather than down the
+   side. Horizontal space is finite, so related objects collapse into
+   dropdown groups instead of the strip wrapping to two rows. */
+.tabbar{
+  position:fixed;top:var(--top-h);left:0;right:0;height:var(--tab-h);z-index:55;
+  display:flex;align-items:stretch;gap:2px;padding:0 14px;
+  background:var(--surface);border-bottom:1px solid var(--line);
+  overflow-x:auto;overflow-y:visible;scrollbar-width:none;
+}
+.tabbar::-webkit-scrollbar{display:none}
+.tabbar a,.tabbar .tabgroup > button{
+  display:flex;align-items:center;gap:7px;padding:0 14px;white-space:nowrap;
+  color:var(--text-2);font-size:13px;font-weight:500;background:none;border:0;
+  border-bottom:2px solid transparent;cursor:pointer;transition:.14s;font-family:inherit;
+}
+.tabbar a:hover,.tabbar .tabgroup > button:hover{color:var(--text);background:var(--surface-2)}
+.tabbar a.active,.tabbar .tabgroup.active > button{
+  color:var(--orange);border-bottom-color:var(--orange);background:var(--orange-glow);
+}
+.tabbar .ico{width:15px;height:15px;flex:none}
+.tabbar .caret{width:12px;height:12px;opacity:.65}
+
+.tabgroup{position:relative;display:flex}
+.tabmenu{
+  position:absolute;top:100%;left:0;min-width:206px;z-index:80;
+  background:var(--surface-2);border:1px solid var(--line-2);border-radius:0 0 var(--r) var(--r);
+  box-shadow:var(--shadow);padding:6px;display:none;
+}
+.tabgroup.open .tabmenu{display:block}
+.tabmenu a{
+  display:block;padding:8px 10px;border-radius:var(--r-sm);font-size:13px;
+  color:var(--text-2);border-bottom:0;
+}
+.tabmenu a:hover{background:var(--surface-3);color:var(--text)}
+.tabmenu a.active{color:var(--orange);background:var(--orange-glow)}
+
+.main{min-width:0;padding:20px 24px 64px}
 
 /* ── Page furniture ─────────────────────────────────────────────── */
 .page-head{display:flex;align-items:flex-start;gap:16px;margin-bottom:18px;flex-wrap:wrap}
@@ -439,6 +462,68 @@ body.auth-open .shell{display:none}
 }
 .auth-foot .mono{color:var(--text-2)}
 
+/* ── Record page: related lists + activity ───────────────────────
+   Salesforce's three-column record: detail in the middle, activity
+   beside it, related objects down the right. */
+.rec-cols{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:14px;align-items:start}
+@media(max-width:1180px){.rec-cols{grid-template-columns:1fr}}
+
+.rel-list{border-bottom:1px solid var(--line)}
+.rel-list:last-child{border-bottom:0}
+.rel-head{
+  display:flex;align-items:center;gap:9px;padding:11px 14px;cursor:pointer;
+  background:var(--surface-2);border-bottom:1px solid var(--line);
+}
+.rel-head:hover{background:var(--surface-3)}
+.rel-head .rel-title{font-family:var(--font-display);font-size:12px;letter-spacing:.06em;font-weight:600}
+.rel-head .rel-count{
+  font-family:var(--font-mono);font-size:10.5px;color:var(--text-3);
+  background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:1px 7px;
+}
+.rel-head .rel-caret{margin-left:auto;transition:transform .16s;width:14px;height:14px;color:var(--text-3)}
+.rel-list.collapsed .rel-caret{transform:rotate(-90deg)}
+.rel-list.collapsed .rel-body{display:none}
+.rel-body{padding:4px 0}
+.rel-row{
+  display:flex;align-items:center;gap:10px;padding:9px 14px;
+  border-bottom:1px solid var(--line);transition:.12s;
+}
+.rel-row:last-child{border-bottom:0}
+.rel-row:hover{background:var(--surface-2)}
+.rel-row-main{flex:1;min-width:0}
+.rel-row-title{font-size:13px;font-weight:600;color:var(--text)}
+.rel-row-sub{font-size:11.5px;color:var(--text-3);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.rel-empty{padding:16px 14px;color:var(--text-3);font-size:12.5px}
+
+/* activity composer: the New Task / Log a Call / New Event row */
+.act-tabs{display:flex;gap:6px;padding:12px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.act-tabs button{
+  display:flex;align-items:center;gap:7px;padding:7px 13px;border-radius:var(--r-sm);
+  background:var(--surface-2);border:1px solid var(--line);color:var(--text-2);
+  font-size:12.5px;font-weight:500;cursor:pointer;transition:.14s;font-family:inherit;
+}
+.act-tabs button:hover{border-color:var(--line-2);color:var(--text);background:var(--surface-3)}
+.act-dot{width:7px;height:7px;border-radius:50%;flex:none}
+
+.act-group{
+  font-family:var(--font-display);font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--text-3);padding:12px 14px 6px;
+}
+.act-item{display:flex;gap:11px;padding:10px 14px;border-bottom:1px solid var(--line);align-items:flex-start}
+.act-item:last-child{border-bottom:0}
+.act-item.is-done .act-subject{text-decoration:line-through;color:var(--text-3)}
+.act-check{
+  width:16px;height:16px;border-radius:4px;border:1.5px solid var(--line-2);flex:none;margin-top:2px;
+  cursor:pointer;display:grid;place-items:center;background:var(--surface-2);transition:.14s;
+}
+.act-check:hover{border-color:var(--orange)}
+.act-check.on{background:var(--ok);border-color:var(--ok)}
+.act-check.on::after{content:"";width:4px;height:8px;border:solid #0B0B0D;border-width:0 2px 2px 0;transform:rotate(45deg) translate(-1px,-1px)}
+.act-body{flex:1;min-width:0}
+.act-subject{font-size:13px;font-weight:600}
+.act-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:11.5px;color:var(--text-3);margin-top:4px}
+.act-note{font-size:12.5px;color:var(--text-2);margin-top:5px;white-space:pre-wrap}
+
 /* live-sync indicator in the top bar */
 .sync-dot{
   display:inline-flex;align-items:center;gap:6px;font-size:10.5px;letter-spacing:.12em;
@@ -449,11 +534,13 @@ body.auth-open .shell{display:none}
 @media(max-width:1100px){.sync-dot{display:none}}
 
 @media(max-width:900px){
-  :root{--rail-w:64px}
-  .rail a span{display:none}
-  .rail a{justify-content:center}
   .brand{min-width:auto}
   .brand-text{display:none}
   .user-chip-meta{display:none}
   .main{padding:16px 14px 60px}
+  /* The tab strip scrolls sideways rather than wrapping — a nav bar
+     that changes height as you move between screens is worse than one
+     you have to swipe. */
+  .tabbar a,.tabbar .tabgroup > button{padding:0 11px;font-size:12.5px}
+  .tabbar .ico{display:none}
 }

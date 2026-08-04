@@ -1,52 +1,64 @@
-/* Customers — list view, record page, and the create/edit form. */
+/* ═══════════════════════════════════════════════════════════════════
+   Accounts — the company record.
+
+   Stored in the `customers` collection for compatibility (see the
+   naming note in store.js); the interface says Account throughout.
+
+   The account holds the ongoing commercial relationship — who they are,
+   what they pay, when they are billed. Individual sales cycles live on
+   opportunities and the people live on contacts, so this record no
+   longer has to pretend to be all three.
+   ═══════════════════════════════════════════════════════════════════ */
 (function (root) {
   'use strict';
   var S = root.Store, U = root.UI;
   root.Views = root.Views || {};
 
-  var ICON = '<svg viewBox="0 0 24 24" class="ico"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87"/></svg>';
+  var ICON = '<svg viewBox="0 0 24 24" class="ico"><path d="M3 21V8l7-5 7 5v13M3 21h18M13 21v-6h4v6M7 11h2M7 15h2"/></svg>';
 
-  /* view state survives re-renders within a session */
-  var st = { q: '', status: '', owner: '', service: '', tag: '', billingType: '', sortKey: 'name', sortDir: 1 };
+  var st = { q: '', type: '', owner: '', service: '', tag: '', billingType: '', sortKey: 'name', sortDir: 1 };
 
   /* ── list ────────────────────────────────────────────────────── */
-  root.Views.customers = function (el, params) {
+  root.Views.accounts = function (el, params) {
     if (params.id) return detail(el, params.id);
 
-    var rows = S.all('customers').filter(function (c) {
-      if (st.status && c.status !== st.status) return false;
-      if (st.owner && c.ownerId !== st.owner) return false;
-      if (st.service && (c.services || []).indexOf(st.service) < 0) return false;
-      if (st.tag && !S.hasTag(c, st.tag)) return false;
-      if (st.billingType && (c.billingType || 'paid') !== st.billingType) return false;
+    var rows = S.accounts().filter(function (a) {
+      if (st.type && S.deriveAccountType(a) !== st.type) return false;
+      if (st.owner && a.ownerId !== st.owner) return false;
+      if (st.service && (a.services || []).indexOf(st.service) < 0) return false;
+      if (st.tag && !S.hasTag(a, st.tag)) return false;
+      if (st.billingType && (a.billingType || 'paid') !== st.billingType) return false;
       if (st.q) {
-        var hay = [c.name, c.contactName, c.email, c.phone, c.industry, c.address]
-          .concat(S.tagsOf(c)).join(' ').toLowerCase();
+        var hay = [a.name, a.contactName, a.email, a.phone, a.industry, a.address]
+          .concat(S.tagsOf(a))
+          .concat(S.contactsFor(a.id).map(S.contactName))
+          .join(' ').toLowerCase();
         if (hay.indexOf(st.q.toLowerCase()) < 0) return false;
       }
       return true;
     });
 
-    /* Only paying accounts contribute to the headline figure. */
-    var totalValue = rows.filter(S.isRevenue)
-      .reduce(function (s, c) { return s + (Number(c.value) || 0); }, 0);
+    var customers = rows.filter(S.isCustomerAccount);
+    var recurring = rows.filter(function (a) { return S.isCustomerAccount(a) && S.isRevenue(a); })
+      .reduce(function (s, a) { return s + (Number(a.value) || 0); }, 0);
     var freeCount = rows.filter(S.isFree).length;
 
     el.innerHTML =
       '<div class="page-head">' +
-        '<div><div class="eyebrow">Object</div><h1 class="page-title">Customers</h1>' +
-          '<div class="page-sub">' + rows.length + ' of ' + S.all('customers').length + ' records · ' +
-            S.money(totalValue) + ' represented' +
+        '<div><div class="eyebrow">Object</div><h1 class="page-title">Accounts</h1>' +
+          '<div class="page-sub">' + rows.length + ' of ' + S.accounts().length + ' records · ' +
+            customers.length + ' customers · ' + S.money(recurring) + ' under contract' +
             (freeCount ? ' · ' + freeCount + ' free / non-billing' : '') + '</div></div>' +
         '<div class="page-actions">' +
-          '<a class="btn" href="#/pipeline">Pipeline view</a>' +
-          '<button class="btn btn-primary" id="newCust">+ New Customer</button>' +
+          '<a class="btn" href="#/contacts">Contacts</a>' +
+          '<a class="btn" href="#/opportunities">Opportunities</a>' +
+          '<button class="btn btn-primary" id="newAcct">+ New Account</button>' +
         '</div>' +
       '</div>' +
 
       '<div class="card"><div class="toolbar">' +
-        '<input class="input" id="fq" placeholder="Search name, contact, email…" value="' + U.esc(st.q) + '">' +
-        '<select class="input" id="fstatus"><option value="">All statuses</option>' + U.options(S.STATUSES(), st.status) + '</select>' +
+        '<input class="input" id="fq" placeholder="Search account, contact, email…" value="' + U.esc(st.q) + '">' +
+        '<select class="input" id="ftype"><option value="">All types</option>' + U.options(S.ACCOUNT_TYPES, st.type) + '</select>' +
         '<select class="input" id="fowner"><option value="">All owners</option>' + U.options(S.activeUsers(), st.owner, 'id', 'name') + '</select>' +
         '<select class="input" id="fservice"><option value="">All services</option>' + U.options(S.all('services'), st.service, 'id', 'name') + '</select>' +
         '<select class="input" id="fbillingType"><option value="">Paid &amp; free</option>' +
@@ -62,34 +74,36 @@
       '</div>' +
       U.table(cols(), rows, {
         rowLink: true, sortKey: st.sortKey, sortDir: st.sortDir,
-        emptyHTML: U.empty('No customers match', 'Try clearing the filters, or add your first record.')
+        emptyHTML: U.empty('No accounts match', 'Try clearing the filters, or add your first record.')
       }) + '</div>';
 
-    el.querySelector('#newCust').onclick = function () { openForm(null, function () { root.render(); }); };
-    if (params.new) openForm(null, function () { location.hash = '#/customers'; root.render(); });
+    el.querySelector('#newAcct').onclick = function () { openForm(null, root.render); };
+    if (params.new) openForm(null, function () { location.hash = '#/accounts'; root.render(); });
 
     bindFilter(el, '#fq', 'q', true);
-    bindFilter(el, '#fstatus', 'status');
-    bindFilter(el, '#fowner', 'owner');
-    bindFilter(el, '#fservice', 'service');
-    bindFilter(el, '#fbillingType', 'billingType');
-    if (el.querySelector('#ftag')) bindFilter(el, '#ftag', 'tag');
+    [['#ftype', 'type'], ['#fowner', 'owner'], ['#fservice', 'service'],
+     ['#fbillingType', 'billingType'], ['#ftag', 'tag']].forEach(function (p) {
+      if (el.querySelector(p[0])) bindFilter(el, p[0], p[1]);
+    });
     el.querySelector('#clear').onclick = function () {
-      st.q = ''; st.status = ''; st.owner = ''; st.service = ''; st.tag = ''; st.billingType = '';
+      st.q = ''; st.type = ''; st.owner = ''; st.service = ''; st.tag = ''; st.billingType = '';
       root.render();
     };
     el.querySelector('#exportCsv').onclick = function () { exportCsv(rows); };
 
     U.bindTable(el, {
       onSort: function (k) { st.sortDir = st.sortKey === k ? -st.sortDir : 1; st.sortKey = k; root.render(); },
-      onRow: function (id) { location.hash = '#/customers/' + id; }
+      onRow: function (id) { location.hash = '#/accounts/' + id; }
     });
 
     function bindFilter(scope, sel, key, isText) {
       var node = scope.querySelector(sel);
       if (isText) {
         var t;
-        node.oninput = function () { clearTimeout(t); t = setTimeout(function () { st[key] = node.value; root.render(); node = null; }, 220); };
+        node.oninput = function () {
+          clearTimeout(t);
+          t = setTimeout(function () { st[key] = node.value; root.render(); }, 220);
+        };
       } else {
         node.onchange = function () { st[key] = node.value; root.render(); };
       }
@@ -98,51 +112,57 @@
 
   function cols() {
     return [
-      { key: 'name', label: 'Customer', sort: function (c) { return c.name; },
-        render: function (c) {
-          return '<div><span class="link">' + U.esc(c.name) + '</span>' +
-            (S.isFree(c) ? ' ' + U.billingTypeBadge(c) : '') +
-            '<div class="muted" style="font-size:11.5px">' + U.esc(c.contactName || '') + '</div>' +
-            (S.tagsOf(c).length ? '<div style="margin-top:4px">' + U.tagChips(c.tags, 3) + '</div>' : '') +
+      { key: 'name', label: 'Account', sort: function (a) { return a.name; },
+        render: function (a) {
+          var p = S.primaryContact(a.id);
+          return '<div><span class="link">' + U.esc(a.name) + '</span>' +
+            (S.isFree(a) ? ' ' + U.billingTypeBadge(a) : '') +
+            '<div class="muted" style="font-size:11.5px">' +
+              U.esc(p ? S.contactName(p) + (p.title ? ' · ' + p.title : '') : a.industry || '') + '</div>' +
+            (S.tagsOf(a).length ? '<div style="margin-top:4px">' + U.tagChips(a.tags, 3) + '</div>' : '') +
             '</div>';
         } },
-      { key: 'status', label: 'Status', sort: function (c) { return S.status(c.status).order; },
-        render: function (c) { return U.statusBadge(c.status); } },
-      { key: 'services', label: 'Services',
-        render: function (c) {
-          var names = S.serviceNames(c.services);
-          if (!names.length) return '<span class="muted">—</span>';
-          return '<div class="chips">' + names.slice(0, 2).map(function (n) { return '<span class="chip">' + U.esc(n) + '</span>'; }).join('') +
-            (names.length > 2 ? '<span class="chip">+' + (names.length - 2) + '</span>' : '') + '</div>';
+      { key: 'type', label: 'Type', sort: function (a) { return S.accountType(S.deriveAccountType(a)).order; },
+        render: function (a) {
+          var t = S.accountType(S.deriveAccountType(a));
+          return U.badge(t.label, t.tone);
         } },
-      { key: 'value', label: 'Value', cls: 'right', sort: function (c) { return Number(c.value) || 0; },
-        render: function (c) {
-          /* A free account showing "$0" reads like missing data. Say why. */
-          if (S.isFree(c)) {
+      { key: 'contacts', label: 'Contacts', cls: 'right', sort: function (a) { return S.contactsFor(a.id).length; },
+        render: function (a) {
+          var list = S.contactsFor(a.id);
+          if (!list.length) return '<span class="muted">—</span>';
+          return '<div class="split" style="justify-content:flex-end"><span class="avatars">' +
+            list.slice(0, 3).map(function (c) { return U.avatar(c.ownerId, 'sm'); }).join('') +
+            '</span><span class="muted mono">' + list.length + '</span></div>';
+        } },
+      { key: 'opps', label: 'Open Deals', cls: 'right', sort: function (a) {
+          return S.opportunitiesFor(a.id).filter(function (o) { return S.oppStage(o.stage).open; }).length;
+        },
+        render: function (a) {
+          var open = S.opportunitiesFor(a.id).filter(function (o) { return S.oppStage(o.stage).open; });
+          if (!open.length) return '<span class="muted">—</span>';
+          var sum = open.reduce(function (s, o) { return s + (Number(o.amount) || 0); }, 0);
+          return '<span class="mono strong">' + open.length + '</span>' +
+            '<div class="muted" style="font-size:11px">' + S.money(sum) + '</div>';
+        } },
+      { key: 'value', label: 'Contract', cls: 'right', sort: function (a) { return Number(a.value) || 0; },
+        render: function (a) {
+          if (S.isFree(a)) {
             return '<span class="muted">—</span><div class="muted" style="font-size:11px">' +
-              U.esc(S.billingType(c.billingType).label.toLowerCase()) + '</div>';
+              U.esc(S.billingType(a.billingType).label.toLowerCase()) + '</div>';
           }
-          return '<span class="mono">' + S.money(c.value) + '</span>' +
-            '<div class="muted" style="font-size:11px">' + U.esc(c.billingCycle || '') + '</div>';
+          return '<span class="mono">' + S.money(a.value) + '</span>' +
+            '<div class="muted" style="font-size:11px">' + U.esc(a.billingCycle || '') + '</div>';
         } },
-      { key: 'billing', label: 'Billing Date', sort: function (c) { return c.billingDate || '9999'; },
-        render: function (c) {
-          if (!c.billingDate) return '<span class="muted">—</span>';
-          var t = U.dueTone(c.billingDate);
-          return '<div>' + U.fmtDateShort(c.billingDate) + '</div><span class="badge ' +
+      { key: 'billing', label: 'Next Billing', sort: function (a) { return a.billingDate || '9999'; },
+        render: function (a) {
+          if (!a.billingDate) return '<span class="muted">—</span>';
+          var t = U.dueTone(a.billingDate);
+          return '<div>' + U.fmtDateShort(a.billingDate) + '</div><span class="badge ' +
             (t.cls.indexOf('b-') === 0 ? t.cls : 'b-grey') + '" style="margin-top:3px">' + U.esc(t.text) + '</span>';
         } },
-      { key: 'owner', label: 'Owner', sort: function (c) { return S.user(c.ownerId).name; },
-        render: function (c) { return U.userCell(c.ownerId); } },
-      { key: 'notes', label: 'Notes', cls: 'right',
-        render: function (c) {
-          var n = S.notesFor('customer', c.id);
-          if (!n.length) return '<span class="muted">—</span>';
-          var authors = {}; n.forEach(function (x) { authors[x.authorId] = 1; });
-          return '<div class="split" style="justify-content:flex-end"><span class="avatars">' +
-            Object.keys(authors).slice(0, 3).map(function (id) { return U.avatar(id, 'sm'); }).join('') +
-            '</span><span class="muted mono">' + n.length + '</span></div>';
-        } }
+      { key: 'owner', label: 'Owner', sort: function (a) { return S.user(a.ownerId).name; },
+        render: function (a) { return U.userCell(a.ownerId); } }
     ];
   }
 
@@ -150,44 +170,106 @@
   function detail(el, id) {
     root.RecordView.render(el, {
       coll: 'customers', type: 'customer', id: id, icon: ICON,
-      backHref: '#/customers', backLabel: 'Customers',
+      backHref: '#/accounts', backLabel: 'Accounts', objectLabel: 'Account',
+
+      badges: function (a) {
+        var t = S.accountType(S.deriveAccountType(a));
+        return U.badge(t.label, t.tone) +
+          (S.isFree(a) ? U.billingTypeBadge(a) : '') +
+          U.tagChips(a.tags) +
+          (a.industry ? '<span class="chip">' + U.esc(a.industry) + '</span>' : '') +
+          (a.website ? '<a class="chip" href="' + U.esc(href(a.website)) + '" target="_blank" rel="noopener">' + U.esc(a.website) + '</a>' : '') +
+          (a.address ? '<span>' + U.esc(a.address) + '</span>' : '');
+      },
+
+      highlights: function (a) {
+        var p = S.primaryContact(a.id);
+        var open = S.opportunitiesFor(a.id).filter(function (o) { return S.oppStage(o.stage).open; });
+        var bt = U.dueTone(a.billingDate);
+        return [
+          { label: 'Primary Contact', value: p
+              ? '<a class="link" href="#/contacts/' + U.esc(p.id) + '">' + U.esc(S.contactName(p)) + '</a>' +
+                (p.title ? '<div class="muted" style="font-size:11.5px;font-weight:400">' + U.esc(p.title) + '</div>' : '')
+              : '<span class="muted">None set</span>' },
+          { label: 'Phone', value: (p && p.phone) || a.phone
+              ? '<a href="tel:' + U.esc((p && p.phone) || a.phone) + '">' + U.esc((p && p.phone) || a.phone) + '</a>' : '—' },
+          { label: 'Email', value: (p && p.email) || a.email
+              ? '<a href="mailto:' + U.esc((p && p.email) || a.email) + '" style="color:var(--orange)">' +
+                U.esc((p && p.email) || a.email) + '</a>' : '—' },
+          { label: 'Open Deals', value: open.length
+              ? '<span class="mono">' + open.length + '</span> <span class="muted" style="font-size:12px;font-weight:400">· ' +
+                S.money(open.reduce(function (s, o) { return s + (Number(o.amount) || 0); }, 0)) + '</span>'
+              : '<span class="muted">None</span>' },
+          { label: 'Next Billing', value: a.billingDate
+              ? U.fmtDate(a.billingDate) + ' <span class="badge ' +
+                (bt.cls.indexOf('b-') === 0 ? bt.cls : 'b-grey') + '" style="margin-left:6px">' + U.esc(bt.text) + '</span>'
+              : '—' },
+          { label: 'Contract', value: S.isFree(a)
+              ? U.billingTypeBadge(a)
+              : '<span class="mono">' + S.money(a.value) + '</span> <span class="muted">/ ' + U.esc(a.billingCycle || '—') + '</span>' },
+          { label: 'Owner', value: U.userCell(a.ownerId) }
+        ];
+      },
+
+      related: function (a) {
+        var contacts = S.contactsFor(a.id);
+        var opps = S.opportunitiesFor(a.id);
+        var wos = S.workOrdersFor('customer', a.id);
+        return [
+          { title: 'Contacts', count: contacts.length, addLabel: '+ New Contact',
+            emptyText: 'Nobody recorded at this company yet.',
+            html: contacts.map(root.RecordView.contactRow).join(''),
+            onAdd: function (done) { root.Views.contacts.openForm({ accountId: a.id }, done); } },
+          { title: 'Opportunities', count: opps.length, addLabel: '+ New Opportunity',
+            emptyText: 'No deals recorded against this account.',
+            html: opps.map(root.RecordView.oppRow).join(''),
+            onAdd: function (done) { root.Views.opportunities.openForm({ accountId: a.id }, done); } },
+          { title: 'Work Orders', count: wos.length, addLabel: '+ New',
+            emptyText: 'No work orders against this account yet.',
+            html: wos.map(root.RecordView.woRow).join(''),
+            onAdd: function (done) { root.WorkOrderForm.open({ entityType: 'customer', entityId: a.id }, done); } }
+        ];
+      },
+
       extraTabs: S.stripeEnabled() ? [{
-        id: 'payments',
-        label: 'Payments',
-        count: function (c) { return S.invoicesFor(c.id).length; },
+        id: 'payments', label: 'Payments',
+        count: function (a) { return S.invoicesFor(a.id).length; },
         render: paymentsTab
       }] : null,
-      detailRows: function (c) {
-        return row('Company', U.esc(c.name)) +
-          row('Billing Type', U.billingTypeBadge(c) +
-            (S.isFree(c) ? ' <span class="muted" style="font-size:11.5px">excluded from revenue</span>' : '')) +
-          row('Tags', S.tagsOf(c).length ? U.tagChips(c.tags) : '<span class="muted">—</span>') +
-          row('Primary Contact', U.esc(c.contactName || '—')) +
-          row('Email', c.email ? '<a href="mailto:' + U.esc(c.email) + '" style="color:var(--orange)">' + U.esc(c.email) + '</a>' : '—') +
-          row('Phone', U.esc(c.phone || '—')) +
-          row('Status', U.statusBadge(c.status)) +
-          row('Services', S.serviceNames(c.services).join(', ') || '—') +
-          row('Billing Date', U.fmtDate(c.billingDate)) +
-          row('Billing Cycle', U.esc(c.billingCycle || '—')) +
-          row('Contract Value', '<span class="mono">' + S.money(c.value) + '</span>') +
-          row('Industry', U.esc(c.industry || '—')) +
-          row('Lead Source', U.esc(c.source || '—')) +
-          row('Location', U.esc(c.address || '—')) +
-          row('Website', c.website ? '<a href="https://' + U.esc(c.website) + '" target="_blank" rel="noopener" style="color:var(--orange)">' + U.esc(c.website) + '</a>' : '—') +
-          row('Account Owner', U.userCell(c.ownerId)) +
-          row('Created', U.fmtDate(c.createdAt));
+
+      detailRows: function (a) {
+        return row('Account Name', U.esc(a.name)) +
+          row('Type', U.badge(S.accountType(S.deriveAccountType(a)).label, S.accountType(S.deriveAccountType(a)).tone) +
+            ' <span class="muted" style="font-size:11.5px">' + U.esc(S.accountType(S.deriveAccountType(a)).hint) + '</span>') +
+          row('Billing Type', U.billingTypeBadge(a) +
+            (S.isFree(a) ? ' <span class="muted" style="font-size:11.5px">excluded from revenue</span>' : '')) +
+          row('Tags', S.tagsOf(a).length ? U.tagChips(a.tags) : '<span class="muted">—</span>') +
+          row('Phone', U.esc(a.phone || '—')) +
+          row('Email', a.email ? '<a href="mailto:' + U.esc(a.email) + '" style="color:var(--orange)">' + U.esc(a.email) + '</a>' : '—') +
+          row('Services', S.serviceNames(a.services).join(', ') || '—') +
+          row('Billing Date', U.fmtDate(a.billingDate)) +
+          row('Billing Cycle', U.esc(a.billingCycle || '—')) +
+          row('Contract Value', '<span class="mono">' + S.money(a.value) + '</span>') +
+          row('Industry', U.esc(a.industry || '—')) +
+          row('Source', U.esc(a.source || '—')) +
+          row('Location', U.esc(a.address || '—')) +
+          row('Website', a.website ? '<a href="' + U.esc(href(a.website)) + '" target="_blank" rel="noopener" style="color:var(--orange)">' + U.esc(a.website) + '</a>' : '—') +
+          row('Account Owner', U.userCell(a.ownerId)) +
+          row('Created', U.fmtDate(a.createdAt));
       },
-      onEdit: function (c, done) { openForm(c, done); }
+
+      onEdit: function (a, done) { openForm(a, done); }
     });
   }
   function row(k, v) { return '<dt>' + U.esc(k) + '</dt><dd>' + v + '</dd>'; }
+  function href(w) { return /^https?:\/\//i.test(w) ? w : 'https://' + w; }
 
   /* ── Payments tab (Stripe mirror — read only) ────────────────── */
   function paymentsTab(c) {
     if (!S.isOnStripe(c)) {
       return '<div class="card"><div class="card-head"><span class="card-title">Payments</span></div>' +
         U.empty('Not linked to Stripe',
-          'This customer\'s billing is tracked by hand. Edit the record and paste their Stripe customer id (cus_…) to pull real invoices in.',
+          'This account\'s billing is tracked by hand. Edit the record and paste their Stripe customer id (cus_…) to pull real invoices in.',
           '<button class="btn btn-primary btn-sm" id="linkStripe">Edit record</button>') + '</div>';
     }
 
@@ -195,7 +277,7 @@
     var subs = S.subscriptionsFor(c.id);
     var health = S.billingHealth(c);
 
-    return '<div class="detail-cols"><div class="stack">' +
+    return '<div class="stack">' +
       '<div class="card"><div class="card-head"><span class="card-title">Invoices</span>' +
         '<span class="kcol-count">' + invoices.length + '</span>' +
         '<div class="page-actions">' + U.badge(health.label, health.tone) + '</div></div>' +
@@ -222,37 +304,36 @@
                   ? '<div class="muted" style="font-size:11px">' + S.cents(i.amountRemainingCents) + ' left</div>'
                   : '');
             } }
-        ], invoices, {}) : U.empty('No invoices yet', 'Nothing has been billed to this customer in Stripe.')) +
-      '</div></div>' +
+        ], invoices, {}) : U.empty('No invoices yet', 'Nothing has been billed to this account in Stripe.')) +
+      '</div>' +
 
-      '<div class="stack">' +
-        '<div class="card"><div class="card-head"><span class="card-title">Subscriptions</span></div>' +
-          '<div class="card-body">' +
-            (subs.length ? subs.map(function (s) {
-              var tone = s.status === 'active' ? 'b-green'
-                : s.status === 'past_due' || s.status === 'unpaid' ? 'b-red'
-                : s.status === 'trialing' ? 'b-blue' : 'b-grey';
-              return '<div style="padding:10px 0;border-bottom:1px solid var(--line)">' +
-                '<div class="split">' + U.badge(s.status, tone) +
-                  '<span class="mono strong" style="margin-left:auto">' + S.cents(s.amountCents) + '</span></div>' +
-                '<div style="margin-top:6px;font-size:12.5px">' + U.esc(s.description || 'Subscription') + '</div>' +
-                '<div class="muted" style="font-size:11.5px;margin-top:3px">every ' +
-                  (s.intervalCount > 1 ? s.intervalCount + ' ' : '') + U.esc(s.interval || '—') +
-                  (s.intervalCount > 1 ? 's' : '') +
-                  (s.currentPeriodEnd ? ' · renews ' + U.fmtDateShort(s.currentPeriodEnd) : '') + '</div>' +
-                (s.cancelAtPeriodEnd
-                  ? '<div style="margin-top:5px">' + U.badge('Cancels at period end', 'b-yellow') + '</div>' : '') +
-                '</div>';
-            }).join('') : '<span class="muted">No subscriptions.</span>') +
-          '</div></div>' +
+      '<div class="card"><div class="card-head"><span class="card-title">Subscriptions</span></div>' +
+        '<div class="card-body">' +
+          (subs.length ? subs.map(function (s) {
+            var tone = s.status === 'active' ? 'b-green'
+              : s.status === 'past_due' || s.status === 'unpaid' ? 'b-red'
+              : s.status === 'trialing' ? 'b-blue' : 'b-grey';
+            return '<div style="padding:10px 0;border-bottom:1px solid var(--line)">' +
+              '<div class="split">' + U.badge(s.status, tone) +
+                '<span class="mono strong" style="margin-left:auto">' + S.cents(s.amountCents) + '</span></div>' +
+              '<div style="margin-top:6px;font-size:12.5px">' + U.esc(s.description || 'Subscription') + '</div>' +
+              '<div class="muted" style="font-size:11.5px;margin-top:3px">every ' +
+                (s.intervalCount > 1 ? s.intervalCount + ' ' : '') + U.esc(s.interval || '—') +
+                (s.intervalCount > 1 ? 's' : '') +
+                (s.currentPeriodEnd ? ' · renews ' + U.fmtDateShort(s.currentPeriodEnd) : '') + '</div>' +
+              (s.cancelAtPeriodEnd
+                ? '<div style="margin-top:5px">' + U.badge('Cancels at period end', 'b-yellow') + '</div>' : '') +
+              '</div>';
+          }).join('') : '<span class="muted">No subscriptions.</span>') +
+        '</div></div>' +
 
-        '<div class="card"><div class="card-head"><span class="card-title">Stripe Link</span></div>' +
-          '<div class="card-body">' +
-            '<div class="mono" style="font-size:12px;word-break:break-all">' + U.esc(c.stripeCustomerId) + '</div>' +
-            '<div class="hint" style="margin-top:8px">These figures come straight from Stripe and cannot be edited here — ' +
-            'that is what keeps the CRM from drifting out of step with what you actually billed.</div>' +
-          '</div></div>' +
-      '</div></div>';
+      '<div class="card"><div class="card-head"><span class="card-title">Stripe Link</span></div>' +
+        '<div class="card-body">' +
+          '<div class="mono" style="font-size:12px;word-break:break-all">' + U.esc(c.stripeCustomerId) + '</div>' +
+          '<div class="hint" style="margin-top:8px">These figures come straight from Stripe and cannot be edited here — ' +
+          'that is what keeps the CRM from drifting out of step with what you actually billed.</div>' +
+        '</div></div>' +
+    '</div>';
   }
 
   function invoiceBadge(i) {
@@ -265,55 +346,77 @@
   }
 
   /* ── form ────────────────────────────────────────────────────── */
-  function openForm(c, done) {
-    var isNew = !c;
-    c = c || { status: 'new', ownerId: S.me().id, billingCycle: 'Monthly', services: [] };
+  function openForm(a, done) {
+    var isNew = !a;
+    a = a || { accountType: 'prospect', ownerId: S.me().id, billingCycle: 'Monthly', services: [] };
+    var derived = S.deriveAccountType(a);
+    var hasWon = !isNew && S.opportunitiesFor(a.id).some(function (o) { return S.oppStage(o.stage).won; });
 
     U.modal({
-      title: isNew ? 'New Customer' : 'Edit ' + c.name,
+      title: isNew ? 'New Account' : 'Edit ' + a.name,
       wide: true,
-      okText: isNew ? 'Create Customer' : 'Save Changes',
+      okText: isNew ? 'Create Account' : 'Save Changes',
       body: '<div class="form-grid">' +
-        U.field('Company Name *', '<input class="input" name="name" value="' + U.esc(c.name || '') + '" required>') +
-        U.field('Primary Contact', '<input class="input" name="contactName" value="' + U.esc(c.contactName || '') + '">') +
-        U.field('Email', '<input class="input" type="email" name="email" value="' + U.esc(c.email || '') + '">') +
-        U.field('Phone', '<input class="input" name="phone" value="' + U.esc(c.phone || '') + '">') +
-        U.field('Status', '<select class="input" name="status">' + U.options(S.STATUSES(), c.status) + '</select>') +
-        U.field('Account Owner', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), c.ownerId, 'id', 'name') + '</select>') +
+        U.field('Account Name *', '<input class="input" name="name" value="' + U.esc(a.name || '') + '" required>') +
+        U.field('Account Owner', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), a.ownerId, 'id', 'name') + '</select>') +
+        U.field('Type',
+          '<select class="input" name="accountType">' + U.options(S.ACCOUNT_TYPES, derived) + '</select>' +
+          '<div class="hint">' + (hasWon
+            ? 'This account has a won deal, so it reads as a Customer regardless — set Partner or Former to override.'
+            : U.esc(S.accountType(derived).hint)) + '</div>') +
         U.field('Billing Type',
-          '<select class="input" name="billingType">' + U.options(S.BILLING_TYPES, c.billingType || 'paid') + '</select>' +
-          '<div class="hint">' + U.esc(S.billingType(c.billingType).hint) + '</div>') +
-        U.field('Tags', U.tagInput('tagsRaw', c.tags)) +
-        U.field('Billing Date', '<input class="input" type="date" name="billingDate" value="' + U.esc(c.billingDate || '') + '">') +
-        U.field('Billing Cycle', '<select class="input" name="billingCycle">' + U.options(S.BILLING_CYCLES, c.billingCycle) + '</select>') +
-        U.field('Contract Value ($)', '<input class="input" type="number" min="0" step="50" name="value" value="' + U.esc(c.value || 0) + '">') +
-        U.field('Industry', '<input class="input" name="industry" value="' + U.esc(c.industry || '') + '">') +
-        U.field('Lead Source', '<input class="input" name="source" value="' + U.esc(c.source || '') + '">') +
-        U.field('Location', '<input class="input" name="address" value="' + U.esc(c.address || '') + '">') +
-        U.field('Website', '<input class="input" name="website" placeholder="example.com" value="' + U.esc(c.website || '') + '">') +
+          '<select class="input" name="billingType">' + U.options(S.BILLING_TYPES, a.billingType || 'paid') + '</select>' +
+          '<div class="hint">' + U.esc(S.billingType(a.billingType).hint) + '</div>') +
+        U.field('Tags', U.tagInput('tagsRaw', a.tags)) +
+        U.field('Phone', '<input class="input" name="phone" value="' + U.esc(a.phone || '') + '">') +
+        U.field('Email', '<input class="input" type="email" name="email" value="' + U.esc(a.email || '') + '">') +
+        U.field('Website', '<input class="input" name="website" placeholder="example.com" value="' + U.esc(a.website || '') + '">') +
+        U.field('Billing Date', '<input class="input" type="date" name="billingDate" value="' + U.esc(a.billingDate || '') + '">') +
+        U.field('Billing Cycle', '<select class="input" name="billingCycle">' + U.options(S.BILLING_CYCLES, a.billingCycle) + '</select>') +
+        U.field('Contract Value ($)',
+          '<input class="input" type="number" min="0" step="50" name="value" value="' + U.esc(a.value || 0) + '">' +
+          '<div class="hint">What they pay on the cycle above — not the size of a one-off deal.</div>') +
+        U.field('Industry', '<input class="input" name="industry" value="' + U.esc(a.industry || '') + '">') +
+        U.field('Source', '<input class="input" name="source" value="' + U.esc(a.source || '') + '">') +
+        U.field('Location', '<input class="input" name="address" value="' + U.esc(a.address || '') + '">') +
         (S.stripeEnabled()
           ? U.field('Stripe Customer ID',
               '<input class="input mono" name="stripeCustomerId" placeholder="cus_..." value="' +
-                U.esc(c.stripeCustomerId || '') + '">' +
+                U.esc(a.stripeCustomerId || '') + '">' +
               '<div class="hint">Links this record to Stripe. Leave blank to keep billing tracked by hand.</div>', true)
           : '') +
-        '<div class="field span-2"><label>Services</label>' + U.serviceChecks('services', c.services) + '</div>' +
-        (isNew ? '<div class="field span-2"><label>Opening Note (optional)</label>' +
-          '<textarea class="input" name="openingNote" placeholder="Context the rest of the team should know…"></textarea></div>' : '') +
+        '<div class="field span-2"><label>Services</label>' + U.serviceChecks('services', a.services) + '</div>' +
+        (isNew
+          ? '<div class="field span-2"><label>Primary Contact (optional)</label>' +
+              '<input class="input" name="firstContact" placeholder="Dan Whitaker">' +
+              '<div class="hint">Creates the account\'s first contact. You can add more afterwards.</div></div>' +
+            '<div class="field span-2"><label>Opening Note (optional)</label>' +
+              '<textarea class="input" name="openingNote" placeholder="Context the rest of the team should know…"></textarea></div>'
+          : '') +
       '</div>',
       onOk: function (box) {
         var v = U.values(box);
-        if (!v.name) { U.toast('Company name is required.', 'err'); return false; }
+        if (!v.name) { U.toast('Account name is required.', 'err'); return false; }
         v.value = Number(v.value) || 0;
         v.tags = S.parseTags(v.tagsRaw); delete v.tagsRaw;
         var note = v.openingNote; delete v.openingNote;
+        var first = v.firstContact; delete v.firstContact;
 
         if (isNew) {
+          v.status = 'new';
           var created = S.insert('customers', v, 'c', v.name);
+          if (first) {
+            var parts = S.splitName(first);
+            S.insert('contacts', {
+              accountId: created.id, firstName: parts.first, lastName: parts.last,
+              title: '', email: v.email || '', phone: v.phone || '', role: '',
+              isPrimary: true, ownerId: v.ownerId, tags: []
+            }, 'ct', first);
+          }
           if (note) S.addNote('customer', created.id, note);
           U.toast(v.name + ' created.', 'ok');
         } else {
-          S.update('customers', c.id, v, 'customer details');
+          S.update('customers', a.id, v, 'account details');
           U.toast('Saved.', 'ok');
         }
         done();
@@ -323,16 +426,20 @@
 
   /* ── CSV export ──────────────────────────────────────────────── */
   function exportCsv(rows) {
-    var head = ['Customer', 'Contact', 'Email', 'Phone', 'Status', 'Billing Type', 'Tags',
-      'Services', 'Billing Date', 'Cycle', 'Value', 'Owner', 'Industry', 'Source'];
-    var lines = [head.join(',')].concat(rows.map(function (c) {
-      return [c.name, c.contactName, c.email, c.phone, S.status(c.status).label,
-        S.billingType(c.billingType).label, S.tagsOf(c).join(' | '),
-        S.serviceNames(c.services).join(' | '), c.billingDate, c.billingCycle, c.value,
-        S.user(c.ownerId).name, c.industry, c.source]
+    var head = ['Account', 'Type', 'Primary Contact', 'Contacts', 'Open Deals', 'Open Deal Value',
+      'Billing Type', 'Tags', 'Services', 'Billing Date', 'Cycle', 'Contract Value', 'Owner', 'Industry', 'Source'];
+    var lines = [head.join(',')].concat(rows.map(function (a) {
+      var p = S.primaryContact(a.id);
+      var open = S.opportunitiesFor(a.id).filter(function (o) { return S.oppStage(o.stage).open; });
+      return [a.name, S.accountType(S.deriveAccountType(a)).label, p ? S.contactName(p) : '',
+        S.contactsFor(a.id).length, open.length,
+        open.reduce(function (s, o) { return s + (Number(o.amount) || 0); }, 0),
+        S.billingType(a.billingType).label, S.tagsOf(a).join(' | '),
+        S.serviceNames(a.services).join(' | '), a.billingDate, a.billingCycle, a.value,
+        S.user(a.ownerId).name, a.industry, a.source]
         .map(function (f) { return '"' + String(f == null ? '' : f).replace(/"/g, '""') + '"'; }).join(',');
     }));
-    download('thinkfirst-customers-' + S.today() + '.csv', lines.join('\n'), 'text/csv');
+    download('thinkfirst-accounts-' + S.today() + '.csv', lines.join('\n'), 'text/csv');
     U.toast('CSV exported.', 'ok');
   }
 
@@ -345,6 +452,8 @@
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
   }
 
-  root.Views.customers.openForm = openForm;
+  root.Views.accounts.openForm = openForm;
+  /* Older links and bookmarks still say #/customers. */
+  root.Views.customers = root.Views.accounts;
   root.download = download;
 })(window);

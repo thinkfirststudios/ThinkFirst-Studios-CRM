@@ -9,7 +9,7 @@
   root.Views.billing = function (el) {
     var rows = [];
     if (st.scope !== 'vendor') {
-      S.all('customers').forEach(function (c) { rows.push(wrap(c, 'customer')); });
+      S.accounts().forEach(function (c) { rows.push(wrap(c, 'customer')); });
     }
     if (st.scope !== 'customer') {
       S.all('vendors').forEach(function (v) { rows.push(wrap(v, 'vendor')); });
@@ -45,7 +45,7 @@
       '</div>' +
 
       '<div class="grid g-4" style="margin-bottom:14px">' +
-        kpi('Incoming', S.money(incoming), 'billed to customers', 'ok') +
+        kpi('Incoming', S.money(incoming), 'billed to accounts', 'ok') +
         kpi('Outgoing', S.money(outgoing), 'owed to vendors', '') +
         kpi('Net', S.money(incoming - outgoing), 'in this window', 'accent') +
         kpi('Past Due', String(overdue.length), overdue.length ? 'needs chasing' : 'nothing late', overdue.length ? 'danger' : 'ok') +
@@ -68,7 +68,7 @@
     el.querySelector('#exportCsv').onclick = function () {
       var head = ['Account', 'Type', 'Billing Date', 'Cycle', 'Amount', 'Status', 'Owner'];
       var lines = [head.join(',')].concat(rows.map(function (r) {
-        return [r.name, r.kind, r.date, r.cycle, r.amount, S.status(r.status).label, S.user(r.ownerId).name]
+        return [r.name, r.kind, r.date, r.cycle, r.amount, r.stageLabel, S.user(r.ownerId).name]
           .map(function (f) { return '"' + String(f == null ? '' : f).replace(/"/g, '""') + '"'; }).join(',');
       }));
       root.download('thinkfirst-billing-' + S.today() + '.csv', lines.join('\n'), 'text/csv');
@@ -79,7 +79,7 @@
       onSort: function (k) { st.sortDir = st.sortKey === k ? -st.sortDir : 1; st.sortKey = k; root.render(); },
       onRow: function (id) {
         var r = rows.filter(function (x) { return x.id === id; })[0];
-        location.hash = '#/' + (r.kind === 'vendor' ? 'vendors' : 'customers') + '/' + r.id;
+        location.hash = '#/' + (r.kind === 'vendor' ? 'vendors' : 'accounts') + '/' + r.id;
       }
     });
 
@@ -89,10 +89,14 @@
   };
 
   function wrap(rec, kind) {
+    var stage = kind === 'vendor'
+      ? S.status(rec.status)
+      : S.accountType(S.deriveAccountType(rec));
     return {
       id: rec.id, kind: kind, name: rec.name, date: rec.billingDate,
       cycle: rec.billingCycle, amount: Number(rec.value) || 0,
       status: rec.status, ownerId: rec.ownerId, services: rec.services,
+      stageLabel: stage.label, stageTone: stage.tone, stageOrder: stage.order || 99,
       health: kind === 'customer' ? S.billingHealth(rec) : null
     };
   }
@@ -111,7 +115,7 @@
         render: function (r) {
           return r.kind === 'vendor'
             ? U.badge('Outgoing · Vendor', 'b-violet')
-            : U.badge('Incoming · Customer', 'b-green');
+            : U.badge('Incoming · Account', 'b-green');
         } },
       { key: 'cycle', label: 'Cycle', sort: function (r) { return r.cycle || ''; },
         render: function (r) { return '<span class="chip">' + U.esc(r.cycle || '—') + '</span>'; } },
@@ -139,8 +143,10 @@
                 S.cents(r.health.outstanding) + ' outstanding</div>'
               : '');
         } },
-      { key: 'status', label: 'Stage', sort: function (r) { return S.status(r.status).order; },
-        render: function (r) { return U.statusBadge(r.status); } },
+      /* Accounts are classified by type now; vendors still use the
+         editable status list. */
+      { key: 'status', label: 'Standing', sort: function (r) { return r.stageOrder; },
+        render: function (r) { return U.badge(r.stageLabel, r.stageTone); } },
       { key: 'owner', label: 'Owner', sort: function (r) { return S.user(r.ownerId).name; },
         render: function (r) { return U.userCell(r.ownerId); } },
       { key: 'amount', label: 'Amount', cls: 'right', sort: function (r) { return r.amount; },

@@ -50,6 +50,105 @@ create table if not exists public.customers (
   "updatedAt"    timestamptz
 );
 
+-- ── Accounts, Contacts, Opportunities ─────────────────────────────
+-- The `customers` table above IS the Account object. It kept its
+-- original name deliberately: renaming it would have meant rewriting
+-- "entityType" on every existing note and work order and re-pointing
+-- the Stripe mirror plus its Edge Function — a cascade of edits to live
+-- data to buy a cosmetic change. The application says "Account"
+-- everywhere; only storage keeps the older word.
+
+-- How the account is classified. Derived from won opportunities in the
+-- app, but stored so Partner and Former survive — those are judgements,
+-- not facts a deal can overturn.
+alter table public.customers
+  add column if not exists "accountType" text not null default 'prospect';
+
+-- The people at an account. Splitting them out is the point: one
+-- company routinely has a decision maker, a billing contact and a
+-- day-to-day contact, and the single "contactName" field could only
+-- ever hold one of them.
+create table if not exists public.contacts (
+  id                    text primary key,
+  "accountId"           text not null default '',
+  "firstName"           text not null default '',
+  "lastName"            text not null default '',
+  title                 text not null default '',
+  email                 text not null default '',
+  phone                 text not null default '',
+  mobile                text not null default '',
+  department            text not null default '',
+  role                  text not null default '',
+  "isPrimary"           boolean not null default false,
+  "reportsTo"           text not null default '',
+  description           text not null default '',
+  "ownerId"             text not null default '',
+  tags                  jsonb not null default '[]'::jsonb,
+  "convertedFromLeadId" text not null default '',
+  "createdAt"           timestamptz not null default now(),
+  "updatedAt"           timestamptz
+);
+
+-- A deal. Many per account, each with its own stage, amount and close
+-- date — which is what the old model could not express, since the
+-- account's own status had to double as the stage of its only deal.
+create table if not exists public.opportunities (
+  id            text primary key,
+  name          text not null default '',
+  "accountId"   text not null default '',
+  "contactId"   text not null default '',
+  stage         text not null default 'prospecting',
+  amount        numeric not null default 0,
+  "closeDate"   text not null default '',        -- 'YYYY-MM-DD'
+  "ownerId"     text not null default '',
+  type          text not null default '',
+  "leadSource"  text not null default '',
+  "nextStep"    text not null default '',
+  description   text not null default '',
+  "lostReason"  text not null default '',
+  services      jsonb not null default '[]'::jsonb,
+  "closedAt"    text not null default '',
+  "createdAt"   timestamptz not null default now(),
+  "updatedAt"   timestamptz
+);
+
+-- Activities: Task, Event and logged Call in one table. They share every
+-- field that matters and differ only in whether they carry a time and
+-- whether they begin life already done.
+create table if not exists public.tasks (
+  id            text primary key,
+  kind          text not null default 'task',    -- task | call | event
+  subject       text not null default '',
+  description   text not null default '',
+  status        text not null default 'open',    -- open | completed
+  priority      text not null default 'normal',
+  "dueDate"     text not null default '',
+  "startTime"   text not null default '',
+  "endTime"     text not null default '',
+  "entityType"  text not null default '',        -- customer | contact | lead | opportunity | vendor | workorder
+  "entityId"    text not null default '',
+  "assigneeId"  text not null default '',
+  "createdById" text not null default '',
+  "completedAt" text not null default '',
+  "createdAt"   timestamptz not null default now(),
+  "updatedAt"   timestamptz
+);
+
+-- Where the lead ended up, now that conversion produces three records.
+alter table public.leads
+  add column if not exists "convertedContactId" text not null default '';
+alter table public.leads
+  add column if not exists "convertedOpportunityId" text not null default '';
+
+create index if not exists contacts_account_idx    on public.contacts ("accountId");
+create index if not exists contacts_primary_idx    on public.contacts ("accountId", "isPrimary");
+create index if not exists opportunities_acct_idx  on public.opportunities ("accountId");
+create index if not exists opportunities_stage_idx on public.opportunities (stage);
+create index if not exists opportunities_close_idx on public.opportunities ("closeDate");
+create index if not exists tasks_entity_idx        on public.tasks ("entityType", "entityId");
+create index if not exists tasks_open_idx          on public.tasks (status, "dueDate");
+create index if not exists tasks_assignee_idx      on public.tasks ("assigneeId");
+
 -- Leads are their own object rather than customers in an early status.
 -- They arrive in bulk and most never convert; keeping them here means the
 -- customer count, pipeline value and billing calendar only ever describe
@@ -298,7 +397,8 @@ do $$
 declare t text;
 begin
   foreach t in array array[
-    'profiles','customers','vendors','leads','work_orders','notes','services',
+    'profiles','customers','contacts','opportunities','tasks','vendors','leads',
+    'work_orders','notes','services',
     'time_entries','daily_logs','activity','statuses','vendor_types','settings'
   ] loop
     execute format('alter table public.%I enable row level security', t);
@@ -314,7 +414,8 @@ do $$
 declare t text;
 begin
   foreach t in array array[
-    'customers','vendors','leads','work_orders','notes','time_entries','daily_logs','activity'
+    'customers','contacts','opportunities','tasks','vendors','leads',
+    'work_orders','notes','time_entries','daily_logs','activity'
   ] loop
     execute format('drop policy if exists "team_insert" on public.%I', t);
     execute format('drop policy if exists "team_update" on public.%I', t);
@@ -364,7 +465,8 @@ do $$
 declare t text;
 begin
   foreach t in array array[
-    'profiles','customers','vendors','leads','work_orders','notes','services',
+    'profiles','customers','contacts','opportunities','tasks','vendors','leads',
+    'work_orders','notes','services',
     'time_entries','daily_logs','activity','statuses','vendor_types','settings'
   ] loop
     begin
@@ -413,3 +515,80 @@ on conflict (id) do nothing;
 insert into public.settings (id, "orgName", currency)
 values ('org', 'ThinkFirst Studios', 'USD')
 on conflict (id) do nothing;
+
+
+-- ── 7. Migration: split existing accounts into contacts + deals ────
+-- Records created before this release hold their contact inline and use
+-- the account's own status as the stage of its only deal. These two
+-- statements give each of them a real Contact and a real Opportunity so
+-- nothing has to be re-entered by hand.
+--
+-- Both are idempotent: the generated ids are derived from the account
+-- id, so re-running does nothing. Neither statement deletes or alters
+-- an existing row — the original fields stay exactly where they were.
+
+-- 7a. The inline contact becomes a real Contact, marked primary.
+-- The name splits at the first space; with no space the whole string
+-- becomes the last name. first || ' ' || last always round-trips to
+-- what was typed, so a name that cannot be parsed is never mangled.
+insert into public.contacts
+  (id, "accountId", "firstName", "lastName", email, phone, "isPrimary", "ownerId", "createdAt")
+select
+  'ct_mig_' || c.id,
+  c.id,
+  case when position(' ' in trim(c."contactName")) > 0
+       then split_part(trim(c."contactName"), ' ', 1) else '' end,
+  case when position(' ' in trim(c."contactName")) > 0
+       then trim(substring(trim(c."contactName") from position(' ' in trim(c."contactName")) + 1))
+       else trim(c."contactName") end,
+  c.email, c.phone, true, c."ownerId", c."createdAt"
+from public.customers c
+where coalesce(trim(c."contactName"), '') <> ''
+  -- skip accounts that already have contacts, so a re-run after real
+  -- data entry cannot resurrect a contact somebody deliberately deleted
+  and not exists (select 1 from public.contacts x where x."accountId" = c.id)
+on conflict (id) do nothing;
+
+-- 7b. The account's status becomes the stage of its first Opportunity.
+-- Amount comes from the contract value; the account keeps that value,
+-- because what a client pays every month is a different fact from what
+-- a single deal was worth.
+insert into public.opportunities
+  (id, name, "accountId", "contactId", stage, amount, "closeDate", "ownerId",
+   type, "leadSource", services, "closedAt", "createdAt")
+select
+  'op_mig_' || c.id,
+  c.name || ' — Initial Engagement',
+  c.id,
+  coalesce((select x.id from public.contacts x
+            where x."accountId" = c.id order by x."isPrimary" desc limit 1), ''),
+  case c.status
+    when 'new'      then 'prospecting'
+    when 'followup' then 'qualification'
+    when 'pending'  then 'proposal'
+    when 'active'   then 'closedwon'
+    when 'lost'     then 'closedlost'
+    else 'prospecting'
+  end,
+  c.value,
+  coalesce(nullif(c."billingDate", ''), to_char(now(), 'YYYY-MM-DD')),
+  c."ownerId",
+  'New Business',
+  c.source,
+  c.services,
+  case when c.status in ('active', 'lost') then to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SSZ') else '' end,
+  c."createdAt"
+from public.customers c
+where not exists (select 1 from public.opportunities o where o."accountId" = c.id)
+on conflict (id) do nothing;
+
+-- 7c. Classify the accounts. A won deal makes it a Customer; a lost-only
+-- history makes it Former. Everything else is still a Prospect.
+update public.customers c
+set "accountType" = case
+      when exists (select 1 from public.opportunities o
+                   where o."accountId" = c.id and o.stage = 'closedwon') then 'customer'
+      when c.status = 'lost' then 'former'
+      else 'prospect'
+    end
+where c."accountType" = 'prospect';

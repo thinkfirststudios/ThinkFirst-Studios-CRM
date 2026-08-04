@@ -8,10 +8,16 @@
   var viewEl = document.getElementById('view');
 
   var ROUTES = {
-    dashboard: 'dashboard', leads: 'leads', customers: 'customers', pipeline: 'pipeline',
-    tracker: 'tracker', workorders: 'workorders', vendors: 'vendors',
-    billing: 'billing', admin: 'admin'
+    dashboard: 'dashboard', leads: 'leads', accounts: 'accounts',
+    contacts: 'contacts', opportunities: 'opportunities', activities: 'activities',
+    pipeline: 'pipeline', tracker: 'tracker', workorders: 'workorders',
+    vendors: 'vendors', billing: 'billing', admin: 'admin',
+    /* Accounts were called customers until the object split; old links
+       and bookmarks still resolve. */
+    customers: 'accounts'
   };
+  /* Which tab lights up for a route that has no tab of its own. */
+  var NAV_ALIAS = { customers: 'accounts' };
 
   function parse() {
     var raw = (location.hash || '#/dashboard').replace(/^#\/?/, '');
@@ -29,9 +35,15 @@
   function render() {
     var r = parse();
     var view = root.Views[ROUTES[r.name] || 'dashboard'];
+    var nav = NAV_ALIAS[r.name] || r.name;
 
-    document.querySelectorAll('.rail a').forEach(function (a) {
-      a.classList.toggle('active', a.dataset.nav === r.name);
+    document.querySelectorAll('.tabbar a').forEach(function (a) {
+      a.classList.toggle('active', a.dataset.nav === nav);
+    });
+    /* A grouped tab highlights when any route it contains is showing. */
+    document.querySelectorAll('.tabgroup').forEach(function (g) {
+      g.classList.remove('open');
+      g.classList.toggle('active', (g.dataset.nav || '').split(' ').indexOf(nav) > -1);
     });
 
     try {
@@ -45,6 +57,20 @@
     paintUserChip();
   }
   root.render = render;
+
+  /* ── tab dropdowns ───────────────────────────────────────────── */
+  document.querySelectorAll('.tabgroup > button').forEach(function (b) {
+    b.onclick = function (e) {
+      e.stopPropagation();
+      var g = b.parentNode;
+      var wasOpen = g.classList.contains('open');
+      document.querySelectorAll('.tabgroup').forEach(function (x) { x.classList.remove('open'); });
+      if (!wasOpen) g.classList.add('open');
+    };
+  });
+  document.addEventListener('click', function () {
+    document.querySelectorAll('.tabgroup').forEach(function (g) { g.classList.remove('open'); });
+  });
 
   /* ── user switcher ───────────────────────────────────────────── */
   function paintUserChip() {
@@ -106,9 +132,13 @@
     U.modal({
       title: 'Create new…',
       footer: null,
-      body: '<div class="grid g-2">' +
+      body: '<div class="grid g-3">' +
         quickCard('lead', 'Lead', 'Someone you hope to sell to') +
-        quickCard('customer', 'Customer', 'A company you sell to') +
+        quickCard('account', 'Account', 'A company you work with') +
+        quickCard('contact', 'Contact', 'A person at an account') +
+        quickCard('opportunity', 'Opportunity', 'A deal you are working') +
+        quickCard('task', 'Task', 'Something to do by a date') +
+        quickCard('call', 'Log a Call', 'A conversation that happened') +
         quickCard('vendor', 'Vendor', 'A partner you buy from') +
         quickCard('workorder', 'Work Order', 'A job to do today') +
       '</div>',
@@ -118,7 +148,10 @@
             U.closeModal();
             var kind = b.dataset.create;
             if (kind === 'lead') root.Views.leads.openForm(null, render);
-            else if (kind === 'customer') root.Views.customers.openForm(null, render);
+            else if (kind === 'account') root.Views.accounts.openForm(null, render);
+            else if (kind === 'contact') root.Views.contacts.openForm(null, render);
+            else if (kind === 'opportunity') root.Views.opportunities.openForm(null, render);
+            else if (kind === 'task' || kind === 'call') root.Activities.quickCreate(kind, render);
             else if (kind === 'vendor') root.Views.vendors.openForm(null, render);
             else root.WorkOrderForm.open({}, render);
           };
@@ -144,24 +177,45 @@
 
     var leads = S.all('leads').filter(function (l) {
       return match(l.name) || match(l.contactName) || match(l.email) || match(l.phone);
-    }).slice(0, 6);
-    var customers = S.all('customers').filter(function (c) {
-      return match(c.name) || match(c.contactName) || match(c.email) || match(c.phone);
-    }).slice(0, 6);
+    }).slice(0, 5);
+    var accounts = S.accounts().filter(function (c) {
+      return match(c.name) || match(c.email) || match(c.phone) || match(c.industry);
+    }).slice(0, 5);
+    var contacts = S.all('contacts').filter(function (c) {
+      return match(S.contactName(c)) || match(c.email) || match(c.phone) || match(c.title);
+    }).slice(0, 5);
+    var opps = S.all('opportunities').filter(function (o) {
+      return match(o.name) || match(o.nextStep) || match(o.type);
+    }).slice(0, 5);
+    var tasks = S.all('tasks').filter(function (t) {
+      return match(t.subject) || match(t.description);
+    }).slice(0, 4);
     var vendors = S.all('vendors').filter(function (v) {
       return match(v.name) || match(v.contactName) || match(v.email);
-    }).slice(0, 6);
+    }).slice(0, 4);
     var wos = S.all('workOrders').filter(function (w) {
       return match(w.title) || match(w.description);
-    }).slice(0, 6);
-    var notes = S.all('notes').filter(function (n) { return match(n.body); }).slice(0, 5);
+    }).slice(0, 4);
+    var notes = S.all('notes').filter(function (n) { return match(n.body); }).slice(0, 4);
 
     var html = '';
     if (leads.length) html += group('Leads', leads.map(function (l) {
       return item('#/leads/' + l.id, l.name, S.leadStatus(l.leadStatus).label);
     }));
-    if (customers.length) html += group('Customers', customers.map(function (c) {
-      return item('#/customers/' + c.id, c.name, S.status(c.status).label);
+    if (accounts.length) html += group('Accounts', accounts.map(function (c) {
+      return item('#/accounts/' + c.id, c.name, S.accountType(S.deriveAccountType(c)).label);
+    }));
+    if (contacts.length) html += group('Contacts', contacts.map(function (c) {
+      return item('#/contacts/' + c.id, S.contactName(c),
+        (c.title ? c.title + ' · ' : '') + S.accountName(c.accountId));
+    }));
+    if (opps.length) html += group('Opportunities', opps.map(function (o) {
+      return item('#/opportunities/' + o.id, o.name,
+        S.oppStage(o.stage).label + ' · ' + S.money(o.amount));
+    }));
+    if (tasks.length) html += group('Activities', tasks.map(function (t) {
+      return item(S.entityHref(t.entityType, t.entityId), t.subject,
+        S.taskKind(t.kind).label + ' · ' + S.entityLabel(t.entityType, t.entityId));
     }));
     if (vendors.length) html += group('Vendors', vendors.map(function (v) {
       return item('#/vendors/' + v.id, v.name, S.vendorType(v.vendorType).label);
@@ -170,10 +224,7 @@
       return item('#/workorders/' + w.id, w.title, S.recordName(w.entityType, w.entityId));
     }));
     if (notes.length) html += group('Notes', notes.map(function (n) {
-      var seg = n.entityType === 'vendor' ? 'vendors'
-        : n.entityType === 'workorder' ? 'workorders'
-        : n.entityType === 'lead' ? 'leads' : 'customers';
-      var href = '#/' + seg + '/' + n.entityId;
+      var href = S.entityHref(n.entityType, n.entityId);
       return item(href, n.body.slice(0, 62) + (n.body.length > 62 ? '…' : ''), S.user(n.authorId).name);
     }));
 

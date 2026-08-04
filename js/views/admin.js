@@ -216,7 +216,7 @@
               : U.badge('Closed — not won', 'b-grey', true);
           } },
         { key: 'used', label: 'Records', cls: 'right', render: function (s) {
-            var n = S.all('customers').filter(function (c) { return c.status === s.id; }).length +
+            var n = S.all('vendors').filter(function (c) { return c.status === s.id; }).length +
                     S.all('vendors').filter(function (v) { return v.status === s.id; }).length;
             return '<span class="mono">' + n + '</span>';
           } },
@@ -231,7 +231,7 @@
     body.querySelectorAll('[data-del]').forEach(function (b) {
       b.onclick = function () {
         var s = S.find('statuses', b.dataset.del);
-        var used = S.all('customers').filter(function (c) { return c.status === s.id; }).length;
+        var used = S.all('vendors').filter(function (c) { return c.status === s.id; }).length;
         if (used) { U.toast(used + ' customers still use this status. Move them first.', 'err'); return; }
         U.confirmDelete(s.label, function () { S.remove('statuses', s.id); root.render(); });
       };
@@ -343,7 +343,7 @@
       '<div class="grid g-4" style="margin-bottom:14px">' +
         stat('Invoices Mirrored', invoices.length, unlinkedInv.length ? unlinkedInv.length + ' unmatched' : 'all matched') +
         stat('Subscriptions', subs.length, subs.filter(function (s) { return s.status === 'active'; }).length + ' active') +
-        stat('Linked Customers', linked.length, 'of ' + S.all('customers').length + ' total') +
+        stat('Linked Accounts', linked.length, 'of ' + S.accounts().length + ' total') +
         stat('Stripe MRR', S.cents(S.stripeMrr()), 'from active subscriptions') +
       '</div>' +
 

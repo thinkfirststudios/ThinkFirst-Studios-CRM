@@ -17,7 +17,12 @@
   /* JS collection name → Postgres table name */
   var TABLES = {
     users: 'profiles',
+    /* `customers` is the Account object — see the naming note in
+       store.js. The UI never says "customer" for it. */
     customers: 'customers',
+    contacts: 'contacts',
+    opportunities: 'opportunities',
+    tasks: 'tasks',
     vendors: 'vendors',
     leads: 'leads',
     workOrders: 'work_orders',
