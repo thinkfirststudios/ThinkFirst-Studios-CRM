@@ -90,6 +90,12 @@
         '<p class="auth-sub">' + explain + '</p>' +
         '<div class="auth-error" style="white-space:pre-wrap">' + esc(message) + '</div>' +
         '<div class="stack" style="gap:9px;margin-top:18px">' +
+          (setup
+            ? '<button class="btn" id="auCopy" style="justify-content:center;padding:10px">' +
+                'Copy schema.sql to clipboard</button>' +
+              '<div class="hint" style="text-align:center">Paste it into Supabase → SQL Editor → New query → Run. ' +
+                'Safe to run on a database that already has data.</div>'
+            : '') +
           '<button class="btn btn-primary" id="auRetry" style="justify-content:center;padding:10px">Retry</button>' +
           (signedIn ? '<button class="btn btn-ghost btn-sm" id="auOut" style="justify-content:center">Sign out</button>' : '') +
         '</div>' +
@@ -99,6 +105,36 @@
     wrap.querySelector('#auRetry').onclick = function () { location.reload(); };
     var out = wrap.querySelector('#auOut');
     if (out) out.onclick = function () { B.signOut().then(function () { location.reload(); }); };
+
+    /* The schema file ships with the app, so the screen that tells you to
+       run it can also hand it to you. Going back to find the file is the
+       step people actually get stuck on. */
+    var copy = wrap.querySelector('#auCopy');
+    if (copy) copy.onclick = function () {
+      copy.disabled = true;
+      copy.textContent = 'Fetching…';
+      fetch('supabase/schema.sql', { cache: 'no-store' })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        })
+        .then(function (sql) {
+          if (!sql.trim()) throw new Error('empty');
+          return navigator.clipboard.writeText(sql).then(function () {
+            copy.textContent = '✓ Copied — paste it into the SQL Editor';
+            copy.disabled = false;
+          });
+        })
+        .catch(function () {
+          /* Clipboard access needs a secure context and fetch needs the
+             file to be served, so neither is guaranteed. Fall back to
+             something that always works: open it and let them copy. */
+          copy.textContent = 'Open schema.sql';
+          copy.disabled = false;
+          copy.onclick = function () { window.open('supabase/schema.sql', '_blank'); };
+          window.open('supabase/schema.sql', '_blank');
+        });
+    };
   }
 
   function screen(opts) {
