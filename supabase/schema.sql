@@ -134,12 +134,6 @@ create table if not exists public.tasks (
   "updatedAt"   timestamptz
 );
 
--- Where the lead ended up, now that conversion produces three records.
-alter table public.leads
-  add column if not exists "convertedContactId" text not null default '';
-alter table public.leads
-  add column if not exists "convertedOpportunityId" text not null default '';
-
 create index if not exists contacts_account_idx    on public.contacts ("accountId");
 create index if not exists contacts_primary_idx    on public.contacts ("accountId", "isPrimary");
 create index if not exists opportunities_acct_idx  on public.opportunities ("accountId");
@@ -176,6 +170,12 @@ create table if not exists public.leads (
   "createdAt"           timestamptz not null default now(),
   "updatedAt"           timestamptz
 );
+
+-- Where the lead ended up, now that conversion produces three records.
+alter table public.leads
+  add column if not exists "convertedContactId" text not null default '';
+alter table public.leads
+  add column if not exists "convertedOpportunityId" text not null default '';
 
 -- The other half of the conversion link, so an account can always say
 -- where it came from even if the lead row is later deleted.
@@ -230,11 +230,6 @@ create table if not exists public.outreach (
 -- outreach row holding a tally, so the two can never drift apart.
 alter table public.leads
   add column if not exists "outreachId" text not null default '';
-
--- Touches per day to aim for. 0 means no target, and any day with at
--- least one touch then counts as a day you showed up.
-alter table public.settings
-  add column if not exists "outreachDailyGoal" integer not null default 0;
 
 create index if not exists outreach_date_idx    on public.outreach (date desc);
 create index if not exists outreach_group_idx   on public.outreach ("groupId", date desc);
@@ -355,6 +350,11 @@ create table if not exists public.settings (
 -- money. 0 means no goal set and the dashboard hides the tracker.
 alter table public.settings
   add column if not exists "mrrGoalCents" bigint not null default 0;
+
+-- Outreach touches per day to aim for. 0 means no target, and any day
+-- with at least one touch then counts as a day you showed up.
+alter table public.settings
+  add column if not exists "outreachDailyGoal" integer not null default 0;
 
 -- ── Billing type and tags ──────────────────────────────────────────
 -- billingType is structured rather than a tag because the app has to do
