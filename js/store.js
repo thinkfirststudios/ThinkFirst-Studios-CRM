@@ -733,6 +733,9 @@
     boot: boot,
     isBooted: function () { return booted; },
     mode: function () { return B.mode; },
+    /* Tables this database does not have yet. The features that use them
+       are unavailable; everything else works. */
+    missingTables: function () { return B.missing || []; },
     db: function () { return db; },
     save: save,
     onChange: function (fn) { listeners.push(fn); },

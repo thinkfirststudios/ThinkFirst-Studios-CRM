@@ -52,6 +52,14 @@
        missing table is a setup step; anything else is a real failure. */
   var MISSING_TABLE = /schema cache|Could not find the table|does not exist|relation .* does not exist/i;
 
+  /* Without these there is no application to run, so their absence means
+     the schema was never applied and the setup screen is the right
+     answer. Every other table belongs to one feature: if it is missing,
+     that feature is unavailable and the rest of the CRM carries on.
+     Locking someone out of their customer list because a tracker added
+     last week has no table is the wrong trade. */
+  var CORE_TABLES = { profiles: 1, customers: 1, settings: 1 };
+
   /* Fields the app carries in memory but that have no column. */
   var STRIP = ['__local'];
 
@@ -70,6 +78,7 @@
     mode: 'local',
     needsAuth: false,
     realtime: false,
+    missing: [],
 
     init: function () { return Promise.resolve(); },
     hydrate: function () {
@@ -103,6 +112,7 @@
     realtime: true,
     onRemote: null,      // set by the store
     onError: null,       // set by the store
+    missing: [],         // tables this database does not have yet
 
     init: function (cfg) {
       if (!root.supabase || !root.supabase.createClient) {
@@ -170,7 +180,15 @@
         });
       })).then(function (results) {
         var failed = results.filter(function (r) { return r && r.__fail; });
-        if (failed.length) {
+
+        /* Only stop for something that cannot be worked around: a core
+           table, or a failure that is not simply a missing table (auth,
+           network, a broken policy). A feature table that has not been
+           created yet degrades to an empty list instead. */
+        var fatal = failed.filter(function (f) {
+          return CORE_TABLES[COLLECTIONS[f.__fail]] || !MISSING_TABLE.test(f.__msg);
+        });
+        if (fatal.length) {
           var err = new Error(failed.map(function (f) {
             return f.__fail + ': ' + f.__msg;
           }).join('\n'));
@@ -182,8 +200,12 @@
           throw err;
         }
 
+        Remote.missing = failed.map(function (f) { return f.__fail; });
+
         var db = { version: 1 };
-        colls.forEach(function (c, i) { db[c] = results[i]; });
+        colls.forEach(function (c, i) {
+          db[c] = (results[i] && results[i].__fail) ? [] : results[i];
+        });
 
         /* settings is a single row in the app's model */
         db.settings = (db.settings && db.settings[0]) ||
@@ -204,6 +226,12 @@
       if (!table || !client) return;
       if (READ_ONLY[coll]) {
         console.warn('CRM: ' + coll + ' mirrors Stripe and is not writable from the app.');
+        return;
+      }
+      /* Say why rather than letting PostgREST answer with a schema-cache
+         error that reads like a bug. */
+      if (Remote.missing.indexOf(table) > -1) {
+        fail(table, op, 'this table does not exist yet — run the database update to enable it');
         return;
       }
 

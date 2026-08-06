@@ -462,6 +462,17 @@ body.auth-open .shell{display:none}
 }
 .auth-foot .mono{color:var(--text-2)}
 
+/* A feature is switched off because its table is missing. Informational,
+   not an error — the rest of the app is fine. */
+.update-banner{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  margin:20px 24px 0;padding:11px 14px;font-size:12.5px;color:var(--text-2);
+  background:linear-gradient(90deg,rgba(232,185,49,.13),transparent);
+  border:1px solid rgba(232,185,49,.35);border-radius:var(--r-sm);
+}
+.update-banner strong{color:var(--text)}
+@media(max-width:900px){.update-banner{margin:16px 14px 0}}
+
 /* ── Record page: related lists + activity ───────────────────────
    Salesforce's three-column record: detail in the middle, activity
    beside it, related objects down the right. */

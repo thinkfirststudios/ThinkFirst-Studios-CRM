@@ -40,14 +40,16 @@
     document.querySelectorAll('.tabbar a').forEach(function (a) {
       a.classList.toggle('active', a.dataset.nav === nav);
     });
-    /* A grouped tab highlights when any route it contains is showing. */
+    /* A grouped tab highlights when any route it contains is showing.
+       Its open/closed state is left alone: clicking the tab navigates,
+       and closing the menu here would shut it again in the same tick. */
     document.querySelectorAll('.tabgroup').forEach(function (g) {
-      g.classList.remove('open');
       g.classList.toggle('active', (g.dataset.nav || '').split(' ').indexOf(nav) > -1);
     });
 
     try {
       view(viewEl, r.params);
+      paintUpdateBanner();
     } catch (err) {
       console.error(err);
       viewEl.innerHTML = U.empty('Something broke rendering this screen', err.message,
@@ -58,14 +60,79 @@
   }
   root.render = render;
 
-  /* ── tab dropdowns ───────────────────────────────────────────── */
+  /* ── "your database is behind" banner ────────────────────────────
+     A feature whose table is missing is unavailable, but that is no
+     reason to lock someone out of the CRM. Say what is off and how to
+     turn it on, at the top of whatever screen they are on. */
+  var FEATURE_BY_TABLE = {
+    outreach: 'Daily Outreach', outreach_groups: 'Daily Outreach',
+    contacts: 'Contacts', opportunities: 'Opportunities', tasks: 'Activities',
+    leads: 'Leads', work_orders: 'Work Orders', vendors: 'Vendors',
+    time_entries: 'Time tracking', daily_logs: 'Daily Tracker'
+  };
+
+  function paintUpdateBanner() {
+    var missing = S.missingTables();
+    var host = document.getElementById('updateBanner');
+    if (!missing.length) { if (host) host.remove(); return; }
+
+    var features = [];
+    missing.forEach(function (t) {
+      var f = FEATURE_BY_TABLE[t] || t;
+      if (features.indexOf(f) < 0) features.push(f);
+    });
+
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'updateBanner';
+      host.className = 'update-banner';
+      viewEl.parentNode.insertBefore(host, viewEl);
+    }
+    host.innerHTML =
+      '<div><strong>' + U.esc(features.join(' and ')) + '</strong> ' +
+        (features.length === 1 ? 'is' : 'are') + ' switched off until your database is updated. ' +
+        'Everything else works as normal.</div>' +
+      '<button class="btn btn-sm" id="bannerCopy" style="margin-left:auto">Copy schema.sql</button>' +
+      '<button class="btn btn-ghost btn-sm" id="bannerHide">Hide</button>';
+
+    host.querySelector('#bannerHide').onclick = function () { host.remove(); };
+    host.querySelector('#bannerCopy').onclick = function () {
+      var b = host.querySelector('#bannerCopy');
+      b.disabled = true; b.textContent = 'Fetching…';
+      fetch('supabase/schema.sql', { cache: 'no-store' })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+        .then(function (sql) { return navigator.clipboard.writeText(sql); })
+        .then(function () {
+          b.textContent = '✓ Copied';
+          b.disabled = false;
+          U.toast('Paste it into Supabase → SQL Editor → New query → Run, then reload.', 'ok');
+        })
+        .catch(function () {
+          b.textContent = 'Open schema.sql';
+          b.disabled = false;
+          window.open('supabase/schema.sql', '_blank');
+        });
+    };
+  }
+
+  /* ── tab dropdowns ───────────────────────────────────────────────
+     Clicking a grouped tab goes to its first destination AND opens the
+     menu. Opening the menu alone made the tab a dead click: "Leads"
+     looked like every other tab but went nowhere until you clicked a
+     second time. */
   document.querySelectorAll('.tabgroup > button').forEach(function (b) {
     b.onclick = function (e) {
       e.stopPropagation();
       var g = b.parentNode;
       var wasOpen = g.classList.contains('open');
       document.querySelectorAll('.tabgroup').forEach(function (x) { x.classList.remove('open'); });
-      if (!wasOpen) g.classList.add('open');
+      if (wasOpen) return;                       // second click just closes it
+      g.classList.add('open');
+
+      var first = g.querySelector('.tabmenu a');
+      if (first && location.hash !== first.getAttribute('href')) {
+        location.hash = first.getAttribute('href');
+      }
     };
   });
   document.addEventListener('click', function () {
