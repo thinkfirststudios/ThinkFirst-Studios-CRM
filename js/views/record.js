@@ -113,11 +113,13 @@
     el.querySelector('#editRec').onclick = function () { cfg.onEdit(rec, rerender); };
     var delBtn = el.querySelector('#delRec');
     if (delBtn) delBtn.onclick = function () {
-      U.confirmDelete(cfg.recordTitle ? cfg.recordTitle(rec) : rec.name, function () {
-        S.remove(cfg.coll, rec.id);
-        U.toast('Deleted.');
+      var title = cfg.recordTitle ? cfg.recordTitle(rec) : rec.name;
+      U.confirmDelete(title, function () {
+        var removed = S.removeCascade(cfg.coll, rec.id);
+        var extra = Object.keys(removed).map(function (k) { return removed[k] + ' ' + k; });
+        U.toast('Deleted ' + title + (extra.length ? ' and ' + extra.join(', ') : '') + '.');
         location.hash = cfg.backHref.replace('#', '');
-      });
+      }, S.childrenOf(cfg.coll, rec.id));
     };
     if (cfg.bindActions) cfg.bindActions(el, rec, rerender);
 

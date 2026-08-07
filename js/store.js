@@ -727,6 +727,65 @@
     notify();
   }
 
+  /* ── what hangs off a record ─────────────────────────────────────
+     A contact or an opportunity has no meaning without its account, so
+     deleting the account has to take them with it. Leaving them behind
+     produced rows reading "Unknown account" that still counted toward
+     open pipeline and win rate — a deleted company quietly inflating
+     the forecast. */
+  function childrenOf(coll, id) {
+    var out = [];
+    function add(label, collection, list) {
+      if (list.length) out.push({ label: label, coll: collection, rows: list });
+    }
+    if (coll === 'customers') {
+      add('contacts', 'contacts', db.contacts.filter(function (c) { return c.accountId === id; }));
+      add('opportunities', 'opportunities', db.opportunities.filter(function (o) { return o.accountId === id; }));
+    }
+    if (coll === 'customers' || coll === 'vendors' || coll === 'opportunities') {
+      var type = coll === 'customers' ? 'customer' : coll === 'vendors' ? 'vendor' : 'opportunity';
+      add('work orders', 'workOrders', db.workOrders.filter(function (w) {
+        return w.entityType === type && w.entityId === id;
+      }));
+      add('activities', 'tasks', db.tasks.filter(function (t) {
+        return t.entityType === type && t.entityId === id;
+      }));
+      add('notes', 'notes', db.notes.filter(function (n) {
+        return n.entityType === type && n.entityId === id;
+      }));
+    }
+    /* An opportunity's children go too, but its contacts do not — those
+       belong to the account and outlive any single deal. */
+    if (coll === 'customers') {
+      db.opportunities.filter(function (o) { return o.accountId === id; }).forEach(function (o) {
+        childrenOf('opportunities', o.id).forEach(function (grp) {
+          var existing = out.filter(function (x) { return x.coll === grp.coll; })[0];
+          if (existing) {
+            grp.rows.forEach(function (r) {
+              if (existing.rows.indexOf(r) < 0) existing.rows.push(r);
+            });
+          } else out.push(grp);
+        });
+      });
+    }
+    return out;
+  }
+
+  /* Delete a record and everything that only exists because of it. */
+  function removeCascade(coll, id) {
+    var groups = childrenOf(coll, id);
+    var counts = {};
+    groups.forEach(function (g) {
+      counts[g.label] = g.rows.length;
+      g.rows.forEach(function (r) {
+        db[g.coll] = db[g.coll].filter(function (x) { return x.id !== r.id; });
+        push(g.coll, 'delete', { id: r.id });
+      });
+    });
+    remove(coll, id);
+    return counts;
+  }
+
   /* ── public API ──────────────────────────────────────────────── */
   var API = {
     /* lifecycle */
@@ -742,6 +801,73 @@
 
     uid: uid, today: today, shift: shift, nowISO: now, initials: initials, splitName: splitName,
     all: all, find: find, insert: insert, insertMany: insertMany, update: update, remove: remove,
+    childrenOf: childrenOf, removeCascade: removeCascade,
+
+    /* ── orphans ────────────────────────────────────────────────────
+       Records whose parent no longer exists. Before deletes cascaded,
+       removing an account left its deals behind, and an orphaned deal
+       still counted toward open pipeline and win rate while showing
+       "Unknown account". Found rather than hidden: a wrong number you
+       cannot see is worse than one you can delete. */
+    orphans: function () {
+      var has = {};
+      ['customers', 'vendors', 'leads', 'opportunities', 'contacts', 'workOrders'].forEach(function (c) {
+        has[c] = {};
+        db[c].forEach(function (r) { has[c][r.id] = 1; });
+      });
+      function parentColl(type) {
+        return type === 'vendor' ? 'vendors' : type === 'lead' ? 'leads'
+          : type === 'opportunity' ? 'opportunities' : type === 'contact' ? 'contacts'
+          : type === 'workorder' ? 'workOrders' : 'customers';
+      }
+      function lost(rec) {
+        var pc = parentColl(rec.entityType);
+        /* An unset entity is not an orphan — it was never attached. */
+        return !!rec.entityId && !has[pc][rec.entityId];
+      }
+
+      var groups = [
+        { coll: 'contacts', label: 'Contacts', why: 'their account no longer exists',
+          rows: db.contacts.filter(function (c) { return c.accountId && !has.customers[c.accountId]; }) },
+        { coll: 'opportunities', label: 'Opportunities', why: 'their account no longer exists',
+          rows: db.opportunities.filter(function (o) { return o.accountId && !has.customers[o.accountId]; }) },
+        { coll: 'workOrders', label: 'Work orders', why: 'the record they were for no longer exists',
+          rows: db.workOrders.filter(lost) },
+        { coll: 'tasks', label: 'Activities', why: 'the record they were about no longer exists',
+          rows: db.tasks.filter(lost) },
+        { coll: 'notes', label: 'Notes', why: 'the record they were on no longer exists',
+          rows: db.notes.filter(lost) }
+      ].filter(function (g) { return g.rows.length; });
+
+      return { groups: groups, total: groups.reduce(function (s, g) { return s + g.rows.length; }, 0) };
+    },
+
+    /* Opportunities the schema migration invented so that pre-split
+       accounts kept a deal history. Untouched ones are noise: they carry
+       the migration's own name, no money and no activity. Identified so
+       they can be cleared out deliberately — never automatically, since
+       a real deal could legitimately look like this. */
+    migrationPlaceholders: function () {
+      return db.opportunities.filter(function (o) {
+        if (String(o.name || '').indexOf('— Initial Engagement') < 0) return false;
+        if (Number(o.amount) > 0) return false;
+        if (o.nextStep || o.description || o.lostReason) return false;
+        if (API.tasksFor('opportunity', o.id).length) return false;
+        if (API.notesFor('opportunity', o.id).length) return false;
+        if (API.workOrdersFor('opportunity', o.id).length) return false;
+        return true;
+      });
+    },
+    removeMany: function (coll, ids) {
+      if (!ids.length) return 0;
+      var set = {};
+      ids.forEach(function (id) { set[id] = 1; });
+      db[coll] = db[coll].filter(function (r) { return !set[r.id]; });
+      ids.forEach(function (id) { push(coll, 'delete', { id: id }); });
+      log('deleted', coll, '', ids.length + ' records removed in bulk');
+      notify();
+      return ids.length;
+    },
 
     /* reference */
     STATUSES: function () { return db.statuses.slice().sort(function (a, b) { return a.order - b.order; }); },

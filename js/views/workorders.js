@@ -190,7 +190,7 @@
     el.querySelector('#logTime').onclick = function () { openTimeLog(w, rerender); };
     el.querySelector('#delWo').onclick = function () {
       U.confirmDelete(w.title, function () {
-        S.remove('workOrders', w.id);
+        S.removeCascade('workOrders', w.id);
         U.toast('Work order deleted.');
         location.hash = '#/workorders';
       });

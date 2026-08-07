@@ -9,7 +9,20 @@
   root.Views.billing = function (el) {
     var rows = [];
     if (st.scope !== 'vendor') {
-      S.accounts().forEach(function (c) { rows.push(wrap(c, 'customer')); });
+      S.accounts().forEach(function (a) {
+        /* An account billed through Stripe already has a real renewal
+           date on its subscription, and that is what will actually be
+           charged. It wins over the hand-typed billingDate — which is
+           usually blank on exactly the accounts that ARE billing money,
+           because nobody types a date for something Stripe handles.
+           Reading only that field left the paying accounts off the
+           calendar entirely. */
+        var subs = S.subscriptionsFor(a.id).filter(function (s) {
+          return (s.status === 'active' || s.status === 'trialing') && s.currentPeriodEnd;
+        });
+        if (subs.length) subs.forEach(function (s) { rows.push(wrapSub(a, s)); });
+        else rows.push(wrap(a, 'customer'));
+      });
     }
     if (st.scope !== 'customer') {
       S.all('vendors').forEach(function (v) { rows.push(wrap(v, 'vendor')); });
@@ -31,7 +44,8 @@
     el.innerHTML =
       '<div class="page-head">' +
         '<div><div class="eyebrow">Money</div><h1 class="page-title">Billing Calendar</h1>' +
-          '<div class="page-sub">Every customer invoice and vendor payment on one timeline.</div></div>' +
+          '<div class="page-sub">Every account charge and vendor payment on one timeline. ' +
+            'Accounts on Stripe use their real renewal date; the rest use the date on the record.</div></div>' +
         '<div class="page-actions">' +
           '<div class="seg" id="scopeSeg">' +
             '<button data-scope="all" class="' + (st.scope === 'all' ? 'on' : '') + '">All</button>' +
@@ -58,7 +72,9 @@
         '<div class="page-actions"><button class="btn btn-sm" id="exportCsv">Export CSV</button></div></div>' +
         U.table(cols(), rows, {
           sortKey: st.sortKey, sortDir: st.sortDir, rowLink: true,
-          emptyHTML: U.empty('Nothing scheduled', 'No billing dates fall inside this window.')
+          emptyHTML: U.empty('Nothing scheduled',
+            'No charges fall inside this window. Accounts billed by Stripe appear on their renewal ' +
+            'date; accounts billed by hand only appear once they have a billing date on the record.')
         }) + '</div>';
 
     el.querySelectorAll('#scopeSeg button').forEach(function (b) {
@@ -97,8 +113,33 @@
       cycle: rec.billingCycle, amount: Number(rec.value) || 0,
       status: rec.status, ownerId: rec.ownerId, services: rec.services,
       stageLabel: stage.label, stageTone: stage.tone, stageOrder: stage.order || 99,
-      health: kind === 'customer' ? S.billingHealth(rec) : null
+      health: kind === 'customer' ? S.billingHealth(rec) : null,
+      source: 'manual'
     };
+  }
+
+  /* One row per Stripe subscription: an account on two plans renewing on
+     different dates has two charges coming, and collapsing them into one
+     account row would hide one of them. */
+  function wrapSub(account, sub) {
+    var r = wrap(account, 'customer');
+    r.date = sub.currentPeriodEnd;
+    r.amount = (Number(sub.amountCents) || 0) / 100;
+    r.cycle = cycleLabel(sub);
+    r.source = 'stripe';
+    r.subDescription = sub.description || '';
+    r.cancelling = !!sub.cancelAtPeriodEnd;
+    return r;
+  }
+
+  function cycleLabel(sub) {
+    var n = Number(sub.intervalCount) || 1;
+    var unit = sub.interval || '';
+    if (n === 1) {
+      return unit === 'month' ? 'Monthly' : unit === 'year' ? 'Annual'
+        : unit === 'week' ? 'Weekly' : unit === 'day' ? 'Daily' : unit || '—';
+    }
+    return 'Every ' + n + ' ' + unit + 's';
   }
 
   function cols() {
@@ -118,7 +159,13 @@
             : U.badge('Incoming · Account', 'b-green');
         } },
       { key: 'cycle', label: 'Cycle', sort: function (r) { return r.cycle || ''; },
-        render: function (r) { return '<span class="chip">' + U.esc(r.cycle || '—') + '</span>'; } },
+        render: function (r) {
+          return '<span class="chip">' + U.esc(r.cycle || '—') + '</span>' +
+            (r.source === 'stripe'
+              ? '<div style="margin-top:3px">' + U.badge('from Stripe', 'b-green') +
+                (r.cancelling ? ' ' + U.badge('ending', 'b-yellow') : '') + '</div>'
+              : '');
+        } },
       { key: 'services', label: 'Services',
         render: function (r) {
           var names = S.serviceNames(r.services);

@@ -375,10 +375,10 @@
     var delBtn = el.querySelector('#delBtn');
     if (delBtn) delBtn.onclick = function () {
       U.confirmDelete(l.name, function () {
-        S.remove('leads', l.id);
+        S.removeCascade('leads', l.id);
         U.toast(l.name + ' deleted.');
         location.hash = '#/leads';
-      });
+      }, S.childrenOf('leads', l.id));
     };
 
     function paintTab() {

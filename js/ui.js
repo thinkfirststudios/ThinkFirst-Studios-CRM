@@ -200,12 +200,30 @@
     document.removeEventListener('keydown', escClose);
   }
 
-  function confirmDelete(what, onYes) {
+  /* `children` is the [{label, rows}] list from Store.childrenOf. Naming
+     what else disappears is the whole point: deleting an account takes
+     its contacts and deals with it, and finding that out afterwards is
+     not a reasonable way to learn it. */
+  function confirmDelete(what, onYes, children) {
+    var groups = (children || []).filter(function (g) { return g.rows.length; });
+    var total = groups.reduce(function (s, g) { return s + g.rows.length; }, 0);
+
     modal({
       title: 'Delete ' + what + '?',
-      body: '<p style="margin:0;color:var(--text-2)">This removes <strong>' + esc(what) +
-            '</strong> permanently. Notes and work orders attached to it stay in the log but lose their link.</p>',
-      okText: 'Delete', danger: true,
+      body: '<p style="margin:0 0 12px;color:var(--text-2)">This removes <strong>' + esc(what) +
+          '</strong> permanently.</p>' +
+        (total
+          ? '<div class="card" style="border-color:rgba(229,72,77,.4)"><div class="card-body">' +
+              '<div class="strong" style="margin-bottom:8px">' + total +
+                ' attached record' + (total === 1 ? '' : 's') + ' will be deleted too</div>' +
+              '<div class="chips">' + groups.map(function (g) {
+                return '<span class="chip">' + g.rows.length + ' ' + esc(g.label) + '</span>';
+              }).join('') + '</div>' +
+              '<div class="hint" style="margin-top:9px">They only exist as part of this record. ' +
+                'Leaving them behind would keep them in your totals with nothing to point at.</div>' +
+            '</div></div>'
+          : '<div class="hint">Nothing else is attached to it.</div>'),
+      okText: 'Delete' + (total ? ' all ' + (total + 1) : ''), danger: true,
       onOk: function () { onYes(); }
     });
   }

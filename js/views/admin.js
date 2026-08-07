@@ -26,13 +26,13 @@
 
       '<div class="grid g-4" style="margin-bottom:14px">' +
         stat('Users', db.users.length, db.users.filter(function (u) { return u.active; }).length + ' active') +
-        stat('Customers', db.customers.length, db.notes.filter(function (n) { return n.entityType === 'customer'; }).length + ' notes') +
-        stat('Vendors', db.vendors.length, db.vendorTypes.length + ' vendor types') +
+        stat('Accounts', db.customers.length, db.contacts.length + ' contacts') +
+        stat('Opportunities', db.opportunities.length, S.openOpportunities().length + ' open') +
         stat('Work Orders', db.workOrders.length, db.timeEntries.length + ' time entries') +
       '</div>' +
 
       '<div class="tabs" id="adminTabs">' +
-        ['users', 'services', 'statuses', 'vendorTypes', 'stripe', 'settings', 'data', 'audit'].map(function (t) {
+        ['users', 'services', 'statuses', 'vendorTypes', 'stripe', 'settings', 'health', 'data', 'audit'].map(function (t) {
           return '<button data-t="' + t + '"' + (tab === t ? ' class="on"' : '') + '>' + U.esc(LABELS[t]) + '</button>';
         }).join('') +
       '</div><div id="adminBody"></div>';
@@ -47,7 +47,7 @@
   var LABELS = {
     users: 'Users & Roles', services: 'Service Catalog', statuses: 'Pipeline Statuses',
     vendorTypes: 'Vendor Types', stripe: 'Stripe', settings: 'Organization',
-    data: 'Data & Backup', audit: 'Audit Log'
+    health: 'Data Health', data: 'Data & Backup', audit: 'Audit Log'
   };
 
   /* ── users ───────────────────────────────────────────────────── */
@@ -504,6 +504,93 @@
       return '<div class="card"><div class="card-head"><span class="card-title">' + U.esc(title) + '</span></div>' +
         '<div class="card-body"><p class="hint" style="margin:0 0 14px">' + U.esc(desc) + '</p>' + action + '</div></div>';
     }
+  };
+
+  /* ── data health ─────────────────────────────────────────────────
+     Records that survived their parent, and placeholders the schema
+     migration created. Both quietly distort the numbers — an orphaned
+     opportunity still counts toward open pipeline and win rate while
+     displaying "Unknown account" — so they are surfaced for deliberate
+     removal rather than swept out automatically. */
+  PANELS.health = function (body) {
+    var orph = S.orphans();
+    var placeholders = S.migrationPlaceholders();
+
+    body.innerHTML =
+      '<div class="stack">' +
+
+      '<div class="card"><div class="card-head"><span class="card-title">Orphaned Records</span>' +
+        '<span class="kcol-count">' + orph.total + '</span>' +
+        (orph.total ? '<div class="page-actions"><button class="btn btn-danger btn-sm" id="fixOrphans">' +
+          'Delete all ' + orph.total + '</button></div>' : '') +
+      '</div>' +
+      (orph.total
+        ? '<div class="card-body"><div class="hint" style="margin-bottom:12px">' +
+            'These point at a record that no longer exists. Until this release, deleting an account ' +
+            'left its contacts and deals behind — they kept counting toward pipeline and win rate ' +
+            'while showing “Unknown account”. Deleting an account now takes them with it, so this ' +
+            'list should stay empty from here on.</div>' +
+          orph.groups.map(function (g) {
+            return '<div style="margin-bottom:14px">' +
+              '<div class="split" style="margin-bottom:6px">' +
+                U.badge(g.rows.length + ' ' + g.label, 'b-red') +
+                '<span class="muted" style="font-size:12px">' + U.esc(g.why) + '</span></div>' +
+              '<div class="chips">' + g.rows.slice(0, 12).map(function (r) {
+                return '<span class="chip">' + U.esc(r.name || r.subject || r.title ||
+                  S.contactName(r) || (r.body || '').slice(0, 30) || r.id) + '</span>';
+              }).join('') +
+              (g.rows.length > 12 ? '<span class="chip">+' + (g.rows.length - 12) + ' more</span>' : '') +
+              '</div></div>';
+          }).join('') + '</div>'
+        : '<div class="card-body"><div class="split">' + U.badge('All clear', 'b-green') +
+          '<span class="hint">Every record points at something that exists.</span></div></div>') +
+      '</div>' +
+
+      '<div class="card"><div class="card-head"><span class="card-title">Migration Placeholders</span>' +
+        '<span class="kcol-count">' + placeholders.length + '</span>' +
+        (placeholders.length ? '<div class="page-actions"><button class="btn btn-sm" id="fixPlaceholders">' +
+          'Delete all ' + placeholders.length + '</button></div>' : '') +
+      '</div>' +
+      '<div class="card-body">' +
+        (placeholders.length
+          ? '<div class="hint" style="margin-bottom:12px">' +
+              'When accounts were split into Accounts, Contacts and Opportunities, every existing ' +
+              'account was given one opportunity so its history was not lost. These ' + placeholders.length +
+              ' still carry the generated name, no amount, and no activity — so nothing has been done ' +
+              'with them. They inflate your deal count and your win rate. Deleting them affects no ' +
+              'other record. Any placeholder you have since put a value, a next step or an activity ' +
+              'on is treated as a real deal and is not listed here.</div>' +
+            '<div class="chips">' + placeholders.slice(0, 20).map(function (o) {
+              var st_ = S.oppStage(o.stage);
+              return '<span class="chip">' + U.esc(o.name) + ' ' + U.badge(st_.label, st_.tone) + '</span>';
+            }).join('') +
+            (placeholders.length > 20 ? '<span class="chip">+' + (placeholders.length - 20) + ' more</span>' : '') +
+            '</div>'
+          : '<div class="split">' + U.badge('None', 'b-green') +
+            '<span class="hint">No untouched migration placeholders left.</span></div>') +
+      '</div></div>' +
+
+      '</div>';
+
+    var fo = body.querySelector('#fixOrphans');
+    if (fo) fo.onclick = function () {
+      U.confirmDelete(orph.total + ' orphaned record' + (orph.total === 1 ? '' : 's'), function () {
+        orph.groups.forEach(function (g) {
+          S.removeMany(g.coll, g.rows.map(function (r) { return r.id; }));
+        });
+        U.toast('Removed ' + orph.total + ' orphaned records.', 'ok');
+        root.render();
+      });
+    };
+
+    var fp = body.querySelector('#fixPlaceholders');
+    if (fp) fp.onclick = function () {
+      U.confirmDelete(placeholders.length + ' migration placeholder' + (placeholders.length === 1 ? '' : 's'), function () {
+        S.removeMany('opportunities', placeholders.map(function (o) { return o.id; }));
+        U.toast('Removed ' + placeholders.length + ' placeholder deals.', 'ok');
+        root.render();
+      });
+    };
   };
 
   /* ── audit ───────────────────────────────────────────────────── */
