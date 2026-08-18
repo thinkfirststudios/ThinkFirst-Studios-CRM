@@ -19,13 +19,41 @@
 
   var st = { q: '', status: 'open', rating: '', owner: '', source: '', tag: '', due: '', sortKey: 'follow', sortDir: 1 };
 
+  /* Leads split into groups you actually work differently, rather than a
+     status dropdown you have to remember to change. Active is the day
+     job. Dead is the revival pool — they were a fit, so they are worth
+     coming back to. Unqualified is an archive nobody needs to reread.
+     Keeping them apart stops a year of dead leads burying this week's. */
+  var SEGMENTS = [
+    { id: 'open', label: 'Active', tone: 'b-orange',
+      match: function (l) { return S.isLeadOpen(l); },
+      empty: ['No active leads', 'Add one by hand, or paste a list in with Import.'] },
+    { id: 'dead', label: 'Dead', tone: 'b-red',
+      match: function (l) { return l.leadStatus === 'dead'; },
+      empty: ['No dead leads', 'Leads that were a fit but went nowhere land here.'] },
+    { id: 'unqualified', label: 'Unqualified', tone: 'b-grey',
+      match: function (l) { return l.leadStatus === 'unqualified'; },
+      empty: ['Nothing unqualified', 'Leads that were never a fit land here.'] },
+    { id: 'converted', label: 'Converted', tone: 'b-green',
+      match: function (l) { return l.leadStatus === 'converted'; },
+      empty: ['Nothing converted yet', 'Leads that became accounts land here.'] },
+    { id: '', label: 'All', tone: 'b-blue',
+      match: function () { return true; },
+      empty: ['No leads yet', 'Add one by hand, or paste a list in with Import.'] }
+  ];
+  function segment() {
+    for (var i = 0; i < SEGMENTS.length; i++) if (SEGMENTS[i].id === st.status) return SEGMENTS[i];
+    return SEGMENTS[0];
+  }
+
   /* ── list ────────────────────────────────────────────────────── */
   root.Views.leads = function (el, params) {
     if (params.id) return detail(el, params.id);
 
     var stats = S.leadStats();
+    var seg = segment();
     var rows = S.all('leads').filter(function (l) {
-      if (st.status === 'open' ? !S.isLeadOpen(l) : (st.status && l.leadStatus !== st.status)) return false;
+      if (!seg.match(l)) return false;
       if (st.rating && (l.rating || 'warm') !== st.rating) return false;
       if (st.owner && l.ownerId !== st.owner) return false;
       if (st.source && l.source !== st.source) return false;
@@ -70,17 +98,26 @@
               : 'nothing decided yet', 'ok') +
       '</div>' +
 
-      attentionCard(attention) +
+      (seg.id === 'open' ? attentionCard(attention) : '') +
 
-      '<div class="card"><div class="toolbar">' +
-        '<input class="input" id="fq" placeholder="Search name, contact, email…" value="' + U.esc(st.q) + '">' +
-        '<select class="input" id="fstatus">' +
-          '<option value="open"' + (st.status === 'open' ? ' selected' : '') + '>Open leads</option>' +
-          '<option value=""' + (st.status === '' ? ' selected' : '') + '>All leads</option>' +
-          S.LEAD_STATUSES.map(function (x) {
-            return '<option value="' + U.esc(x.id) + '"' + (st.status === x.id ? ' selected' : '') + '>' + U.esc(x.label) + '</option>';
+      '<div class="card">' +
+      '<div class="toolbar" style="gap:6px">' +
+        '<div class="seg" id="segNav">' +
+          SEGMENTS.map(function (x) {
+            var n = S.all('leads').filter(x.match).length;
+            return '<button data-seg="' + U.esc(x.id) + '" class="' + (x.id === st.status ? 'on' : '') + '">' +
+              U.esc(x.label) + '<span class="seg-count">' + n + '</span></button>';
           }).join('') +
-        '</select>' +
+        '</div>' +
+        (seg.id === 'dead'
+          ? '<span class="hint" style="margin-left:auto">These were a real fit. ' +
+            'Open one and use “Put back in play” when the timing changes.</span>'
+          : seg.id === 'unqualified'
+            ? '<span class="hint" style="margin-left:auto">Never a fit. Kept so the same name is not chased twice.</span>'
+            : '') +
+      '</div>' +
+      '<div class="toolbar">' +
+        '<input class="input" id="fq" placeholder="Search name, contact, email…" value="' + U.esc(st.q) + '">' +
         '<select class="input" id="fdue"><option value="">Any follow-up</option>' +
           dueOpt('attention', 'Needs attention') + dueOpt('overdue', 'Overdue') +
           dueOpt('today', 'Due today') + dueOpt('unscheduled', 'Unscheduled') +
@@ -105,9 +142,11 @@
       '</div>' +
       U.table(cols(), rows, {
         rowLink: true, sortKey: st.sortKey, sortDir: st.sortDir,
-        emptyHTML: U.empty('No leads match',
-          S.all('leads').length ? 'Try clearing the filters.' : 'Add one by hand, or paste a list in with Import.',
-          '<button class="btn btn-primary btn-sm" id="emptyNew">+ New Lead</button>')
+        emptyHTML: U.empty(
+          filtersActive() ? 'No leads match' : seg.empty[0],
+          filtersActive() ? 'Try clearing the filters.' : seg.empty[1],
+          seg.id === 'open' || seg.id === ''
+            ? '<button class="btn btn-primary btn-sm" id="emptyNew">+ New Lead</button>' : '')
       }) + '</div>';
 
     el.querySelector('#newLead').onclick = function () { openForm(null, root.render); };
@@ -117,12 +156,17 @@
     if (params.new) openForm(null, function () { location.hash = '#/leads'; root.render(); });
 
     bindFilter(el, '#fq', 'q', true);
-    [['#fstatus', 'status'], ['#fdue', 'due'], ['#frating', 'rating'],
+    el.querySelectorAll('#segNav button').forEach(function (b) {
+      b.onclick = function () { st.status = b.dataset.seg; root.render(); };
+    });
+    [['#fdue', 'due'], ['#frating', 'rating'],
      ['#fowner', 'owner'], ['#fsource', 'source'], ['#ftag', 'tag']].forEach(function (pair) {
       if (el.querySelector(pair[0])) bindFilter(el, pair[0], pair[1]);
     });
     el.querySelector('#clear').onclick = function () {
-      st.q = ''; st.status = 'open'; st.rating = ''; st.owner = ''; st.source = ''; st.tag = ''; st.due = '';
+      /* Clears the filters, not the group — being bounced back to Active
+         while reading the dead pile is not "clear", it is "cancel". */
+      st.q = ''; st.rating = ''; st.owner = ''; st.source = ''; st.tag = ''; st.due = '';
       root.render();
     };
     el.querySelector('#exportCsv').onclick = function () { exportCsv(rows); };
@@ -150,6 +194,10 @@
       }
     }
   };
+
+  function filtersActive() {
+    return !!(st.q || st.rating || st.owner || st.source || st.tag || st.due);
+  }
 
   function sourcesInUse() {
     var seen = {};

@@ -60,6 +60,64 @@
   }
   root.render = render;
 
+  /* ── "you are running an old build" banner ───────────────────────
+     Versioning the scripts stopped stale JS being served, but it cannot
+     help when index.html ITSELF is stale: GitHub Pages caches the page
+     for ten minutes and that cached copy asks for the previous asset
+     URLs, which are cached too. The result is a browser cheerfully
+     running last release for ten minutes after a deploy, which is
+     indistinguishable from a fix not shipping.
+
+     So the running app asks what is actually deployed. index.html is
+     fetched with cache: 'no-store', which bypasses the HTTP cache
+     entirely, and its build token compared with the one that booted.
+     Reading the page itself rather than a side file means there is no
+     second thing to keep in step. */
+  var buildChecked = 0;
+  function checkForNewBuild() {
+    if (!window.CRM_BUILD) return;                 // opened from a file, nothing to check
+    if (Date.now() - buildChecked < 60000) return; // at most once a minute
+    buildChecked = Date.now();
+
+    fetch(location.pathname + '?_=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (html) {
+        if (!html) return;
+        var m = html.match(/CRM_BUILD\s*=\s*'([^']+)'/);
+        if (!m || m[1] === window.CRM_BUILD) return;
+        showNewBuildBanner(m[1]);
+      })
+      .catch(function () { /* offline or blocked — silence is right here */ });
+  }
+
+  function showNewBuildBanner(latest) {
+    if (document.getElementById('newBuildBanner')) return;
+    var bar = document.createElement('div');
+    bar.id = 'newBuildBanner';
+    bar.className = 'update-banner is-build';
+    bar.innerHTML =
+      '<div>A newer version of the CRM is available. ' +
+        'You are on <span class="mono">' + U.esc(window.CRM_BUILD) + '</span>, ' +
+        'latest is <span class="mono">' + U.esc(latest) + '</span>.</div>' +
+      '<button class="btn btn-primary btn-sm" id="buildReload" style="margin-left:auto">Reload</button>' +
+      '<button class="btn btn-ghost btn-sm" id="buildLater">Later</button>';
+    viewEl.parentNode.insertBefore(bar, viewEl);
+
+    bar.querySelector('#buildLater').onclick = function () { bar.remove(); };
+    bar.querySelector('#buildReload').onclick = function () {
+      /* A plain reload can be served the cached HTML all over again.
+         Changing the URL cannot be. */
+      location.replace(location.pathname + '?b=' + encodeURIComponent(latest) + location.hash);
+    };
+  }
+
+  /* Check on boot, and whenever the tab is returned to — that is when a
+     deploy has most likely happened since it was last looked at. */
+  window.addEventListener('focus', checkForNewBuild);
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) checkForNewBuild();
+  });
+
   /* ── "your database is behind" banner ────────────────────────────
      A feature whose table is missing is unavailable, but that is no
      reason to lock someone out of the CRM. Say what is off and how to
@@ -365,6 +423,7 @@
     if (!result.authenticated) { root.Auth.screen(); return; }
     paintSyncDot();
     render();
+    checkForNewBuild();
   }).catch(function (err) {
     console.error(err);
     /* A backend that is configured but unreachable must not silently fall

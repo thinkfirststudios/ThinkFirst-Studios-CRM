@@ -555,3 +555,18 @@ body.auth-open .shell{display:none}
   .tabbar a,.tabbar .tabgroup > button{padding:0 11px;font-size:12.5px}
   .tabbar .ico{display:none}
 }
+
+/* The build banner is information, not a warning — a new version being
+   available is normal. Distinct from the amber database banner. */
+.update-banner.is-build{
+  background:linear-gradient(90deg,rgba(76,141,255,.14),transparent);
+  border-color:rgba(76,141,255,.38);
+}
+
+/* Count beside a segment label, so the size of each group is visible
+   without switching to it. */
+.seg-count{
+  font-family:var(--font-mono);font-size:10px;margin-left:7px;padding:1px 5px;
+  border-radius:999px;background:rgba(255,255,255,.07);color:inherit;opacity:.75;
+}
+.seg button.on .seg-count{background:rgba(0,0,0,.22);opacity:.9}
