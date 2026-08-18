@@ -17,8 +17,34 @@
 
   var ICON = '<svg viewBox="0 0 24 24" class="ico"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M22 11h-6"/></svg>';
 
+  /* Rows per page in the queues, and how many more each click reveals. */
+  var PAGE = 6;
+
+  /* The footer of a truncated queue: how many are left, a button to show
+     the next page, and a way back once it has been expanded. Saying
+     "2 more waiting" without offering to show them is just withholding. */
+  function moreBar(total, shown, key) {
+    if (total <= PAGE && shown >= total) return '';
+    var left = total - shown;
+    return '<div class="card-body split" style="gap:10px">' +
+      (left > 0
+        ? '<button class="btn btn-sm" data-more="' + key + '">Show ' +
+            Math.min(PAGE, left) + ' more</button>' +
+          '<span class="hint">' + left + ' still hidden</span>'
+        : '<span class="hint">Showing all ' + total + '.</span>') +
+      (shown > PAGE
+        ? '<button class="btn btn-ghost btn-sm" data-less="' + key + '" ' +
+          'style="margin-left:auto">Show less</button>'
+        : '') +
+      '</div>';
+  }
+
   var st = { q: '', status: 'open', rating: '', owner: '', source: '', tag: '', due: '',
-             mockup: '', sortKey: 'follow', sortDir: 1 };
+             mockup: '', sortKey: 'follow', sortDir: 1,
+             /* How many rows each queue is showing. Survives re-renders,
+                so expanding one and then acting on a row does not snap it
+                shut underneath you. */
+             mockupShown: PAGE, attentionShown: PAGE };
 
   /* Leads split into groups you actually work differently, rather than a
      status dropdown you have to remember to change. Active is the day
@@ -222,7 +248,7 @@
       '<div class="card-head"><span class="card-title">Mockups Ready To Send</span>' +
         '<span class="kcol-count">' + list.length + '</span>' +
         '<div class="page-actions"><span class="hint">Built already — not sent yet</span></div></div>' +
-      list.slice(0, 6).map(function (l) {
+      list.slice(0, st.mockupShown).map(function (l) {
         var m = S.mockupState(l);
         return '<div class="wo-row">' +
           '<span class="prio-flag" style="background:' + (m.stale ? '#E5484D' : '#E8B931') + '"></span>' +
@@ -246,9 +272,7 @@
             '<button class="btn btn-sm" data-marksent="' + U.esc(l.id) + '">Mark sent</button>' +
           '</div></div>';
       }).join('') +
-      (list.length > 6
-        ? '<div class="card-body"><span class="hint">' + (list.length - 6) + ' more waiting.</span></div>'
-        : '') +
+      moreBar(list.length, st.mockupShown, 'mockup') +
       '</div>';
   }
 
@@ -265,7 +289,7 @@
       '<div class="card-head"><span class="card-title">Follow Up Now</span>' +
         '<span class="kcol-count">' + list.length + '</span>' +
         '<div class="page-actions"><span class="hint">Overdue, due today, or never scheduled</span></div></div>' +
-      list.slice(0, 8).map(function (l) {
+      list.slice(0, st.attentionShown).map(function (l) {
         var f = S.followUpState(l);
         return '<div class="wo-row">' +
           '<span class="prio-flag" style="background:' + (f.key === 'overdue' ? '#E5484D' : f.key === 'today' ? '#FA7700' : '#E8B931') + '"></span>' +
@@ -285,14 +309,25 @@
             '<button class="btn btn-ghost btn-sm" data-snooze="' + U.esc(l.id) + '" title="Push the next touch out one week">+1w</button>' +
           '</div></div>';
       }).join('') +
-      (list.length > 8
-        ? '<div class="card-body"><span class="hint">' + (list.length - 8) + ' more — ' +
-          '<a class="link" href="#" data-showall="1">show the full queue</a></span></div>'
-        : '') +
+      moreBar(list.length, st.attentionShown, 'attention') +
       '</div>';
   }
 
   function bindAttention(el) {
+    el.querySelectorAll('[data-more]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        st[b.dataset.more + 'Shown'] += PAGE;
+        root.render();
+      };
+    });
+    el.querySelectorAll('[data-less]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        st[b.dataset.less + 'Shown'] = PAGE;
+        root.render();
+      };
+    });
     el.querySelectorAll('[data-marksent]').forEach(function (b) {
       b.onclick = function (e) {
         e.stopPropagation();
@@ -313,12 +348,6 @@
         root.render();
       };
     });
-    var showAll = el.querySelector('[data-showall]');
-    if (showAll) showAll.onclick = function (e) {
-      e.preventDefault();
-      st.due = 'attention'; st.status = 'open';
-      root.render();
-    };
   }
 
   function followLabel(f) {
