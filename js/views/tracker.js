@@ -251,7 +251,9 @@
   function addDays(dateStr, n) {
     var d = new Date(dateStr + 'T00:00:00');
     d.setDate(d.getDate() + n);
-    return d.toISOString().slice(0, 10);
+    /* Local, to match how the date was parsed a line above — see
+       Store.dateKey. UTC here shifted the whole 7-day strip. */
+    return S.dateKey(d);
   }
   function longDate(d) {
     return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });

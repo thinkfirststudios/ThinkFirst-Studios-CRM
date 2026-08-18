@@ -20,10 +20,23 @@
   function uid(prefix) {
     return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   }
-  function today() { return new Date().toISOString().slice(0, 10); }
+  /* A calendar day in the USER'S timezone.
+
+     toISOString() is UTC. West of Greenwich that means the "date" flips
+     hours before midnight actually arrives — at UTC-7 every evening from
+     5pm onward it already reads as tomorrow. Dates are displayed by
+     parsing 'YYYY-MM-DD' as LOCAL midnight, so the day shown was right
+     while the arithmetic against it was a day ahead: a follow-up set to
+     today came straight back as "1d overdue". Every date key in the app
+     goes through here so display and arithmetic agree. */
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function dateKey(d) {
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+  function today() { return dateKey(new Date()); }
   function shift(days) {
     var d = new Date(); d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0, 10);
+    return dateKey(d);
   }
   function now() { return new Date().toISOString(); }
   function initials(name) {
@@ -799,7 +812,8 @@
     save: save,
     onChange: function (fn) { listeners.push(fn); },
 
-    uid: uid, today: today, shift: shift, nowISO: now, initials: initials, splitName: splitName,
+    uid: uid, today: today, shift: shift, dateKey: dateKey, nowISO: now,
+    initials: initials, splitName: splitName,
     all: all, find: find, insert: insert, insertMany: insertMany, update: update, remove: remove,
     childrenOf: childrenOf, removeCascade: removeCascade,
 
@@ -1186,7 +1200,7 @@
       var days = 0;
       /* Bounded so a corrupt date can never spin here forever. */
       for (var guard = 0; guard < 3650; guard++) {
-        var key = d.toISOString().slice(0, 10);
+        var key = dateKey(d);
         if ((counts[key] || 0) >= need) { days++; d.setDate(d.getDate() - 1); }
         else break;
       }
