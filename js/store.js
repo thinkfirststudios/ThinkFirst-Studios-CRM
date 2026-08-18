@@ -2021,11 +2021,81 @@
        Everything that shows an MRR figure goes through here so the
        dashboard, the goal tracker and the Billing screen can never
        quote different numbers. Cents throughout, matching Stripe. */
-    recurringCents: function () {
-      if (API.stripeEnabled() && db.stripeSubscriptions.length) {
-        return { cents: API.stripeMrr(), source: 'stripe' };
+    /* Monthly value of one subscription, whatever its interval. */
+    subMonthlyCents: function (sub) {
+      var cents = Number(sub.amountCents) || 0;
+      var n = Number(sub.intervalCount) || 1;
+      if (sub.interval === 'month') return cents / n;
+      if (sub.interval === 'year') return cents / (12 * n);
+      if (sub.interval === 'week') return (cents * 52) / (12 * n);
+      if (sub.interval === 'day') return (cents * 365) / (12 * n);
+      return 0;
+    },
+
+    /* What ONE account actually bills.
+
+       Reading only the hand-typed `value` left the Contract column blank
+       on exactly the accounts that bill money, because nobody types a
+       figure for something Stripe already charges. Stripe wins where it
+       exists; the manual contract covers everyone else. */
+    accountRecurring: function (a) {
+      if (!a) return { amount: 0, monthly: 0, cycle: '', source: 'none' };
+      if (!API.isRevenue(a)) {
+        return { amount: 0, monthly: 0, cycle: '', source: 'free' };
       }
-      return { cents: Math.round(API.mrr() * 100), source: 'crm' };
+      var subs = API.subscriptionsFor(a.id).filter(function (s) {
+        return s.status === 'active' || s.status === 'trialing';
+      });
+      if (subs.length) {
+        var amount = subs.reduce(function (s, x) { return s + (Number(x.amountCents) || 0); }, 0) / 100;
+        var monthly = subs.reduce(function (s, x) { return s + API.subMonthlyCents(x); }, 0) / 100;
+        /* One interval across all of them can be named; a mix cannot, and
+           claiming "Monthly" for an annual plan would be a lie. */
+        var intervals = {};
+        subs.forEach(function (x) { intervals[(x.interval || '') + ':' + (x.intervalCount || 1)] = 1; });
+        var one = Object.keys(intervals).length === 1 ? subs[0] : null;
+        return {
+          amount: amount, monthly: monthly, source: 'stripe', count: subs.length,
+          cycle: one
+            ? (one.interval === 'month' && Number(one.intervalCount || 1) === 1 ? 'Monthly'
+              : one.interval === 'year' && Number(one.intervalCount || 1) === 1 ? 'Annual'
+              : 'Every ' + (one.intervalCount || 1) + ' ' + one.interval + 's')
+            : 'Mixed'
+        };
+      }
+      var v = Number(a.value) || 0;
+      var c = a.billingCycle;
+      var m = (c === 'Monthly' || c === 'Retainer') ? v
+        : c === 'Quarterly' ? v / 3
+        : c === 'Annual' ? v / 12
+        : 0;                                   // one-time is not recurring
+      return { amount: v, monthly: m, cycle: c || '', source: 'manual' };
+    },
+
+    /* Subscriptions Stripe is charging that no account claims. They are
+       real money, so they belong in the total — and being named is what
+       gets them linked. */
+    unlinkedSubscriptions: function () {
+      return db.stripeSubscriptions.filter(function (s) {
+        if (s.status !== 'active' && s.status !== 'trialing') return false;
+        return !s.customerId || !find('customers', s.customerId);
+      });
+    },
+
+    recurringCents: function () {
+      var accounts = Math.round(API.mrr() * 100);
+      var orphans = API.unlinkedSubscriptions()
+        .reduce(function (s, x) { return s + API.subMonthlyCents(x); }, 0);
+      var onStripe = db.customers.filter(function (a) {
+        return API.accountRecurring(a).source === 'stripe';
+      }).length;
+      return {
+        cents: accounts + orphans,
+        /* Both sources usually contribute; saying which is a mix rather
+           than pretending it all came from one place. */
+        source: onStripe && accounts ? 'mixed' : onStripe ? 'stripe' : 'crm',
+        unlinked: orphans
+      };
     },
 
     /* ── MRR goal ───────────────────────────────────────────────── */
@@ -2068,12 +2138,10 @@
       return db.customers.reduce(function (s, c) {
         if (!API.isCustomerAccount(c)) return s;
         if (!API.isRevenue(c)) return s;        // pro bono / internal / trial
-
-        var v = Number(c.value) || 0;
-        if (c.billingCycle === 'Monthly' || c.billingCycle === 'Retainer') return s + v;
-        if (c.billingCycle === 'Quarterly') return s + v / 3;
-        if (c.billingCycle === 'Annual') return s + v / 12;
-        return s;
+        /* Per account, so a Stripe-billed one and a hand-billed one both
+           count. The old version took the Stripe total and threw the
+           manual contracts away the moment a single subscription existed. */
+        return s + API.accountRecurring(c).monthly;
       }, 0);
     },
     daysUntil: function (dateStr) {

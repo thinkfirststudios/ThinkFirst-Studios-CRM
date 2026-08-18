@@ -40,14 +40,14 @@
 
     var customers = rows.filter(S.isCustomerAccount);
     var recurring = rows.filter(function (a) { return S.isCustomerAccount(a) && S.isRevenue(a); })
-      .reduce(function (s, a) { return s + (Number(a.value) || 0); }, 0);
+      .reduce(function (s, a) { return s + S.accountRecurring(a).monthly; }, 0);
     var freeCount = rows.filter(S.isFree).length;
 
     el.innerHTML =
       '<div class="page-head">' +
         '<div><div class="eyebrow">Object</div><h1 class="page-title">Accounts</h1>' +
           '<div class="page-sub">' + rows.length + ' of ' + S.accounts().length + ' records · ' +
-            customers.length + ' customers · ' + S.money(recurring) + ' under contract' +
+            customers.length + ' customers · ' + S.money(recurring) + ' / month' +
             (freeCount ? ' · ' + freeCount + ' free / non-billing' : '') + '</div></div>' +
         '<div class="page-actions">' +
           '<a class="btn" href="#/contacts">Contacts</a>' +
@@ -145,14 +145,21 @@
           return '<span class="mono strong">' + open.length + '</span>' +
             '<div class="muted" style="font-size:11px">' + S.money(sum) + '</div>';
         } },
-      { key: 'value', label: 'Contract', cls: 'right', sort: function (a) { return Number(a.value) || 0; },
+      { key: 'value', label: 'Contract', cls: 'right',
+        sort: function (a) { return S.accountRecurring(a).monthly; },
         render: function (a) {
           if (S.isFree(a)) {
             return '<span class="muted">—</span><div class="muted" style="font-size:11px">' +
               U.esc(S.billingType(a.billingType).label.toLowerCase()) + '</div>';
           }
-          return '<span class="mono">' + S.money(a.value) + '</span>' +
-            '<div class="muted" style="font-size:11px">' + U.esc(a.billingCycle || '') + '</div>';
+          var r = S.accountRecurring(a);
+          if (!r.amount) {
+            return '<span class="muted">—</span>' +
+              '<div class="muted" style="font-size:11px">not set</div>';
+          }
+          return '<span class="mono">' + S.money(r.amount) + '</span>' +
+            '<div class="muted" style="font-size:11px">' + U.esc(r.cycle || '') +
+              (r.source === 'stripe' ? ' · Stripe' : '') + '</div>';
         } },
       { key: 'billing', label: 'Next Billing', sort: function (a) { return a.billingDate || '9999'; },
         render: function (a) {
@@ -205,9 +212,15 @@
               ? U.fmtDate(a.billingDate) + ' <span class="badge ' +
                 (bt.cls.indexOf('b-') === 0 ? bt.cls : 'b-grey') + '" style="margin-left:6px">' + U.esc(bt.text) + '</span>'
               : '—' },
-          { label: 'Contract', value: S.isFree(a)
-              ? U.billingTypeBadge(a)
-              : '<span class="mono">' + S.money(a.value) + '</span> <span class="muted">/ ' + U.esc(a.billingCycle || '—') + '</span>' },
+          { label: 'Contract', value: (function () {
+              if (S.isFree(a)) return U.billingTypeBadge(a);
+              var r = S.accountRecurring(a);
+              if (!r.amount) return '<span class="muted">Not set</span>';
+              return '<span class="mono">' + S.money(r.amount) + '</span> ' +
+                '<span class="muted">/ ' + U.esc(r.cycle || '—') + '</span>' +
+                (r.source === 'stripe'
+                  ? ' <span class="badge b-green" style="margin-left:4px">Stripe</span>' : '');
+            })() },
           { label: 'Owner', value: U.userCell(a.ownerId) }
         ];
       },
@@ -250,7 +263,20 @@
           row('Services', S.serviceNames(a.services).join(', ') || '—') +
           row('Billing Date', U.fmtDate(a.billingDate)) +
           row('Billing Cycle', U.esc(a.billingCycle || '—')) +
-          row('Contract Value', '<span class="mono">' + S.money(a.value) + '</span>') +
+          row('Contract Value', (function () {
+            var r = S.accountRecurring(a);
+            if (r.source === 'stripe') {
+              return '<span class="mono">' + S.money(r.amount) + '</span> ' +
+                U.badge('from Stripe', 'b-green') +
+                '<div class="muted" style="font-size:11.5px;margin-top:3px">' +
+                  r.count + ' active subscription' + (r.count === 1 ? '' : 's') + ' · ' +
+                  S.money(r.monthly) + '/mo. The figure typed on this record is ignored ' +
+                  'while Stripe is billing them.</div>';
+            }
+            return a.value
+              ? '<span class="mono">' + S.money(a.value) + '</span>'
+              : '<span class="muted">Not set</span>';
+          })()) +
           row('Industry', U.esc(a.industry || '—')) +
           row('Source', U.esc(a.source || '—')) +
           row('Location', U.esc(a.address || '—')) +
@@ -431,7 +457,8 @@
   /* ── CSV export ──────────────────────────────────────────────── */
   function exportCsv(rows) {
     var head = ['Account', 'Type', 'Primary Contact', 'Contacts', 'Open Deals', 'Open Deal Value',
-      'Billing Type', 'Tags', 'Services', 'Billing Date', 'Cycle', 'Contract Value', 'Owner', 'Industry', 'Source'];
+      'Billing Type', 'Tags', 'Services', 'Billing Date', 'Cycle', 'Contract Value',
+      'Monthly Value', 'Billing Source', 'Owner', 'Industry', 'Source'];
     var lines = [head.join(',')].concat(rows.map(function (a) {
       var p = S.primaryContact(a.id);
       var open = S.opportunitiesFor(a.id).filter(function (o) { return S.oppStage(o.stage).open; });
@@ -439,7 +466,9 @@
         S.contactsFor(a.id).length, open.length,
         open.reduce(function (s, o) { return s + (Number(o.amount) || 0); }, 0),
         S.billingType(a.billingType).label, S.tagsOf(a).join(' | '),
-        S.serviceNames(a.services).join(' | '), a.billingDate, a.billingCycle, a.value,
+        S.serviceNames(a.services).join(' | '), a.billingDate,
+        S.accountRecurring(a).cycle, S.accountRecurring(a).amount,
+        Math.round(S.accountRecurring(a).monthly), S.accountRecurring(a).source,
         S.user(a.ownerId).name, a.industry, a.source]
         .map(function (f) { return '"' + String(f == null ? '' : f).replace(/"/g, '""') + '"'; }).join(',');
     }));
