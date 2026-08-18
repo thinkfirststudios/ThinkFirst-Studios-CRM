@@ -275,6 +275,18 @@
      entered three ways is still the same account. */
   var SOCIAL_HOSTS = /^(www\.|m\.)?(instagram\.com|tiktok\.com|facebook\.com|fb\.com|fb\.me)\//i;
 
+  /* Hosts that thousands of businesses share. A page on one of these
+     identifies its owner only by the path, never by the domain. Listed
+     as whole hostnames — some already carry their own dot. */
+  var SHARED_HOSTS = new RegExp('^(m\\.)?(' + [
+    'facebook\\.com', 'fb\\.com', 'fb\\.me', 'instagram\\.com', 'tiktok\\.com',
+    'linkedin\\.com', 'twitter\\.com', 'x\\.com', 'youtube\\.com',
+    'linktr\\.ee', 'yelp\\.com', 'nextdoor\\.com', 'carrd\\.co',
+    'beacons\\.ai', 'milkshake\\.app', 'business\\.site', 'sites\\.google\\.com',
+    'wixsite\\.com', 'squarespace\\.com', 'godaddysites\\.com', 'weebly\\.com',
+    'wordpress\\.com', 'blogspot\\.com', 'myshopify\\.com', 'github\\.io'
+  ].join('|') + ')$', 'i');
+
   var SOCIALS = [
     { id: 'instagram', label: 'Instagram', short: 'IG', tone: 'b-violet',
       placeholder: '@hollywoodgleam',
@@ -1727,10 +1739,31 @@
     leadKey: function (rec) {
       if (!rec) return '';
       if (rec.email) return 'e:' + String(rec.email).trim().toLowerCase();
+
+      /* A social handle identifies a business; the platform it sits on
+         does not. Half of these leads list "facebook.com/theirpage" as
+         their website, and taking the bare domain made every one of them
+         the same lead — so the second and third would be skipped as
+         duplicates on import and quietly lost. */
+      var handles = ['instagram', 'facebook', 'tiktok'];
+      for (var i = 0; i < handles.length; i++) {
+        var h = socialHandle(rec[handles[i]]);
+        if (h) return 's:' + handles[i] + '/' + h.toLowerCase();
+      }
+
       if (rec.website) {
-        var d = String(rec.website).trim().toLowerCase()
-          .replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
-        if (d) return 'd:' + d;
+        var raw = String(rec.website).trim().toLowerCase()
+          .replace(/^https?:\/\//, '').replace(/^www\./, '');
+        var host = raw.replace(/\/.*$/, '');
+        var path = raw.indexOf('/') > -1 ? raw.slice(raw.indexOf('/') + 1).replace(/[?#].*$/, '').replace(/\/+$/, '') : '';
+        /* A page on somebody else's platform: the path is the identity,
+           the host is shared by everyone. With no path there is nothing
+           to identify, so fall through to the name. */
+        if (SHARED_HOSTS.test(host)) {
+          if (path) return 's:' + host + '/' + path;
+        } else if (host) {
+          return 'd:' + host;
+        }
       }
       return 'n:' + String(rec.name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
     },
