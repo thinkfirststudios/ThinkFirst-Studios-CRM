@@ -18,3 +18,6 @@ thinkfirst-*.csv
 .env.*
 credentials.json
 token.json
+
+# Screenshots dropped for lead extraction — never committed
+.tmp/
