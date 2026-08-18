@@ -886,6 +886,10 @@
     /* Tables this database does not have yet. The features that use them
        are unavailable; everything else works. */
     missingTables: function () { return B.missing || []; },
+    /* Columns the database has not got yet, by table. The fields that
+       use them are stripped from writes so the rest of the record
+       still saves — but they are not saving, and that has to be said. */
+    missingColumns: function () { return B.missingColumns || {}; },
     db: function () { return db; },
     save: save,
     onChange: function (fn) { listeners.push(fn); },

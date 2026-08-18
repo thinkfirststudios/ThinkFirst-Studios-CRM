@@ -129,16 +129,41 @@
     time_entries: 'Time tracking', daily_logs: 'Daily Tracker'
   };
 
+  /* Which feature a column belongs to, so the banner names the thing
+     that has stopped working rather than a column name. */
+  var FEATURE_BY_COLUMN = {
+    instagram: 'Social handles', tiktok: 'Social handles', facebook: 'Social handles',
+    mockupStatus: 'Mockup tracking', mockupTypes: 'Mockup tracking',
+    mockupUrl: 'Mockup tracking', mockupReadyAt: 'Mockup tracking', mockupSentAt: 'Mockup tracking',
+    lostReason: 'Lead close reasons', outreachId: 'Outreach attribution',
+    accountType: 'Account types', billingType: 'Billing types', tags: 'Tags',
+    mrrGoalCents: 'The MRR goal', outreachDailyGoal: 'The outreach target',
+    convertedFromLeadId: 'Lead conversion links',
+    convertedContactId: 'Lead conversion links', convertedOpportunityId: 'Lead conversion links'
+  };
+
   function paintUpdateBanner() {
     var missing = S.missingTables();
+    var cols = S.missingColumns();
     var host = document.getElementById('updateBanner');
-    if (!missing.length) { if (host) host.remove(); return; }
 
     var features = [];
     missing.forEach(function (t) {
       var f = FEATURE_BY_TABLE[t] || t;
       if (features.indexOf(f) < 0) features.push(f);
     });
+    /* A missing column is quieter than a missing table and worse to
+       diagnose: the field simply never saves. Named the same way. */
+    var colFeatures = [];
+    Object.keys(cols).forEach(function (t) {
+      cols[t].forEach(function (c) {
+        var f = FEATURE_BY_COLUMN[c] || (t + '.' + c);
+        if (colFeatures.indexOf(f) < 0) colFeatures.push(f);
+      });
+    });
+    colFeatures.forEach(function (f) { if (features.indexOf(f) < 0) features.push(f); });
+
+    if (!features.length) { if (host) host.remove(); return; }
 
     if (!host) {
       host = document.createElement('div');
@@ -147,8 +172,8 @@
       viewEl.parentNode.insertBefore(host, viewEl);
     }
     host.innerHTML =
-      '<div><strong>' + U.esc(features.join(' and ')) + '</strong> ' +
-        (features.length === 1 ? 'is' : 'are') + ' switched off until your database is updated. ' +
+      '<div><strong>' + U.esc(features.join(', ')) + '</strong> ' +
+        (features.length === 1 ? 'is' : 'are') + ' not being saved until your database is updated. ' +
         'Everything else works as normal.</div>' +
       '<button class="btn btn-sm" id="bannerCopy" style="margin-left:auto">Copy schema.sql</button>' +
       '<button class="btn btn-ghost btn-sm" id="bannerHide">Hide</button>';

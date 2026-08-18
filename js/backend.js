@@ -63,14 +63,79 @@
   /* Fields the app carries in memory but that have no column. */
   var STRIP = ['__local'];
 
-  function clean(rec) {
+  /* ── Columns added after the first release ───────────────────────
+     A write sends the WHOLE record, so a single column the database has
+     not got yet makes PostgREST reject the entire row. The change lands
+     in the in-memory cache, looks saved, and is gone on reload — which
+     is indistinguishable from the app losing your work.
+
+     These are probed at boot so a missing one can be stripped from
+     writes instead: that field stops saving and says so, and everything
+     else on the record still goes through.
+
+     ADD TO THIS LIST WHENEVER A COLUMN IS ADDED TO schema.sql. */
+  var EXPECTED_COLUMNS = {
+    customers: ['accountType', 'billingType', 'tags', 'convertedFromLeadId',
+                'instagram', 'tiktok', 'facebook'],
+    contacts:  ['instagram', 'tiktok', 'facebook'],
+    leads:     ['lostReason', 'outreachId', 'instagram', 'tiktok', 'facebook',
+                'mockupStatus', 'mockupTypes', 'mockupUrl', 'mockupReadyAt', 'mockupSentAt',
+                'convertedContactId', 'convertedOpportunityId'],
+    vendors:   ['tags'],
+    settings:  ['mrrGoalCents', 'outreachDailyGoal']
+  };
+  var MISSING_COLUMN = /column .* does not exist/i;
+
+  function clean(rec, table) {
+    var gone = (Remote.missingColumns && Remote.missingColumns[table]) || null;
     var out = {};
     Object.keys(rec).forEach(function (k) {
       if (STRIP.indexOf(k) > -1) return;
       if (rec[k] === undefined) return;
+      /* Dropping the field is the lesser harm: the alternative is the
+         whole record failing to save because of it. */
+      if (gone && gone.indexOf(k) > -1) return;
       out[k] = rec[k];
     });
     return out;
+  }
+
+  /* One request per table while healthy; only narrows down column by
+     column when something is actually missing. */
+  function probeColumns() {
+    var tables = Object.keys(EXPECTED_COLUMNS).filter(function (t) {
+      return Remote.missing.indexOf(t) < 0;      // table itself is absent
+    });
+    /* This runs inside boot, so it must never be the thing that stops the
+       app starting. Anything unexpected here means "assume every column
+       is present" — the old behaviour — rather than no CRM at all. */
+    function ask(table, cols) {
+      try {
+        var q = client.from(table).select(cols);
+        return (q && typeof q.limit === 'function' ? q.limit(1) : q);
+      } catch (e) {
+        return Promise.resolve({ error: null });
+      }
+    }
+    return Promise.all(tables.map(function (table) {
+      var cols = EXPECTED_COLUMNS[table];
+      return ask(table, cols.join(',')).then(function (r) {
+        if (!r || !r.error || !MISSING_COLUMN.test(r.error.message || '')) return null;
+        return Promise.all(cols.map(function (c) {
+          return ask(table, c).then(function (one) {
+            return (one && one.error && MISSING_COLUMN.test(one.error.message || '')) ? c : null;
+          }, function () { return null; });
+        })).then(function (found) {
+          var missing = found.filter(Boolean);
+          return missing.length ? { table: table, columns: missing } : null;
+        });
+      }, function () { return null; });
+    })).then(function (results) {
+      var map = {};
+      results.filter(Boolean).forEach(function (r) { map[r.table] = r.columns; });
+      Remote.missingColumns = map;
+      return map;
+    });
   }
 
   /* ── local ───────────────────────────────────────────────────── */
@@ -79,6 +144,7 @@
     needsAuth: false,
     realtime: false,
     missing: [],
+    missingColumns: {},
 
     init: function () { return Promise.resolve(); },
     hydrate: function () {
@@ -105,6 +171,7 @@
   /* ── supabase ────────────────────────────────────────────────── */
   var client = null;
   var session = null;
+  var pendingProbe = Promise.resolve({});
 
   var Remote = {
     mode: 'supabase',
@@ -113,6 +180,7 @@
     onRemote: null,      // set by the store
     onError: null,       // set by the store
     missing: [],         // tables this database does not have yet
+    missingColumns: {},  // columns it does not have yet, by table
 
     init: function (cfg) {
       if (!root.supabase || !root.supabase.createClient) {
@@ -201,6 +269,7 @@
         }
 
         Remote.missing = failed.map(function (f) { return f.__fail; });
+        pendingProbe = probeColumns();
 
         var db = { version: 1 };
         colls.forEach(function (c, i) {
@@ -213,7 +282,9 @@
 
         /* newest activity first, matching the local implementation */
         db.activity.sort(function (a, b) { return String(b.ts).localeCompare(String(a.ts)); });
-        return db;
+        /* Writes must not start before we know which columns exist,
+           or the first save races the probe and fails anyway. */
+        return pendingProbe.then(function () { return db; });
       });
     },
 
@@ -237,7 +308,7 @@
 
       var q;
       if (op === 'delete') q = client.from(table).delete().eq('id', rec.id);
-      else q = client.from(table).upsert(clean(rec));   // insert and update both upsert
+      else q = client.from(table).upsert(clean(rec, table));   // insert and update both upsert
 
       q.then(function (r) {
         if (r && r.error) fail(table, op, r.error.message);
@@ -252,7 +323,7 @@
       var CHUNK = 200;
       for (var i = 0; i < rows.length; i += CHUNK) {
         (function (batch) {
-          client.from(table).upsert(batch.map(clean)).then(function (r) {
+          client.from(table).upsert(batch.map(function (x) { return clean(x, table); })).then(function (r) {
             if (r && r.error) fail(table, 'import', r.error.message);
           }, function (e) { fail(table, 'import', e.message); });
         })(rows.slice(i, i + CHUNK));
@@ -269,7 +340,7 @@
       return colls.reduce(function (chain, c) {
         return chain.then(function () {
           return client.from(TABLES[c]).delete().neq('id', '__none__').then(function () {
-            var rows = (db[c] || []).map(clean);
+            var rows = (db[c] || []).map(function (x) { return clean(x, TABLES[c]); });
             if (!rows.length) return null;
             return client.from(TABLES[c]).insert(rows).then(function (r) {
               if (r.error) throw new Error(TABLES[c] + ': ' + r.error.message);
@@ -277,7 +348,7 @@
           });
         });
       }, Promise.resolve()).then(function () {
-        if (db.settings) return client.from('settings').upsert(clean(db.settings));
+        if (db.settings) return client.from('settings').upsert(clean(db.settings, 'settings'));
       });
     },
 
