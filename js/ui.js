@@ -115,6 +115,30 @@
         (existing.length ? ' In use: ' + esc(existing.slice(0, 8).join(', ')) : '') + '</div>';
   }
 
+  /* The three handle inputs, identical on every object that has them.
+     Any format is accepted — the store reduces a pasted profile URL to
+     the handle — so nobody has to think about which form is "right". */
+  function socialFields(rec) {
+    rec = rec || {};
+    return S.SOCIALS.map(function (net) {
+      return field(net.label,
+        '<input class="input" name="' + esc(net.id) + '" placeholder="' + esc(net.placeholder) + '" ' +
+          'value="' + esc(rec[net.id] || '') + '">');
+    }).join('');
+  }
+
+  /* Handles as links. For a business with no website these are the only
+     way to reach them, so they are clickable rather than decorative. */
+  function socialChips(rec, opts) {
+    var list = S.socialsOf(rec);
+    if (!list.length) return (opts && opts.emptyHTML) || '';
+    return '<div class="chips">' + list.map(function (s) {
+      return '<a class="chip social-chip" href="' + esc(s.url) + '" target="_blank" rel="noopener" ' +
+        'title="' + esc(s.net.label) + '">' +
+        '<span class="social-tag">' + esc(s.net.short) + '</span>@' + esc(s.handle) + '</a>';
+    }).join('') + '</div>';
+  }
+
   function tagChips(tags, limit) {
     tags = tags || [];
     if (!tags.length) return '';
@@ -377,6 +401,7 @@
     avatar: avatar, avatarColor: avatarColor, userCell: userCell,
     empty: empty, options: options, field: field, serviceChecks: serviceChecks,
     tagInput: tagInput, tagChips: tagChips, billingTypeBadge: billingTypeBadge,
+    socialFields: socialFields, socialChips: socialChips,
     toast: toast, modal: modal, closeModal: closeModal, confirmDelete: confirmDelete,
     values: values, table: table, bindTable: bindTable,
     notesPanel: notesPanel, bindNotes: bindNotes, timeline: timeline

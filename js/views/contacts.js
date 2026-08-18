@@ -26,7 +26,7 @@
       if (st.primaryOnly && !c.isPrimary) return false;
       if (st.q) {
         var hay = [S.contactName(c), c.title, c.email, c.phone, c.mobile, c.department,
-          S.accountName(c.accountId)].concat(S.tagsOf(c)).join(' ').toLowerCase();
+          S.accountName(c.accountId), S.socialSearchText(c)].concat(S.tagsOf(c)).join(' ').toLowerCase();
         if (hay.indexOf(st.q.toLowerCase()) < 0) return false;
       }
       return true;
@@ -143,6 +143,7 @@
         return (c.isPrimary ? U.badge('Primary Contact', 'b-orange') : '') +
           (c.role ? '<span class="chip">' + U.esc(c.role) + '</span>' : '') +
           U.tagChips(c.tags) +
+          U.socialChips(c) +
           '<a class="chip" href="#/accounts/' + U.esc(c.accountId) + '">' + U.esc(S.accountName(c.accountId)) + '</a>' +
           (c.department ? '<span>' + U.esc(c.department) + '</span>' : '');
       },
@@ -201,6 +202,7 @@
           '<dt>Mobile</dt><dd>' + U.esc(c.mobile || '—') + '</dd>' +
           '<dt>Department</dt><dd>' + U.esc(c.department || '—') + '</dd>' +
           '<dt>Reports To</dt><dd>' + U.esc(c.reportsTo || '—') + '</dd>' +
+          '<dt>Social</dt><dd>' + U.socialChips(c, { emptyHTML: '<span class="muted">—</span>' }) + '</dd>' +
           '<dt>Tags</dt><dd>' + (S.tagsOf(c).length ? U.tagChips(c.tags) : '<span class="muted">—</span>') + '</dd>' +
           '<dt>Description</dt><dd>' + U.esc(c.description || '—') + '</dd>' +
           '<dt>Owner</dt><dd>' + U.userCell(c.ownerId) + '</dd>' +
@@ -248,6 +250,7 @@
               return '<option value="' + U.esc(r) + '"' + (r === c.role ? ' selected' : '') + '>' + U.esc(r) + '</option>';
             }).join('') + '</select>') +
         U.field('Reports To', '<input class="input" name="reportsTo" value="' + U.esc(c.reportsTo || '') + '">') +
+        U.socialFields(c) +
         U.field('Owner', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), c.ownerId, 'id', 'name') + '</select>') +
         U.field('Tags', U.tagInput('tagsRaw', c.tags)) +
         '<div class="field span-2"><label class="check" style="width:fit-content">' +
@@ -263,6 +266,7 @@
         if (!v.lastName && !v.firstName) { U.toast('Give the contact a name.', 'err'); return false; }
         if (!v.accountId) { U.toast('Pick the account this person belongs to.', 'err'); return false; }
         v.tags = S.parseTags(v.tagsRaw); delete v.tagsRaw;
+        S.cleanSocials(v);
         var wantsPrimary = Array.isArray(v.isPrimary) ? v.isPrimary.length > 0 : !!v.isPrimary;
         v.isPrimary = wantsPrimary;
 

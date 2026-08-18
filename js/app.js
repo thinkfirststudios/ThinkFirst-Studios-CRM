@@ -301,13 +301,16 @@
     function match(text) { return (text || '').toLowerCase().indexOf(q) > -1; }
 
     var leads = S.all('leads').filter(function (l) {
-      return match(l.name) || match(l.contactName) || match(l.email) || match(l.phone);
+      return match(l.name) || match(l.contactName) || match(l.email) || match(l.phone) ||
+        match(S.socialSearchText(l));
     }).slice(0, 5);
     var accounts = S.accounts().filter(function (c) {
-      return match(c.name) || match(c.email) || match(c.phone) || match(c.industry);
+      return match(c.name) || match(c.email) || match(c.phone) || match(c.industry) ||
+        match(S.socialSearchText(c));
     }).slice(0, 5);
     var contacts = S.all('contacts').filter(function (c) {
-      return match(S.contactName(c)) || match(c.email) || match(c.phone) || match(c.title);
+      return match(S.contactName(c)) || match(c.email) || match(c.phone) || match(c.title) ||
+        match(S.socialSearchText(c));
     }).slice(0, 5);
     var opps = S.all('opportunities').filter(function (o) {
       return match(o.name) || match(o.nextStep) || match(o.type);

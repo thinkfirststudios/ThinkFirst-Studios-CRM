@@ -29,8 +29,8 @@
       if (st.tag && !S.hasTag(a, st.tag)) return false;
       if (st.billingType && (a.billingType || 'paid') !== st.billingType) return false;
       if (st.q) {
-        var hay = [a.name, a.contactName, a.email, a.phone, a.industry, a.address]
-          .concat(S.tagsOf(a))
+        var hay = [a.name, a.contactName, a.email, a.phone, a.industry, a.address,
+          S.socialSearchText(a)].concat(S.tagsOf(a))
           .concat(S.contactsFor(a.id).map(S.contactName))
           .join(' ').toLowerCase();
         if (hay.indexOf(st.q.toLowerCase()) < 0) return false;
@@ -177,6 +177,7 @@
         return U.badge(t.label, t.tone) +
           (S.isFree(a) ? U.billingTypeBadge(a) : '') +
           U.tagChips(a.tags) +
+          U.socialChips(a) +
           (a.industry ? '<span class="chip">' + U.esc(a.industry) + '</span>' : '') +
           (a.website ? '<a class="chip" href="' + U.esc(href(a.website)) + '" target="_blank" rel="noopener">' + U.esc(a.website) + '</a>' : '') +
           (a.address ? '<span>' + U.esc(a.address) + '</span>' : '');
@@ -254,6 +255,7 @@
           row('Source', U.esc(a.source || '—')) +
           row('Location', U.esc(a.address || '—')) +
           row('Website', a.website ? '<a href="' + U.esc(href(a.website)) + '" target="_blank" rel="noopener" style="color:var(--orange)">' + U.esc(a.website) + '</a>' : '—') +
+          row('Social', U.socialChips(a, { emptyHTML: '<span class="muted">—</span>' })) +
           row('Account Owner', U.userCell(a.ownerId)) +
           row('Created', U.fmtDate(a.createdAt));
       },
@@ -379,6 +381,7 @@
         U.field('Industry', '<input class="input" name="industry" value="' + U.esc(a.industry || '') + '">') +
         U.field('Source', '<input class="input" name="source" value="' + U.esc(a.source || '') + '">') +
         U.field('Location', '<input class="input" name="address" value="' + U.esc(a.address || '') + '">') +
+        U.socialFields(a) +
         (S.stripeEnabled()
           ? U.field('Stripe Customer ID',
               '<input class="input mono" name="stripeCustomerId" placeholder="cus_..." value="' +
@@ -399,6 +402,7 @@
         if (!v.name) { U.toast('Account name is required.', 'err'); return false; }
         v.value = Number(v.value) || 0;
         v.tags = S.parseTags(v.tagsRaw); delete v.tagsRaw;
+        S.cleanSocials(v);
         var note = v.openingNote; delete v.openingNote;
         var first = v.firstContact; delete v.firstContact;
 

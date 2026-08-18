@@ -64,8 +64,8 @@
         if (st.due !== 'attention' && k !== st.due) return false;
       }
       if (st.q) {
-        var hay = [l.name, l.contactName, l.email, l.phone, l.industry, l.address, l.website, l.source]
-          .concat(S.tagsOf(l)).join(' ').toLowerCase();
+        var hay = [l.name, l.contactName, l.email, l.phone, l.industry, l.address, l.website,
+          l.source, S.socialSearchText(l)].concat(S.tagsOf(l)).join(' ').toLowerCase();
         if (hay.indexOf(st.q.toLowerCase()) < 0) return false;
       }
       return true;
@@ -361,6 +361,7 @@
               U.badge(status.label, status.tone) +
               U.badge(rating.label + ' lead', rating.tone) +
               U.tagChips(l.tags) +
+              U.socialChips(l) +
               (l.industry ? '<span class="chip">' + U.esc(l.industry) + '</span>' : '') +
               (l.website ? '<a class="chip" href="' + U.esc(href(l.website)) + '" target="_blank" rel="noopener">' + U.esc(l.website) + '</a>' : '') +
               (l.address ? '<span>' + U.esc(l.address) + '</span>' : '') +
@@ -479,6 +480,7 @@
                 row('Industry', U.esc(l.industry || '—')) +
                 row('Location', U.esc(l.address || '—')) +
                 row('Website', l.website ? '<a href="' + U.esc(href(l.website)) + '" target="_blank" rel="noopener" style="color:var(--orange)">' + U.esc(l.website) + '</a>' : '—') +
+                row('Social', U.socialChips(l, { emptyHTML: '<span class="muted">—</span>' })) +
                 row('Owner', U.userCell(l.ownerId)) +
                 row('Created', U.fmtDate(l.createdAt)) +
               '</dl></div></div>' +
@@ -621,6 +623,7 @@
         U.field('Industry', '<input class="input" name="industry" value="' + U.esc(l.industry || '') + '">') +
         U.field('Location', '<input class="input" name="address" value="' + U.esc(l.address || '') + '">') +
         U.field('Website', '<input class="input" name="website" placeholder="example.com" value="' + U.esc(l.website || '') + '">') +
+        U.socialFields(l) +
         (isNew ? '<div class="field span-2"><label>Opening Note (optional)</label>' +
           '<textarea class="input" name="openingNote" placeholder="Where did this come from, what do they need…"></textarea></div>' : '') +
       '</div>',
@@ -639,6 +642,7 @@
         if (!v.name) { U.toast('Company name is required.', 'err'); return false; }
         v.estValue = Number(v.estValue) || 0;
         v.tags = S.parseTags(v.tagsRaw); delete v.tagsRaw;
+        S.cleanSocials(v);
         var note = v.openingNote; delete v.openingNote;
 
         if (isNew) {
@@ -832,12 +836,16 @@
     industry:     ['industry', 'category', 'niche', 'business type', 'sector', 'type'],
     source:       ['source', 'lead source', 'channel', 'origin', 'referrer'],
     estValue:     ['value', 'est value', 'estimated value', 'deal size', 'budget', 'amount', 'potential value'],
+    instagram:    ['instagram', 'ig', 'insta', 'instagram handle', 'instagram url'],
+    tiktok:       ['tiktok', 'tik tok', 'tt', 'tiktok handle'],
+    facebook:     ['facebook', 'fb', 'facebook page', 'fb page', 'facebook url'],
     noteText:     ['notes', 'note', 'comment', 'comments', 'description', 'details']
   };
   var FIELD_LABELS = [
     ['name', 'Company Name *'], ['contactName', 'Contact'], ['contactTitle', 'Title'],
     ['email', 'Email'], ['phone', 'Phone'], ['website', 'Website'], ['address', 'Location'],
-    ['industry', 'Industry'], ['source', 'Source'], ['estValue', 'Est. Value'], ['noteText', 'Note']
+    ['industry', 'Industry'], ['source', 'Source'], ['estValue', 'Est. Value'],
+    ['instagram', 'Instagram'], ['tiktok', 'TikTok'], ['facebook', 'Facebook'], ['noteText', 'Note']
   ];
 
   function norm(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
@@ -974,6 +982,9 @@
               name: cell('name'), contactName: cell('contactName'), contactTitle: cell('contactTitle'),
               email: cell('email'), phone: cell('phone'), website: cell('website'),
               address: cell('address'), industry: cell('industry'),
+              instagram: S.socialHandle(cell('instagram')),
+              tiktok: S.socialHandle(cell('tiktok')),
+              facebook: S.socialHandle(cell('facebook')),
               source: cell('source') || opts.source || '',
               estValue: Number(String(cell('estValue')).replace(/[^0-9.]/g, '')) || 0,
               noteText: cell('noteText')
@@ -1035,6 +1046,7 @@
             id: S.uid('l'),
             name: r.name, contactName: r.contactName, contactTitle: r.contactTitle,
             email: r.email, phone: r.phone, website: r.website,
+            instagram: r.instagram, tiktok: r.tiktok, facebook: r.facebook,
             address: r.address, industry: r.industry, source: r.source,
             estValue: r.estValue,
             leadStatus: 'new', rating: 'warm',
@@ -1060,12 +1072,14 @@
   /* ── CSV export ──────────────────────────────────────────────── */
   function exportCsv(rows) {
     var head = ['Company', 'Contact', 'Title', 'Email', 'Phone', 'Status', 'Rating',
-      'Next Follow-Up', 'Last Contacted', 'Est. Value', 'Source', 'Owner', 'Industry', 'Location', 'Website', 'Tags'];
+      'Next Follow-Up', 'Last Contacted', 'Est. Value', 'Source', 'Owner', 'Industry', 'Location',
+      'Website', 'Instagram', 'TikTok', 'Facebook', 'Tags'];
     var lines = [head.join(',')].concat(rows.map(function (l) {
       return [l.name, l.contactName, l.contactTitle, l.email, l.phone,
         S.leadStatus(l.leadStatus).label, S.leadRating(l.rating).label,
         l.nextFollowUp, l.lastContactedAt, l.estValue, l.source,
-        S.user(l.ownerId).name, l.industry, l.address, l.website, S.tagsOf(l).join(' | ')]
+        S.user(l.ownerId).name, l.industry, l.address, l.website,
+        l.instagram, l.tiktok, l.facebook, S.tagsOf(l).join(' | ')]
         .map(function (f) { return '"' + String(f == null ? '' : f).replace(/"/g, '""') + '"'; }).join(',');
     }));
     root.download('thinkfirst-leads-' + S.today() + '.csv', lines.join('\n'), 'text/csv');

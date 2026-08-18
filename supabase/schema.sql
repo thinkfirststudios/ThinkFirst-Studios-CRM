@@ -653,3 +653,21 @@ where c."accountType" = 'prospect';
 -- only record of which, and of what to do differently next time.
 alter table public.leads
   add column if not exists "lostReason" text not null default '';
+
+-- ── 9. Social handles ──────────────────────────────────────────────
+-- For a business found in a Facebook group or on Instagram, the handle
+-- is often the only way to reach them: no website, no email, a Gmail
+-- address at best. Stored as real fields so they are searchable and
+-- clickable rather than buried in a note.
+--
+-- Values are normalised to the bare handle by the app, so the same
+-- account pasted as @name, name, or a full profile URL is one value.
+do $$
+declare t text;
+begin
+  foreach t in array array['leads', 'customers', 'contacts'] loop
+    execute format('alter table public.%I add column if not exists instagram text not null default ''''', t);
+    execute format('alter table public.%I add column if not exists tiktok    text not null default ''''', t);
+    execute format('alter table public.%I add column if not exists facebook  text not null default ''''', t);
+  end loop;
+end $$;

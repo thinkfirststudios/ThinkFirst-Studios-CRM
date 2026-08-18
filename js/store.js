@@ -242,6 +242,41 @@
       hint: 'Circling back on an earlier thread.' }
   ];
 
+  /* ── Social handles ─────────────────────────────────────────────
+     For a business found in a Facebook group or on Instagram, the handle
+     is often the ONLY way to reach them — no website, no email, a Gmail
+     address at best. Storing it as a real field rather than burying it
+     in a note means it is searchable and one click from the record.
+
+     Whatever gets pasted is accepted — @handle, handle, the full profile
+     URL — and reduced to the handle on the way in, so the same account
+     entered three ways is still the same account. */
+  var SOCIAL_HOSTS = /^(www\.|m\.)?(instagram\.com|tiktok\.com|facebook\.com|fb\.com|fb\.me)\//i;
+
+  var SOCIALS = [
+    { id: 'instagram', label: 'Instagram', short: 'IG', tone: 'b-violet',
+      placeholder: '@hollywoodgleam',
+      url: function (h) { return 'https://instagram.com/' + h; } },
+    { id: 'tiktok', label: 'TikTok', short: 'TikTok', tone: 'b-grey',
+      placeholder: '@yourhandle',
+      /* TikTok keeps the @ in its URLs; the others do not. */
+      url: function (h) { return 'https://tiktok.com/@' + h; } },
+    { id: 'facebook', label: 'Facebook', short: 'FB', tone: 'b-blue',
+      placeholder: 'casillaspools',
+      url: function (h) { return 'https://facebook.com/' + h; } }
+  ];
+
+  function socialHandle(v) {
+    var s = String(v || '').trim();
+    if (!s) return '';
+    s = s.replace(/^https?:\/\//i, '');
+    s = s.replace(SOCIAL_HOSTS, '');
+    s = s.replace(/^@+/, '');
+    s = s.replace(/[?#].*$/, '');    // tracking junk on a copied link
+    s = s.replace(/\/+$/, '');       // trailing slash
+    return s.trim();
+  }
+
   var BILLING_CYCLES = ['Monthly', 'Quarterly', 'Annual', 'One-Time', 'Retainer'];
   var ROLES = ['admin', 'manager', 'rep'];
 
@@ -1473,6 +1508,9 @@
           source: lead.source || '',
           address: lead.address || '',
           website: lead.website || '',
+          instagram: lead.instagram || '',
+          tiktok: lead.tiktok || '',
+          facebook: lead.facebook || '',
           stripeCustomerId: '',
           convertedFromLeadId: lead.id
         }, 'c', o.accountName || lead.name);
@@ -1580,6 +1618,35 @@
     },
 
     /* ── tags ───────────────────────────────────────────────────── */
+    /* ── social handles ─────────────────────────────────────────── */
+    SOCIALS: SOCIALS,
+    socialHandle: socialHandle,
+    social: function (id) {
+      for (var i = 0; i < SOCIALS.length; i++) if (SOCIALS[i].id === id) return SOCIALS[i];
+      return SOCIALS[0];
+    },
+    /* Every handle a record actually has, ready to render as links. */
+    socialsOf: function (rec) {
+      var out = [];
+      if (!rec) return out;
+      SOCIALS.forEach(function (net) {
+        var h = socialHandle(rec[net.id]);
+        if (h) out.push({ net: net, handle: h, url: net.url(h) });
+      });
+      return out;
+    },
+    /* Normalise the three fields on a record being saved. */
+    cleanSocials: function (v) {
+      SOCIALS.forEach(function (net) {
+        if (v[net.id] !== undefined) v[net.id] = socialHandle(v[net.id]);
+      });
+      return v;
+    },
+    socialSearchText: function (rec) {
+      return SOCIALS.map(function (net) { return socialHandle(rec && rec[net.id]); })
+        .filter(Boolean).join(' ');
+    },
+
     tagsOf: function (rec) { return (rec && rec.tags) || []; },
     /* Every tag in use, for filters and autocomplete. */
     allTags: function () {
