@@ -117,9 +117,23 @@
       hint: 'Interested but not now — keep warm.' },
     { id: 'qualified',   label: 'Qualified',   tone: 'b-green',  order: 4, open: true,
       hint: 'Real fit and real budget. Ready to convert.' },
-    { id: 'unqualified', label: 'Unqualified', tone: 'b-red',    order: 5, open: false,
-      hint: 'Not a fit. Closed without converting.' },
-    { id: 'converted',   label: 'Converted',   tone: 'b-green',  order: 6, open: false,
+    /* Two ways to lose a lead, and they are not the same thing.
+
+       Unqualified is a judgement you made: wrong service, wrong area, no
+       budget. Nothing went wrong — filtering these out early is the job
+       working. Dead is a lead that WAS a fit and went nowhere anyway:
+       they stopped replying, or went elsewhere.
+
+       Collapsing both into one status hides the only number that tells
+       you whether to change how you follow up. A pile of unqualified
+       leads means your targeting is loose; a pile of dead ones means you
+       are losing people you could have won. So the red is on Dead —
+       being unqualified is not the outcome to feel bad about. */
+    { id: 'unqualified', label: 'Unqualified', tone: 'b-grey',   order: 5, open: false,
+      hint: 'Not a fit — wrong service, wrong area, no budget. Correctly filtered out.' },
+    { id: 'dead',        label: 'Dead',        tone: 'b-red',    order: 6, open: false,
+      hint: 'Was a fit but went nowhere — stopped replying, or went elsewhere. Can be revived.' },
+    { id: 'converted',   label: 'Converted',   tone: 'b-green',  order: 7, open: false,
       hint: 'Became a customer. Set automatically — do not pick by hand.' }
   ];
 
@@ -1351,22 +1365,54 @@
       });
     },
     leadStats: function () {
-      var converted = db.leads.filter(function (l) { return l.leadStatus === 'converted'; });
-      var unqualified = db.leads.filter(function (l) { return l.leadStatus === 'unqualified'; });
+      var byStatus = function (id) {
+        return db.leads.filter(function (l) { return l.leadStatus === id; });
+      };
+      var converted = byStatus('converted');
+      var unqualified = byStatus('unqualified');
+      var dead = byStatus('dead');
       var open = API.openLeads();
+
       /* Rate over decided leads only. Counting leads still in play as
-         failures would make the number fall every time you add one. */
-      var decided = converted.length + unqualified.length;
+         failures would make the number fall every time you add one.
+         Dead counts as decided — it is a loss, not an open question. */
+      var decided = converted.length + unqualified.length + dead.length;
+
+      /* Of the leads that were a real fit, how many did we actually
+         land? Unqualified leads are excluded from both halves: they were
+         never winnable, and leaving them in flatters the number when
+         targeting is loose and punishes it when targeting is tight. */
+      var winnable = converted.length + dead.length;
+
       return {
         total: db.leads.length,
         open: open.length,
-        qualified: db.leads.filter(function (l) { return l.leadStatus === 'qualified'; }).length,
+        qualified: byStatus('qualified').length,
         converted: converted.length,
         unqualified: unqualified.length,
+        dead: dead.length,
+        lost: unqualified.length + dead.length,
         convRate: decided ? Math.round((converted.length / decided) * 100) : 0,
+        winRate: winnable ? Math.round((converted.length / winnable) * 100) : 0,
         attention: API.leadsNeedingAttention().length,
         value: open.reduce(function (s, l) { return s + (Number(l.estValue) || 0); }, 0)
       };
+    },
+
+    /* Put a closed lead back in play. The reason it was closed is kept
+       as history rather than wiped — why it died the first time is the
+       most useful thing to know when picking it back up. */
+    reviveLead: function (id, nextFollowUp) {
+      var l = find('leads', id);
+      if (!l) return null;
+      update('leads', id, {
+        leadStatus: 'working',
+        nextFollowUp: nextFollowUp || shift(1)
+      }, l.name + ' back in play');
+      if (l.lostReason) {
+        API.addNote('lead', id, 'Reopened. Previously closed because: ' + l.lostReason);
+      }
+      return find('leads', id);
     },
 
     /* Record a touch and book the next one in a single step, so nobody
@@ -1380,6 +1426,13 @@
         nextFollowUp: opts.nextFollowUp || ''
       };
       if (opts.leadStatus) patch.leadStatus = opts.leadStatus;
+      /* Only carried when the lead is actually being closed, so moving a
+         lead back into play cannot leave a stale reason attached to an
+         open lead. */
+      if (opts.lostReason !== undefined && opts.leadStatus &&
+          !API.leadStatus(opts.leadStatus).open) {
+        patch.lostReason = opts.lostReason;
+      }
       update('leads', id, patch, 'contacted ' + l.name);
       if (opts.note) API.addNote('lead', id, opts.note);
       return find('leads', id);

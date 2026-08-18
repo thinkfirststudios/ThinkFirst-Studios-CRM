@@ -419,6 +419,10 @@
                   ' <span class="muted" style="font-size:11.5px">' + U.esc(status.hint) + '</span>') +
                 row('Rating', U.badge(rating.label, rating.tone)) +
                 row('Source', U.esc(l.source || '—')) +
+                (S.isLeadOpen(l) ? '' :
+                  row('Closed Because', l.lostReason
+                    ? U.esc(l.lostReason)
+                    : '<span class="muted">Not recorded</span>')) +
                 row('Came From', outreachOrigin(l)) +
                 row('Estimated Value', l.estValue ? '<span class="mono">' + S.money(l.estValue) + '</span>' : '—') +
                 row('Next Follow-Up', l.nextFollowUp ? U.fmtDate(l.nextFollowUp) : '<span class="muted">Not scheduled</span>') +
@@ -448,6 +452,7 @@
         var q = body.querySelector('#quickAct');
         if (q) q.onclick = function () {
           if (q.dataset.act === 'convert') openConvert(l, rerender);
+          else if (q.dataset.act === 'revive') openRevive(l, rerender);
           else openLogContact(l.id, rerender);
         };
       }
@@ -489,8 +494,14 @@
     if (l.convertedCustomerId) {
       return '<span class="muted">Converted — the work now lives on the customer record.</span>';
     }
-    if (l.leadStatus === 'unqualified') {
-      return '<span class="muted">Marked unqualified. Edit the lead to put it back in play.</span>';
+    if (!S.isLeadOpen(l)) {
+      var closed = S.leadStatus(l.leadStatus);
+      return '<div style="margin-bottom:10px">' + U.badge(closed.label, closed.tone) + '</div>' +
+        (l.lostReason
+          ? '<div class="act-note" style="margin-bottom:12px">' + U.esc(l.lostReason) + '</div>'
+          : '<div class="muted" style="font-size:12.5px;margin-bottom:12px">No reason was recorded.</div>') +
+        '<button class="btn btn-sm" id="quickAct" data-act="revive" style="width:100%">' +
+        'Put back in play</button>';
     }
     var msg, act = 'log', btn = 'Log a contact';
     if (l.leadStatus === 'qualified') {
@@ -535,7 +546,7 @@
         U.field('Phone', '<input class="input" name="phone" value="' + U.esc(l.phone || '') + '">') +
         U.field('Status',
           '<select class="input" name="leadStatus">' + U.options(pickable, l.leadStatus) + '</select>' +
-          '<div class="hint">' + U.esc(S.leadStatus(l.leadStatus).hint) + '</div>') +
+          '<div class="hint" id="statusHint">' + U.esc(S.leadStatus(l.leadStatus).hint) + '</div>') +
         U.field('Rating', '<select class="input" name="rating">' + U.options(S.LEAD_RATINGS, l.rating || 'warm') + '</select>') +
         U.field('Owner', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), l.ownerId, 'id', 'name') + '</select>') +
         U.field('Next Follow-Up',
@@ -549,12 +560,32 @@
           '</datalist>') +
         U.field('Estimated Value ($)', '<input class="input" type="number" min="0" step="50" name="estValue" value="' + U.esc(l.estValue || 0) + '">') +
         U.field('Tags', U.tagInput('tagsRaw', l.tags)) +
+        /* Only meaningful once the lead is closed, so it stays hidden
+           until then. Offered for both closed states: "not a fit" and
+           "went quiet" are each worth a sentence. */
+        '<div class="field span-2" id="reasonField"' +
+          (S.leadStatus(l.leadStatus).open ? ' style="display:none"' : '') + '>' +
+          '<label>Why was it closed?</label>' +
+          '<input class="input" name="lostReason" value="' + U.esc(l.lostReason || '') + '" ' +
+            'placeholder="Went quiet after the quote / already had an agency / outside our area">' +
+          '<div class="hint">The only record of why. Shown again if you revive the lead.</div>' +
+        '</div>' +
         U.field('Industry', '<input class="input" name="industry" value="' + U.esc(l.industry || '') + '">') +
         U.field('Location', '<input class="input" name="address" value="' + U.esc(l.address || '') + '">') +
         U.field('Website', '<input class="input" name="website" placeholder="example.com" value="' + U.esc(l.website || '') + '">') +
         (isNew ? '<div class="field span-2"><label>Opening Note (optional)</label>' +
           '<textarea class="input" name="openingNote" placeholder="Where did this come from, what do they need…"></textarea></div>' : '') +
       '</div>',
+      onMount: function (box) {
+        var sel = box.querySelector('[name=leadStatus]');
+        var field = box.querySelector('#reasonField');
+        var hint = box.querySelector('#statusHint');
+        sel.onchange = function () {
+          var chosen = S.leadStatus(this.value);
+          hint.textContent = chosen.hint;
+          field.style.display = chosen.open ? 'none' : '';
+        };
+      },
       onOk: function (box) {
         var v = U.values(box);
         if (!v.name) { U.toast('Company name is required.', 'err'); return false; }
@@ -590,17 +621,60 @@
         '<div class="field span-2"><label>What happened?</label>' +
           '<textarea class="input" name="note" placeholder="Called Luis — wants a quote for the rebrand, sending Thursday."></textarea></div>' +
         U.field('Contacted On', '<input class="input" type="date" name="date" value="' + U.esc(S.today()) + '">') +
-        U.field('Move Status To', '<select class="input" name="leadStatus">' + U.options(pickable, l.leadStatus) + '</select>') +
+        U.field('Move Status To',
+          '<select class="input" name="leadStatus">' + U.options(pickable, l.leadStatus) + '</select>') +
+        '<div class="field span-2" id="logReason" style="display:none">' +
+          '<label>Why is it closed?</label>' +
+          '<input class="input" name="lostReason" value="' + U.esc(l.lostReason || '') + '" ' +
+            'placeholder="Stopped replying after three attempts">' +
+        '</div>' +
         U.field('Next Follow-Up',
           '<input class="input" type="date" name="nextFollowUp" value="' + U.esc(l.nextFollowUp && S.daysUntil(l.nextFollowUp) > 0 ? l.nextFollowUp : S.shift(7)) + '">' +
           '<div class="hint">Clearing this leaves the lead with no next touch — it will show up as needing attention.</div>', true) +
       '</div>',
+      onMount: function (box) {
+        var sel = box.querySelector('[name=leadStatus]');
+        var field = box.querySelector('#logReason');
+        var toggle = function () {
+          field.style.display = S.leadStatus(sel.value).open ? 'none' : '';
+        };
+        sel.onchange = toggle;
+        toggle();
+      },
       onOk: function (box) {
         var v = U.values(box);
         S.logContact(l.id, {
-          note: v.note, date: v.date, nextFollowUp: v.nextFollowUp, leadStatus: v.leadStatus
+          note: v.note, date: v.date, nextFollowUp: v.nextFollowUp,
+          leadStatus: v.leadStatus, lostReason: v.lostReason
         });
         U.toast('Contact logged for ' + l.name + '.', 'ok');
+        done();
+      }
+    });
+  }
+
+  /* ── revive ──────────────────────────────────────────────────────
+     A dead lead is the likeliest thing in the CRM to be worth another
+     try: it was a fit, and only the timing or the follow-up failed. It
+     comes back with a date already booked, because a revived lead with
+     no next touch dies the same way twice. */
+  function openRevive(l, done) {
+    U.modal({
+      title: 'Put ' + l.name + ' back in play',
+      okText: 'Reopen Lead',
+      body: (l.lostReason
+        ? '<div class="card" style="margin-bottom:14px"><div class="card-body">' +
+            '<div class="hint" style="margin-bottom:5px">Closed because</div>' +
+            '<div style="font-size:13px">' + U.esc(l.lostReason) + '</div></div></div>'
+        : '') +
+        '<div class="form-grid">' +
+        U.field('Next Follow-Up',
+          '<input class="input" type="date" name="nextFollowUp" value="' + U.esc(S.shift(1)) + '">' +
+          '<div class="hint">It goes back to Working with this date booked.</div>', true) +
+      '</div>',
+      onOk: function (box) {
+        S.reviveLead(l.id, U.values(box).nextFollowUp);
+        U.toast(l.name + ' is back in play.', 'ok');
         done();
       }
     });

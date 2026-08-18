@@ -646,3 +646,10 @@ set "accountType" = case
       else 'prospect'
     end
 where c."accountType" = 'prospect';
+
+-- ── 8. Lead close reason ───────────────────────────────────────────
+-- Leads now close in two distinct ways. Unqualified means it was never a
+-- fit; Dead means it was a fit and went nowhere anyway. The reason is the
+-- only record of which, and of what to do differently next time.
+alter table public.leads
+  add column if not exists "lostReason" text not null default '';
