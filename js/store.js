@@ -143,6 +143,28 @@
     { id: 'cold', label: 'Cold', tone: 'b-blue',   order: 3 }
   ];
 
+  /* ── Mockups ────────────────────────────────────────────────────
+     The pitch for most of these leads is a mockup: find a business with
+     a bad site or none at all, build them something, send it over.
+
+     The state that matters is READY — built and not yet sent. That is
+     finished work sitting on a hard drive earning nothing, and it is
+     invisible unless it is tracked separately from "no mockup" and
+     "sent". Everything here exists to make that one state impossible to
+     lose track of. */
+  var MOCKUP_STATUSES = [
+    { id: 'none',       label: 'No mockup',    tone: 'b-grey',   order: 1, made: false, sent: false,
+      hint: 'Nothing built for this lead yet.' },
+    { id: 'inprogress', label: 'In progress',  tone: 'b-orange', order: 2, made: false, sent: false,
+      hint: 'Being built now.' },
+    { id: 'ready',      label: 'Ready to send', tone: 'b-yellow', order: 3, made: true,  sent: false,
+      hint: 'Built and waiting. Finished work that is not earning anything until it goes out.' },
+    { id: 'sent',       label: 'Sent',         tone: 'b-green',  order: 4, made: true,  sent: true,
+      hint: 'Delivered to them.' }
+  ];
+
+  var MOCKUP_TYPES = ['Website', 'Graphic Design', 'Logo', 'Social Media', 'Print'];
+
   var LEAD_SOURCES = ['Referral', 'Website Form', 'Google Ads', 'Cold Outreach',
     'Instagram', 'Facebook', 'LinkedIn', 'Networking', 'Walk-In', 'Repeat Client', 'List / Import'];
 
@@ -454,16 +476,23 @@
         email: 'luis@saguaroauto.com', phone: '(602) 555-0301', leadStatus: 'working', rating: 'hot',
         source: 'Referral', ownerId: 'u_sam', estValue: 3800, nextFollowUp: shift(-3), lastContactedAt: shift(-10),
         industry: 'Automotive', address: 'Phoenix, AZ', website: 'saguaroauto.com', tags: ['Local'],
+        mockupStatus: 'ready', mockupTypes: ['Website'], mockupUrl: 'figma.com/file/saguaro-auto-concept',
+        mockupReadyAt: shift(-4), mockupSentAt: '',
         outreachId: 'or_3', convertedCustomerId: '', convertedAt: '', createdAt: now() },
       { id: 'l_2', name: 'Mesquite Grill House', contactName: 'Dana Whitmore', contactTitle: 'GM',
         email: 'dana@mesquitegrill.com', phone: '(480) 555-0312', leadStatus: 'qualified', rating: 'hot',
         source: 'Website Form', ownerId: 'u_jordan', estValue: 9200, nextFollowUp: shift(-1), lastContactedAt: shift(-4),
         industry: 'Food & Bev', address: 'Gilbert, AZ', website: 'mesquitegrill.com', tags: ['Local', 'Referral'],
+        mockupStatus: 'sent', mockupTypes: ['Website', 'Graphic Design'],
+        mockupUrl: 'figma.com/file/mesquite-grill-concept',
+        mockupReadyAt: shift(-6), mockupSentAt: shift(-3),
         outreachId: 'or_6', convertedCustomerId: '', convertedAt: '', createdAt: now() },
       { id: 'l_3', name: 'Verde Valley Landscaping', contactName: 'Tomas Rivera', contactTitle: 'Owner',
         email: 'tomas@verdevalleyland.com', phone: '(928) 555-0323', leadStatus: 'working', rating: 'warm',
         source: 'Google Ads', ownerId: 'u_sam', estValue: 2400, nextFollowUp: today(), lastContactedAt: shift(-6),
         industry: 'Home Services', address: 'Cottonwood, AZ', website: 'verdevalleyland.com', tags: [],
+        mockupStatus: 'inprogress', mockupTypes: ['Website'], mockupUrl: '',
+        mockupReadyAt: '', mockupSentAt: '',
         outreachId: 'or_8', convertedCustomerId: '', convertedAt: '', createdAt: now() },
       { id: 'l_4', name: 'Pinnacle Peak Orthodontics', contactName: 'Dr. Hana Kim', contactTitle: 'Practice Owner',
         email: 'hana@pinnacleortho.com', phone: '(480) 555-0334', leadStatus: 'new', rating: 'warm',
@@ -1452,6 +1481,92 @@
 
     /* Record a touch and book the next one in a single step, so nobody
        logs a call and leaves the lead with no next action. */
+    /* ── mockups ────────────────────────────────────────────────── */
+    MOCKUP_STATUSES: MOCKUP_STATUSES,
+    MOCKUP_TYPES: MOCKUP_TYPES,
+    mockupStatus: function (id) {
+      for (var i = 0; i < MOCKUP_STATUSES.length; i++) if (MOCKUP_STATUSES[i].id === id) return MOCKUP_STATUSES[i];
+      return MOCKUP_STATUSES[0];                 // no value means none
+    },
+    mockupTypesOf: function (l) { return (l && l.mockupTypes) || []; },
+
+    /* Status plus the things you can only know by comparing dates. */
+    mockupState: function (l) {
+      var st = API.mockupStatus(l && l.mockupStatus);
+      var waiting = null, sinceSent = null;
+      if (st.id === 'ready' && l.mockupReadyAt) waiting = -API.daysUntil(l.mockupReadyAt);
+      if (st.id === 'sent' && l.mockupSentAt) sinceSent = -API.daysUntil(l.mockupSentAt);
+      return {
+        status: st,
+        made: st.made,
+        sent: st.sent,
+        /* Days a finished mockup has been sitting unsent. */
+        waiting: waiting,
+        sinceSent: sinceSent,
+        /* Built, unsent, and older than a couple of days. The thing this
+           whole feature exists to surface. */
+        stale: st.id === 'ready' && waiting !== null && waiting >= 2,
+        /* Sent with nothing booked after it — the other way this work
+           gets wasted, quietly. */
+        sentNoFollowUp: st.id === 'sent' && !l.nextFollowUp && API.isLeadOpen(l)
+      };
+    },
+
+    /* Finished mockups nobody has sent, longest wait first. */
+    mockupsReadyToSend: function (userId) {
+      return db.leads.filter(function (l) {
+        if (userId && l.ownerId !== userId) return false;
+        if (!API.isLeadOpen(l)) return false;
+        return l.mockupStatus === 'ready';
+      }).sort(function (a, b) {
+        return String(a.mockupReadyAt || '9999').localeCompare(String(b.mockupReadyAt || '9999'));
+      });
+    },
+    mockupStats: function () {
+      var open = API.openLeads();
+      var counts = { none: 0, inprogress: 0, ready: 0, sent: 0 };
+      open.forEach(function (l) { counts[API.mockupStatus(l.mockupStatus).id]++; });
+      return {
+        none: counts.none, inprogress: counts.inprogress,
+        ready: counts.ready, sent: counts.sent,
+        /* Of the mockups built, how many actually went out. Built-and-not-
+           sent is the leak this measures. */
+        sendRate: (counts.ready + counts.sent)
+          ? Math.round((counts.sent / (counts.ready + counts.sent)) * 100) : 0,
+        sentNoFollowUp: open.filter(function (l) { return API.mockupState(l).sentNoFollowUp; }).length
+      };
+    },
+
+    /* Set the mockup state, stamping the dates so nobody has to. The
+       stamps are what make "how long has this been sitting" answerable
+       at all, and a person filling them in by hand would not. */
+    setMockup: function (id, patch) {
+      var l = find('leads', id);
+      if (!l) return null;
+      var next = {};
+      if (patch.mockupStatus !== undefined) next.mockupStatus = patch.mockupStatus;
+      if (patch.mockupUrl !== undefined) next.mockupUrl = patch.mockupUrl;
+      if (patch.mockupTypes !== undefined) next.mockupTypes = patch.mockupTypes;
+
+      var to = next.mockupStatus || l.mockupStatus || 'none';
+      var toSt = API.mockupStatus(to);
+
+      /* First time it is finished, record when. Kept on later edits so
+         the wait is measured from when the work was actually done. */
+      if (toSt.made && !l.mockupReadyAt) next.mockupReadyAt = today();
+      if (toSt.sent && !l.mockupSentAt) next.mockupSentAt = today();
+      /* Going backwards clears the stamp it invalidates, otherwise a
+         mockup pulled back for edits still claims it was sent. */
+      if (!toSt.sent) next.mockupSentAt = '';
+      if (!toSt.made) { next.mockupReadyAt = ''; next.mockupSentAt = ''; }
+
+      if (patch.nextFollowUp !== undefined) next.nextFollowUp = patch.nextFollowUp;
+
+      update('leads', id, next, l.name + ' mockup → ' + toSt.label);
+      if (patch.note) API.addNote('lead', id, patch.note);
+      return find('leads', id);
+    },
+
     logContact: function (id, opts) {
       var l = find('leads', id);
       if (!l) return null;
@@ -1589,6 +1704,14 @@
         'Converted from lead “' + lead.name + '”' +
         (lead.source ? ' (source: ' + lead.source + ')' : '') + '.' +
         (moved ? ' ' + moved + ' lead note' + (moved === 1 ? '' : 's') + ' moved across.' : ''));
+
+      /* The mockup is what won the deal — it belongs on the account, not
+         only on the lead record nobody opens again. */
+      if (lead.mockupUrl) {
+        API.addNote('customer', account.id,
+          'Mockup that won this account: ' + lead.mockupUrl +
+          (API.mockupTypesOf(lead).length ? ' (' + API.mockupTypesOf(lead).join(', ') + ')' : ''));
+      }
 
       log('converted', 'leads', lead.id, lead.name + ' → account' +
         (contact ? ' + contact' : '') + (opp ? ' + opportunity' : ''));

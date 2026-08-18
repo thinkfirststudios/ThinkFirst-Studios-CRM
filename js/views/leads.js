@@ -17,7 +17,8 @@
 
   var ICON = '<svg viewBox="0 0 24 24" class="ico"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M22 11h-6"/></svg>';
 
-  var st = { q: '', status: 'open', rating: '', owner: '', source: '', tag: '', due: '', sortKey: 'follow', sortDir: 1 };
+  var st = { q: '', status: 'open', rating: '', owner: '', source: '', tag: '', due: '',
+             mockup: '', sortKey: 'follow', sortDir: 1 };
 
   /* Leads split into groups you actually work differently, rather than a
      status dropdown you have to remember to change. Active is the day
@@ -58,6 +59,7 @@
       if (st.owner && l.ownerId !== st.owner) return false;
       if (st.source && l.source !== st.source) return false;
       if (st.tag && !S.hasTag(l, st.tag)) return false;
+      if (st.mockup && S.mockupStatus(l.mockupStatus).id !== st.mockup) return false;
       if (st.due) {
         var k = S.followUpState(l).key;
         if (st.due === 'attention' && k !== 'overdue' && k !== 'today' && k !== 'unscheduled') return false;
@@ -98,6 +100,7 @@
               : 'nothing decided yet', 'ok') +
       '</div>' +
 
+      (seg.id === 'open' ? mockupCard(S.mockupsReadyToSend()) : '') +
       (seg.id === 'open' ? attentionCard(attention) : '') +
 
       '<div class="card">' +
@@ -124,6 +127,8 @@
           dueOpt('soon', 'This week') + dueOpt('scheduled', 'Later') +
         '</select>' +
         '<select class="input" id="frating"><option value="">Any rating</option>' + U.options(S.LEAD_RATINGS, st.rating) + '</select>' +
+        '<select class="input" id="fmockup"><option value="">Any mockup</option>' +
+          U.options(S.MOCKUP_STATUSES, st.mockup) + '</select>' +
         '<select class="input" id="fowner"><option value="">All owners</option>' + U.options(S.activeUsers(), st.owner, 'id', 'name') + '</select>' +
         (sourcesInUse().length
           ? '<select class="input" id="fsource"><option value="">All sources</option>' +
@@ -159,14 +164,14 @@
     el.querySelectorAll('#segNav button').forEach(function (b) {
       b.onclick = function () { st.status = b.dataset.seg; root.render(); };
     });
-    [['#fdue', 'due'], ['#frating', 'rating'],
+    [['#fdue', 'due'], ['#frating', 'rating'], ['#fmockup', 'mockup'],
      ['#fowner', 'owner'], ['#fsource', 'source'], ['#ftag', 'tag']].forEach(function (pair) {
       if (el.querySelector(pair[0])) bindFilter(el, pair[0], pair[1]);
     });
     el.querySelector('#clear').onclick = function () {
       /* Clears the filters, not the group — being bounced back to Active
          while reading the dead pile is not "clear", it is "cancel". */
-      st.q = ''; st.rating = ''; st.owner = ''; st.source = ''; st.tag = ''; st.due = '';
+      st.q = ''; st.rating = ''; st.owner = ''; st.source = ''; st.tag = ''; st.due = ''; st.mockup = '';
       root.render();
     };
     el.querySelector('#exportCsv').onclick = function () { exportCsv(rows); };
@@ -196,7 +201,7 @@
   };
 
   function filtersActive() {
-    return !!(st.q || st.rating || st.owner || st.source || st.tag || st.due);
+    return !!(st.q || st.rating || st.owner || st.source || st.tag || st.due || st.mockup);
   }
 
   function sourcesInUse() {
@@ -208,6 +213,45 @@
   /* ── the follow-up queue ─────────────────────────────────────────
      Deliberately above the table: this is the day's actual work list,
      and a list you have to filter for is a list nobody looks at. */
+  /* Finished mockups nobody has sent. Placed ABOVE the follow-up queue
+     because it is the more expensive failure: a follow-up you miss costs
+     a phone call, a mockup you never send cost you an afternoon. */
+  function mockupCard(list) {
+    if (!list.length) return '';
+    return '<div class="card" style="margin-bottom:14px;border-color:rgba(232,185,49,.4)">' +
+      '<div class="card-head"><span class="card-title">Mockups Ready To Send</span>' +
+        '<span class="kcol-count">' + list.length + '</span>' +
+        '<div class="page-actions"><span class="hint">Built already — not sent yet</span></div></div>' +
+      list.slice(0, 6).map(function (l) {
+        var m = S.mockupState(l);
+        return '<div class="wo-row">' +
+          '<span class="prio-flag" style="background:' + (m.stale ? '#E5484D' : '#E8B931') + '"></span>' +
+          '<div class="wo-main">' +
+            '<div class="wo-title"><a class="link" href="#/leads/' + U.esc(l.id) + '">' + U.esc(l.name) + '</a></div>' +
+            '<div class="wo-sub">' +
+              (S.mockupTypesOf(l).length
+                ? S.mockupTypesOf(l).map(function (t) { return '<span class="chip">' + U.esc(t) + '</span>'; }).join('')
+                : '<span class="chip">Mockup</span>') +
+              (m.waiting !== null
+                ? '<span' + (m.stale ? ' style="color:var(--danger)"' : '') + '>' +
+                  (m.waiting === 0 ? 'finished today' : 'waiting ' + m.waiting + 'd') + '</span>'
+                : '') +
+              '<span>' + U.esc(S.user(l.ownerId).name.split(' ')[0]) + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="wo-side">' +
+            (l.mockupUrl
+              ? '<a class="btn btn-ghost btn-sm" href="' + U.esc(href(l.mockupUrl)) + '" target="_blank" rel="noopener">View</a>'
+              : '') +
+            '<button class="btn btn-sm" data-marksent="' + U.esc(l.id) + '">Mark sent</button>' +
+          '</div></div>';
+      }).join('') +
+      (list.length > 6
+        ? '<div class="card-body"><span class="hint">' + (list.length - 6) + ' more waiting.</span></div>'
+        : '') +
+      '</div>';
+  }
+
   function attentionCard(list) {
     if (!list.length) {
       return S.openLeads().length
@@ -249,6 +293,12 @@
   }
 
   function bindAttention(el) {
+    el.querySelectorAll('[data-marksent]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        openMockup(S.find('leads', b.dataset.marksent), root.render, 'sent');
+      };
+    });
     el.querySelectorAll('[data-logcontact]').forEach(function (b) {
       b.onclick = function (e) { e.stopPropagation(); openLogContact(b.dataset.logcontact, root.render); };
     });
@@ -308,6 +358,20 @@
           return U.badge(followLabel(f), f.tone) +
             (l.nextFollowUp ? '<div class="muted" style="font-size:11px;margin-top:3px">' +
               U.fmtDateShort(l.nextFollowUp) + '</div>' : '');
+        } },
+      { key: 'mockup', label: 'Mockup', sort: function (l) { return S.mockupStatus(l.mockupStatus).order; },
+        render: function (l) {
+          var m = S.mockupState(l);
+          if (m.status.id === 'none') return '<span class="muted">—</span>';
+          return U.badge(m.status.label, m.status.tone) +
+            (m.waiting !== null
+              ? '<div class="muted" style="font-size:11px;margin-top:3px' +
+                (m.stale ? ';color:var(--danger)' : '') + '">' +
+                (m.waiting === 0 ? 'today' : m.waiting + 'd waiting') + '</div>'
+              : m.sinceSent !== null
+                ? '<div class="muted" style="font-size:11px;margin-top:3px">sent ' +
+                  (m.sinceSent === 0 ? 'today' : m.sinceSent + 'd ago') + '</div>'
+                : '');
         } },
       { key: 'rating', label: 'Rating', sort: function (l) { return S.leadRating(l.rating).order; },
         render: function (l) { var r = S.leadRating(l.rating); return U.badge(r.label, r.tone); } },
@@ -469,7 +533,8 @@
                 row('Rating', U.badge(rating.label, rating.tone)) +
                 row('Source', U.esc(l.source || '—')) +
                 (S.isLeadOpen(l) ? '' :
-                  row('Closed Because', l.lostReason
+                  row('Mockup', mockupRow(l)) +
+                row('Closed Because', l.lostReason
                     ? U.esc(l.lostReason)
                     : '<span class="muted">Not recorded</span>')) +
                 row('Came From', outreachOrigin(l)) +
@@ -487,6 +552,7 @@
             '<div class="stack">' +
               '<div class="card"><div class="card-head"><span class="card-title">Next Step</span></div>' +
                 '<div class="card-body">' + nextStep(l, f) + '</div></div>' +
+              mockupPanel(l) +
               '<div class="card"><div class="card-head"><span class="card-title">Pinned Notes</span></div><div class="card-body">' +
                 (notes.filter(function (n) { return n.pinned; }).length
                   ? notes.filter(function (n) { return n.pinned; }).map(function (n) {
@@ -499,6 +565,8 @@
               '</div></div>' +
             '</div>' +
           '</div>';
+        var mb = body.querySelector('#mockupBtn');
+        if (mb) mb.onclick = function () { openMockup(l, rerender, mb.dataset.to || null); };
         var q = body.querySelector('#quickAct');
         if (q) q.onclick = function () {
           if (q.dataset.act === 'convert') openConvert(l, rerender);
@@ -510,6 +578,25 @@
   }
 
   function row(k, v) { return '<dt>' + U.esc(k) + '</dt><dd>' + v + '</dd>'; }
+
+  function mockupRow(l) {
+    var m = S.mockupState(l);
+    if (m.status.id === 'none') return '<span class="muted">None</span>';
+    var types = S.mockupTypesOf(l);
+    return U.badge(m.status.label, m.status.tone) +
+      (types.length ? ' <span class="muted" style="font-size:11.5px">' + U.esc(types.join(', ')) + '</span>' : '') +
+      (l.mockupUrl
+        ? '<div style="margin-top:4px"><a class="link" href="' + U.esc(href(l.mockupUrl)) +
+          '" target="_blank" rel="noopener" style="font-size:12px;word-break:break-all">' +
+          U.esc(l.mockupUrl) + '</a></div>'
+        : '') +
+      (l.mockupSentAt
+        ? '<div class="muted" style="font-size:11px;margin-top:3px">Sent ' + U.fmtDate(l.mockupSentAt) + '</div>'
+        : l.mockupReadyAt
+          ? '<div class="muted" style="font-size:11px;margin-top:3px">Finished ' + U.fmtDate(l.mockupReadyAt) +
+            (m.waiting !== null ? ' · waiting ' + m.waiting + 'd' : '') + '</div>'
+          : '');
+  }
 
   /* Which outreach touch produced this lead, if any. This is the middle
      link in group -> lead -> account -> won deal; without it the
@@ -538,6 +625,110 @@
           'Its notes moved with it.</span>' +
         (c ? '<a class="btn btn-sm" href="#/accounts/' + U.esc(c.id) + '" style="margin-left:auto">Open account</a>' : '') +
       '</div></div>';
+  }
+
+  /* ── mockup panel on the record ──────────────────────────────────
+     Its own card rather than a field in the detail list, because for
+     these leads the mockup IS the pitch — its state decides what you do
+     next more than anything else on the record. */
+  function mockupPanel(l) {
+    var m = S.mockupState(l);
+    var types = S.mockupTypesOf(l);
+
+    var body;
+    if (m.status.id === 'none') {
+      body = '<div class="hint" style="margin-bottom:12px">Nothing built for this lead yet.</div>' +
+        '<button class="btn btn-sm" id="mockupBtn" data-to="inprogress" style="width:100%">Start a mockup</button>';
+    } else {
+      body =
+        '<div class="split" style="margin-bottom:10px">' + U.badge(m.status.label, m.status.tone) +
+          (m.stale ? U.badge(m.waiting + ' days waiting', 'b-red') : '') + '</div>' +
+        (types.length ? '<div class="chips" style="margin-bottom:10px">' +
+          types.map(function (t) { return '<span class="chip">' + U.esc(t) + '</span>'; }).join('') + '</div>' : '') +
+        (l.mockupUrl
+          ? '<a class="link" href="' + U.esc(href(l.mockupUrl)) + '" target="_blank" rel="noopener" ' +
+            'style="font-size:12.5px;word-break:break-all">' + U.esc(l.mockupUrl) + '</a>'
+          : '<div class="muted" style="font-size:12.5px">No link saved.</div>') +
+        '<div class="muted" style="font-size:11.5px;margin-top:8px">' +
+          (l.mockupReadyAt ? 'Finished ' + U.fmtDateShort(l.mockupReadyAt) : '') +
+          (l.mockupSentAt ? ' · Sent ' + U.fmtDateShort(l.mockupSentAt) : '') +
+        '</div>' +
+        (m.sentNoFollowUp
+          ? '<div class="hint" style="margin-top:10px;color:var(--warn)">Sent, with nothing booked after it. ' +
+            'That is how a mockup goes unanswered.</div>'
+          : '') +
+        '<button class="btn ' + (m.status.id === 'ready' ? 'btn-primary ' : '') + 'btn-sm" id="mockupBtn"' +
+          ' data-to="' + (m.status.id === 'inprogress' ? 'ready' : m.status.id === 'ready' ? 'sent' : '') + '"' +
+          ' style="width:100%;margin-top:12px">' +
+          (m.status.id === 'inprogress' ? 'Mark ready' : m.status.id === 'ready' ? 'Mark sent' : 'Update mockup') +
+        '</button>';
+    }
+
+    return '<div class="card"><div class="card-head"><span class="card-title">Mockup</span>' +
+      (m.status.id === 'ready' ? U.badge('Not sent', 'b-yellow') : '') + '</div>' +
+      '<div class="card-body">' + body + '</div></div>';
+  }
+
+  /* Setting the state and capturing what it needs in one step. Marking
+     something sent also asks for the next touch, because a mockup sent
+     with nothing booked behind it is the commonest way this work is
+     wasted. */
+  function openMockup(l, done, presetTo) {
+    var m = S.mockupState(l);
+    var to = presetTo || (m.status.id === 'inprogress' ? 'ready'
+      : m.status.id === 'ready' ? 'sent' : m.status.id === 'none' ? 'inprogress' : 'sent');
+    var willSend = to === 'sent';
+
+    U.modal({
+      title: 'Mockup — ' + l.name,
+      wide: true,
+      okText: 'Save',
+      body: '<div class="form-grid">' +
+        U.field('Status',
+          '<select class="input" name="mockupStatus">' + U.options(S.MOCKUP_STATUSES, to) + '</select>' +
+          '<div class="hint" id="mockupHint">' + U.esc(S.mockupStatus(to).hint) + '</div>') +
+        U.field('Link to the mockup',
+          '<input class="input" name="mockupUrl" placeholder="figma.com/… or a Drive link" value="' +
+            U.esc(l.mockupUrl || '') + '">') +
+        '<div class="field span-2"><label>What did you build?</label>' +
+          '<div class="checks">' + S.MOCKUP_TYPES.map(function (t) {
+            return '<label class="check"><input type="checkbox" name="mockupTypes" value="' + U.esc(t) + '"' +
+              (S.mockupTypesOf(l).indexOf(t) > -1 ? ' checked' : '') + '>' + U.esc(t) + '</label>';
+          }).join('') + '</div></div>' +
+        '<div class="field span-2" id="sendFollow"' + (willSend ? '' : ' style="display:none"') + '>' +
+          '<label>Follow up on it</label>' +
+          '<input class="input" type="date" name="nextFollowUp" value="' + U.esc(S.shift(2)) + '">' +
+          '<div class="hint">A mockup sent with nothing booked behind it is the commonest way this ' +
+            'work goes to waste. Clear the date only if you mean to.</div>' +
+        '</div>' +
+        '<div class="field span-2"><label>Note (optional)</label>' +
+          '<textarea class="input" name="note" placeholder="Sent the homepage concept over Instagram DM."></textarea></div>' +
+      '</div>',
+      onMount: function (box) {
+        var sel = box.querySelector('[name=mockupStatus]');
+        var hint = box.querySelector('#mockupHint');
+        var follow = box.querySelector('#sendFollow');
+        sel.onchange = function () {
+          hint.textContent = S.mockupStatus(this.value).hint;
+          follow.style.display = this.value === 'sent' ? '' : 'none';
+        };
+      },
+      onOk: function (box) {
+        var v = U.values(box);
+        var patch = {
+          mockupStatus: v.mockupStatus,
+          mockupUrl: v.mockupUrl,
+          mockupTypes: Array.isArray(v.mockupTypes) ? v.mockupTypes : [],
+          note: v.note
+        };
+        /* Only touch the follow-up when this is the send step; otherwise
+           editing a link would quietly reschedule the lead. */
+        if (v.mockupStatus === 'sent') patch.nextFollowUp = v.nextFollowUp;
+        S.setMockup(l.id, patch);
+        U.toast(v.mockupStatus === 'sent' ? 'Marked sent for ' + l.name + '.' : 'Mockup updated.', 'ok');
+        done();
+      }
+    });
   }
 
   function nextStep(l, f) {
@@ -1073,13 +1264,16 @@
   function exportCsv(rows) {
     var head = ['Company', 'Contact', 'Title', 'Email', 'Phone', 'Status', 'Rating',
       'Next Follow-Up', 'Last Contacted', 'Est. Value', 'Source', 'Owner', 'Industry', 'Location',
-      'Website', 'Instagram', 'TikTok', 'Facebook', 'Tags'];
+      'Website', 'Instagram', 'TikTok', 'Facebook',
+      'Mockup', 'Mockup Types', 'Mockup Link', 'Mockup Ready', 'Mockup Sent', 'Tags'];
     var lines = [head.join(',')].concat(rows.map(function (l) {
       return [l.name, l.contactName, l.contactTitle, l.email, l.phone,
         S.leadStatus(l.leadStatus).label, S.leadRating(l.rating).label,
         l.nextFollowUp, l.lastContactedAt, l.estValue, l.source,
         S.user(l.ownerId).name, l.industry, l.address, l.website,
-        l.instagram, l.tiktok, l.facebook, S.tagsOf(l).join(' | ')]
+        l.instagram, l.tiktok, l.facebook,
+        S.mockupStatus(l.mockupStatus).label, S.mockupTypesOf(l).join(' | '), l.mockupUrl,
+        l.mockupReadyAt, l.mockupSentAt, S.tagsOf(l).join(' | ')]
         .map(function (f) { return '"' + String(f == null ? '' : f).replace(/"/g, '""') + '"'; }).join(',');
     }));
     root.download('thinkfirst-leads-' + S.today() + '.csv', lines.join('\n'), 'text/csv');

@@ -671,3 +671,22 @@ begin
     execute format('alter table public.%I add column if not exists facebook  text not null default ''''', t);
   end loop;
 end $$;
+
+-- ── 10. Mockups on leads ───────────────────────────────────────────
+-- The pitch for most leads is a mockup. The state worth tracking is
+-- READY — built but not yet sent — which is finished work earning
+-- nothing, and is invisible unless it is distinguished from "no mockup"
+-- and "sent". The two dates are stamped by the app so that "how long has
+-- this been sitting" is answerable at all.
+alter table public.leads
+  add column if not exists "mockupStatus"  text not null default 'none';   -- none|inprogress|ready|sent
+alter table public.leads
+  add column if not exists "mockupTypes"   jsonb not null default '[]'::jsonb;
+alter table public.leads
+  add column if not exists "mockupUrl"     text not null default '';
+alter table public.leads
+  add column if not exists "mockupReadyAt" text not null default '';
+alter table public.leads
+  add column if not exists "mockupSentAt"  text not null default '';
+
+create index if not exists leads_mockup_idx on public.leads ("mockupStatus");
