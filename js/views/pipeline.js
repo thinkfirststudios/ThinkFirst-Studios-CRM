@@ -10,8 +10,8 @@
   var S = root.Store, U = root.UI;
   root.Views = root.Views || {};
 
-  var TONE_DOT = { 'b-grey': '#8E8A82', 'b-orange': '#FA7700', 'b-blue': '#4C8DFF',
-    'b-green': '#2FBF71', 'b-red': '#E5484D', 'b-yellow': '#E8B931', 'b-violet': '#8B7CF6' };
+  var TONE_DOT = { 'b-grey': '#8E8A82', 'b-orange': '#AF5300', 'b-blue': '#0560FF',
+    'b-green': '#1E7C49', 'b-red': '#D71F24', 'b-yellow': '#87680F', 'b-violet': '#6652F3' };
   var st = { owner: '', closed: false };
 
   root.Views.pipeline = function (el) {

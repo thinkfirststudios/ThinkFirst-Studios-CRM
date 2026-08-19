@@ -82,9 +82,9 @@
 
   var PRIORITIES = [
     { id: 'low',    label: 'Low',    tone: 'b-grey',   color: '#8E8A82' },
-    { id: 'normal', label: 'Normal', tone: 'b-blue',   color: '#4C8DFF' },
-    { id: 'high',   label: 'High',   tone: 'b-orange', color: '#FA7700' },
-    { id: 'urgent', label: 'Urgent', tone: 'b-red',    color: '#E5484D' }
+    { id: 'normal', label: 'Normal', tone: 'b-blue',   color: '#0560FF' },
+    { id: 'high',   label: 'High',   tone: 'b-orange', color: '#AF5300' },
+    { id: 'urgent', label: 'Urgent', tone: 'b-red',    color: '#D71F24' }
   ];
 
   /* Whether an account is expected to pay. Structured rather than a tag,

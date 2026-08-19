@@ -279,7 +279,7 @@
       var f = S.followUpState(l);
       return '<div class="wo-row" data-lead="' + U.esc(l.id) + '" style="cursor:pointer">' +
         '<span class="prio-flag" style="background:' +
-          (f.key === 'overdue' ? '#E5484D' : f.key === 'today' ? '#FA7700' : '#E8B931') + '"></span>' +
+          (f.key === 'overdue' ? '#D71F24' : f.key === 'today' ? '#AF5300' : '#87680F') + '"></span>' +
         '<div class="wo-main"><div class="wo-title">' + U.esc(l.name) + '</div>' +
           '<div class="wo-sub">' + U.esc(S.leadStatus(l.leadStatus).label) +
             '<span>·</span><span>' + U.esc(S.user(l.ownerId).name.split(' ')[0]) + '</span>' +

@@ -125,7 +125,7 @@
       late.slice(0, 5).map(function (o) {
         var stage = S.oppStage(o.stage);
         return '<div class="wo-row">' +
-          '<span class="prio-flag" style="background:#E5484D"></span>' +
+          '<span class="prio-flag" style="background:#D71F24"></span>' +
           '<div class="wo-main"><div class="wo-title">' +
             '<a class="link" href="#/opportunities/' + U.esc(o.id) + '">' + U.esc(o.name) + '</a></div>' +
             '<div class="wo-sub">' + U.badge(stage.label, stage.tone) +

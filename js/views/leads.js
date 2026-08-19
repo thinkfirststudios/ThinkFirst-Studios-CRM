@@ -251,7 +251,7 @@
       list.slice(0, st.mockupShown).map(function (l) {
         var m = S.mockupState(l);
         return '<div class="wo-row">' +
-          '<span class="prio-flag" style="background:' + (m.stale ? '#E5484D' : '#E8B931') + '"></span>' +
+          '<span class="prio-flag" style="background:' + (m.stale ? '#D71F24' : '#87680F') + '"></span>' +
           '<div class="wo-main">' +
             '<div class="wo-title"><a class="link" href="#/leads/' + U.esc(l.id) + '">' + U.esc(l.name) + '</a></div>' +
             '<div class="wo-sub">' +
@@ -292,7 +292,7 @@
       list.slice(0, st.attentionShown).map(function (l) {
         var f = S.followUpState(l);
         return '<div class="wo-row">' +
-          '<span class="prio-flag" style="background:' + (f.key === 'overdue' ? '#E5484D' : f.key === 'today' ? '#FA7700' : '#E8B931') + '"></span>' +
+          '<span class="prio-flag" style="background:' + (f.key === 'overdue' ? '#D71F24' : f.key === 'today' ? '#AF5300' : '#87680F') + '"></span>' +
           '<div class="wo-main">' +
             '<div class="wo-title"><a class="link" href="#/leads/' + U.esc(l.id) + '">' + U.esc(l.name) + '</a></div>' +
             '<div class="wo-sub">' +

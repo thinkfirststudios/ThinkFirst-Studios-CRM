@@ -184,7 +184,7 @@
           U.badge(state.label, state.tone) +
           (g.area ? '<span>' + U.esc(g.area) + '</span>' : '') +
           (g.memberCount ? '<span>' + Number(g.memberCount).toLocaleString('en-US') + ' members</span>' : '') +
-          (!compact && g.rules ? '<span style="color:var(--warn,#E8B931)">⚠ ' + U.esc(g.rules) + '</span>' : '') +
+          (!compact && g.rules ? '<span style="color:var(--warn,#87680F)">⚠ ' + U.esc(g.rules) + '</span>' : '') +
         '</div>' +
       '</div>' +
       (cooling
@@ -227,8 +227,8 @@
   }
 
   function toneColor(t) {
-    return { 'b-grey': '#8E8A82', 'b-orange': '#FA7700', 'b-blue': '#4C8DFF', 'b-green': '#2FBF71',
-      'b-red': '#E5484D', 'b-yellow': '#E8B931', 'b-violet': '#8B7CF6' }[t] || '#8E8A82';
+    return { 'b-grey': '#8E8A82', 'b-orange': '#AF5300', 'b-blue': '#0560FF', 'b-green': '#1E7C49',
+      'b-red': '#D71F24', 'b-yellow': '#87680F', 'b-violet': '#6652F3' }[t] || '#8E8A82';
   }
   function href(u) { return /^https?:\/\//i.test(u) ? u : 'https://' + u; }
 
