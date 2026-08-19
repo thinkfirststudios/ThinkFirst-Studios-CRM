@@ -81,7 +81,7 @@
   ];
 
   var PRIORITIES = [
-    { id: 'low',    label: 'Low',    tone: 'b-grey',   color: '#5C6470' },
+    { id: 'low',    label: 'Low',    tone: 'b-grey',   color: '#8E8A82' },
     { id: 'normal', label: 'Normal', tone: 'b-blue',   color: '#4C8DFF' },
     { id: 'high',   label: 'High',   tone: 'b-orange', color: '#FA7700' },
     { id: 'urgent', label: 'Urgent', tone: 'b-red',    color: '#E5484D' }

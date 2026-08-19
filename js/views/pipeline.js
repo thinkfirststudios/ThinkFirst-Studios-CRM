@@ -10,7 +10,7 @@
   var S = root.Store, U = root.UI;
   root.Views = root.Views || {};
 
-  var TONE_DOT = { 'b-grey': '#9aa3af', 'b-orange': '#FA7700', 'b-blue': '#4C8DFF',
+  var TONE_DOT = { 'b-grey': '#8E8A82', 'b-orange': '#FA7700', 'b-blue': '#4C8DFF',
     'b-green': '#2FBF71', 'b-red': '#E5484D', 'b-yellow': '#E8B931', 'b-violet': '#8B7CF6' };
   var st = { owner: '', closed: false };
 
@@ -44,7 +44,7 @@
         var inCol = deals.filter(function (o) { return o.stage === stage.id; });
         var sum = inCol.reduce(function (s, o) { return s + (Number(o.amount) || 0); }, 0);
         return '<div class="kcol" data-stage="' + U.esc(stage.id) + '">' +
-          '<div class="kcol-head"><span class="dot" style="background:' + (TONE_DOT[stage.tone] || '#9aa3af') + '"></span>' +
+          '<div class="kcol-head"><span class="dot" style="background:' + (TONE_DOT[stage.tone] || '#8E8A82') + '"></span>' +
             '<span class="kcol-title">' + U.esc(stage.label) + '</span>' +
             '<span class="kcol-count">' + inCol.length + '</span></div>' +
           '<div class="kcol-body">' + (inCol.length ? inCol.map(card).join('') :

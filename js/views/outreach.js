@@ -227,8 +227,8 @@
   }
 
   function toneColor(t) {
-    return { 'b-grey': '#9aa3af', 'b-orange': '#FA7700', 'b-blue': '#4C8DFF', 'b-green': '#2FBF71',
-      'b-red': '#E5484D', 'b-yellow': '#E8B931', 'b-violet': '#8B7CF6' }[t] || '#9aa3af';
+    return { 'b-grey': '#8E8A82', 'b-orange': '#FA7700', 'b-blue': '#4C8DFF', 'b-green': '#2FBF71',
+      'b-red': '#E5484D', 'b-yellow': '#E8B931', 'b-violet': '#8B7CF6' }[t] || '#8E8A82';
   }
   function href(u) { return /^https?:\/\//i.test(u) ? u : 'https://' + u; }
 

@@ -1,36 +1,59 @@
 /* ═══════════════════════════════════════════════════════════════
-   ThinkFirst Studios CRM — design tokens drawn from the brand guide
+   ThinkFirst Studios CRM — design tokens taken from thinkfirststudios.com
+
+   The orange was always right. Everything around it was not: the site's
+   neutrals are WARM (red slightly above blue at every step) and the
+   CRM's were cool blue-greys. Same brand colour sitting on two different
+   temperatures reads as two different products, which is the whole
+   reason this looked off.
+
+   Where the site names a token, that exact value is used. The app needs
+   more steps than a marketing page does — raised surfaces, hover
+   borders, a third text tier — so those are interpolated along the same
+   warm ramp rather than invented.
+
+     site --obsidian    #121211  ->  --bg
+     site --obsidian-2  #1B1B19  ->  --surface
+     site --line-dark   #2A2A27  ->  --line / --surface-3
+     site --fog         #EDEBE6  ->  --text
+     site --fog-mute    #8E8A82  ->  --text-3
+     site --ignition    #FA7700  ->  --orange
+     site --ember       #D84600  ->  --orange-deep
    ═══════════════════════════════════════════════════════════════ */
 :root{
-  /* brand */
-  --orange:#FA7700;
-  --orange-deep:#D84600;
+  /* brand — identical to the site */
+  --orange:#FA7700;          /* --ignition */
+  --orange-deep:#D84600;     /* --ember    */
   --orange-lift:#FF9A47;
   --orange-glow:rgba(250,119,0,.16);
 
-  /* surfaces */
-  --bg:#0B0B0D;
-  --surface:#111114;
-  --surface-2:#17181D;
-  --surface-3:#191B20;
-  --line:#23262D;
-  --line-2:#2C313A;
+  /* surfaces — the site's warm ramp, extended for app chrome */
+  --bg:#121211;              /* --obsidian   */
+  --surface:#1B1B19;         /* --obsidian-2 */
+  --surface-2:#222220;
+  --surface-3:#2A2A27;
+  --line:#2A2A27;            /* --line-dark  */
+  --line-2:#3A3A36;
 
-  /* text */
-  --text:#E7EAF0;
-  --text-2:#A4ACB8;
-  --text-3:#5C6470;
+  /* text — a third tier the site does not need, on the same ramp.
+     The old --text-3 (#5C6470) failed contrast on cards at 2.96:1;
+     the warm equivalent clears AA at 4.64:1. */
+  --text:#EDEBE6;            /* --fog      */
+  --text-2:#A9A59D;
+  --text-3:#8E8A82;          /* --fog-mute */
 
-  /* status semantics */
+  /* status semantics — no equivalent on the site, which has no state to
+     show. Kept as they are: these mean overdue, paid, at risk, and
+     changing them to match a palette would cost more than it buys. */
   --ok:#2FBF71;
   --warn:#E8B931;
   --danger:#E5484D;
   --info:#4C8DFF;
   --violet:#8B7CF6;
 
-  --font-display:'Chakra Petch','Segoe UI Semibold',system-ui,sans-serif;
+  --font-display:'Bricolage Grotesque','Segoe UI Semibold',system-ui,sans-serif;
   --font:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
-  --font-mono:'JetBrains Mono',ui-monospace,'Cascadia Mono',Consolas,monospace;
+  --font-mono:'Space Mono',ui-monospace,'Cascadia Mono',Consolas,monospace;
 
   --r:10px; --r-sm:6px; --r-lg:16px;
   --top-h:56px; --tab-h:42px;
@@ -47,19 +70,19 @@ body{
 a{color:inherit;text-decoration:none}
 button,input,select,textarea{font:inherit;color:inherit}
 svg.ico,.gs-icon{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex:none}
-::selection{background:var(--orange);color:#0B0B0D}
+::selection{background:var(--orange);color:var(--bg)}
 
 /* scrollbars */
 *::-webkit-scrollbar{width:10px;height:10px}
 *::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:8px;border:3px solid transparent;background-clip:content-box}
-*::-webkit-scrollbar-thumb:hover{background:#3b414c;background-clip:content-box}
+*::-webkit-scrollbar-thumb:hover{background:#43433D;background-clip:content-box}
 *::-webkit-scrollbar-track{background:transparent}
 
 /* ── Topbar ─────────────────────────────────────────────────────── */
 .topbar{
   position:fixed;inset:0 0 auto 0;height:var(--top-h);z-index:60;
   display:flex;align-items:center;gap:20px;padding:0 16px;
-  background:linear-gradient(180deg,#101013,#0C0C0F);
+  background:linear-gradient(180deg,#171715,#121211);
   border-bottom:1px solid var(--line);
 }
 .brand{display:flex;align-items:center;gap:10px;min-width:196px}
@@ -104,7 +127,7 @@ svg.ico,.gs-icon{width:16px;height:16px;fill:none;stroke:currentColor;stroke-wid
 .caret{width:14px;height:14px;color:var(--text-3)}
 .avatar{
   width:26px;height:26px;border-radius:50%;display:grid;place-items:center;flex:none;
-  font-family:var(--font-display);font-size:10px;font-weight:700;letter-spacing:.04em;color:#0B0B0D;
+  font-family:var(--font-display);font-size:10px;font-weight:700;letter-spacing:.04em;color:var(--bg);
   background:var(--orange);
 }
 .avatar.lg{width:40px;height:40px;font-size:13px}
@@ -189,9 +212,9 @@ svg.ico,.gs-icon{width:16px;height:16px;fill:none;stroke:currentColor;stroke-wid
   background:var(--surface-2);border:1px solid var(--line-2);color:var(--text);
   border-radius:var(--r-sm);padding:7px 13px;font-size:13px;font-weight:500;transition:.14s;
 }
-.btn:hover{background:var(--surface-3);border-color:#39404b}
+.btn:hover{background:var(--surface-3);border-color:#3A3A36}
 .btn:active{transform:translateY(1px)}
-.btn-primary{background:var(--orange);border-color:var(--orange);color:#0B0B0D;font-weight:600}
+.btn-primary{background:var(--orange);border-color:var(--orange);color:var(--bg);font-weight:600}
 .btn-primary:hover{background:var(--orange-lift);border-color:var(--orange-lift)}
 .btn-danger{color:#ff8a80;border-color:#5c2b2e}
 .btn-danger:hover{background:#2a1215;border-color:#7a3a3e}
@@ -210,7 +233,7 @@ svg.ico,.gs-icon{width:16px;height:16px;fill:none;stroke:currentColor;stroke-wid
 }
 .input:focus{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-glow)}
 textarea.input{resize:vertical;min-height:76px;line-height:1.55}
-select.input{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235C6470' stroke-width='2'><path d='M6 9l6 6 6-6'/></svg>");background-repeat:no-repeat;background-position:right 8px center;background-size:16px;padding-right:30px}
+select.input{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238E8A82' stroke-width='2'><path d='M6 9l6 6 6-6'/></svg>");background-repeat:no-repeat;background-position:right 8px center;background-size:16px;padding-right:30px}
 .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .form-grid .span-2{grid-column:1/-1}
 @media(max-width:640px){.form-grid{grid-template-columns:1fr}}
@@ -232,7 +255,7 @@ select.input{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg 
 }
 .badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
 .badge.no-dot::before{display:none}
-.b-grey  {color:#9aa3af;background:rgba(154,163,175,.12);border-color:rgba(154,163,175,.22)}
+.b-grey  {color:#8E8A82;background:rgba(154,163,175,.12);border-color:rgba(154,163,175,.22)}
 .b-orange{color:var(--orange);background:var(--orange-glow);border-color:rgba(250,119,0,.3)}
 .b-blue  {color:var(--info);background:rgba(76,141,255,.13);border-color:rgba(76,141,255,.26)}
 .b-green {color:var(--ok);background:rgba(47,191,113,.13);border-color:rgba(47,191,113,.26)}
@@ -273,7 +296,7 @@ table.tbl tbody tr:last-child td{border-bottom:0}
 .seg{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden}
 .seg button{background:none;border:0;padding:6px 12px;font-size:12.5px;color:var(--text-2);cursor:pointer;transition:.13s}
 .seg button:hover{color:var(--text);background:var(--surface-3)}
-.seg button.on{background:var(--orange);color:#0B0B0D;font-weight:600}
+.seg button.on{background:var(--orange);color:var(--bg);font-weight:600}
 
 .empty{padding:48px 20px;text-align:center;color:var(--text-3)}
 .empty svg{width:34px;height:34px;opacity:.45;margin-bottom:10px;stroke:currentColor;fill:none;stroke-width:1.6}
@@ -293,7 +316,7 @@ table.tbl tbody tr:last-child td{border-bottom:0}
 
 /* ── Record detail ──────────────────────────────────────────────── */
 .record-hero{
-  background:linear-gradient(135deg,#141519 0%,var(--surface) 55%);
+  background:linear-gradient(135deg,#1F1F1C 0%,var(--surface) 55%);
   border:1px solid var(--line);border-radius:var(--r);padding:18px;margin-bottom:14px;position:relative;overflow:hidden;
 }
 .record-hero::before{content:"";position:absolute;right:-60px;top:-70px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,var(--orange-glow),transparent 68%)}
@@ -391,7 +414,7 @@ table.tbl tbody tr:last-child td{border-bottom:0}
 }
 .wo-check:hover{border-color:var(--orange)}
 .wo-check.on{background:var(--ok);border-color:var(--ok)}
-.wo-check svg{width:12px;height:12px;stroke:#0B0B0D;stroke-width:3;fill:none;opacity:0}
+.wo-check svg{width:12px;height:12px;stroke:var(--bg);stroke-width:3;fill:none;opacity:0}
 .wo-check.on svg{opacity:1}
 .wo-main{flex:1;min-width:0}
 .wo-title{font-weight:600;font-size:13.5px}
@@ -529,7 +552,7 @@ body.auth-open .shell{display:none}
 }
 .act-check:hover{border-color:var(--orange)}
 .act-check.on{background:var(--ok);border-color:var(--ok)}
-.act-check.on::after{content:"";width:4px;height:8px;border:solid #0B0B0D;border-width:0 2px 2px 0;transform:rotate(45deg) translate(-1px,-1px)}
+.act-check.on::after{content:"";width:4px;height:8px;border:solid var(--bg);border-width:0 2px 2px 0;transform:rotate(45deg) translate(-1px,-1px)}
 .act-body{flex:1;min-width:0}
 .act-subject{font-size:13px;font-weight:600}
 .act-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:11.5px;color:var(--text-3);margin-top:4px}

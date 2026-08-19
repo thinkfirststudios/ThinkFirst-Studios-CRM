@@ -16,7 +16,7 @@
   var S = root.Store, U = root.UI;
   root.Views = root.Views || {};
 
-  var TONE_DOT = { 'b-grey': '#9aa3af', 'b-orange': '#FA7700', 'b-blue': '#4C8DFF',
+  var TONE_DOT = { 'b-grey': '#8E8A82', 'b-orange': '#FA7700', 'b-blue': '#4C8DFF',
     'b-green': '#2FBF71', 'b-red': '#E5484D', 'b-yellow': '#E8B931', 'b-violet': '#8B7CF6' };
 
   /* ── the record-page panel ───────────────────────────────────── */
@@ -36,7 +36,7 @@
       '<div class="act-tabs">' +
         S.TASK_KINDS.map(function (k) {
           return '<button data-newact="' + U.esc(k.id) + '">' +
-            '<span class="act-dot" style="background:' + (TONE_DOT[k.tone] || '#9aa3af') + '"></span>' +
+            '<span class="act-dot" style="background:' + (TONE_DOT[k.tone] || '#8E8A82') + '"></span>' +
             U.esc(k.verb) + '</button>';
         }).join('') +
       '</div>' +
