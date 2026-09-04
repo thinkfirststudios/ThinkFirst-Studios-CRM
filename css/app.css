@@ -689,3 +689,40 @@ body[data-shield-hidden] .modal-root{
     display:block;padding:60px 40px;font:600 15px Inter,Helvetica,Arial,sans-serif;
   }
 }
+
+/* ── bulk selection ─────────────────────────────────────────
+   The action bar is fixed to the bottom of the viewport instead of
+   sitting above the table. Two reasons: ticking a row must not shove the
+   next row you were aiming for, and once you have scrolled to the bottom
+   of a long list the actions still have to be where you are looking. */
+.pick-cell{width:30px;padding-right:0}
+.tbl input[type=checkbox]{
+  width:15px;height:15px;margin:0;cursor:pointer;vertical-align:middle;
+  accent-color:var(--orange-fill);
+}
+
+.bulk-bar{
+  position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:60;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;
+  max-width:calc(100vw - 28px);padding:9px 12px;border-radius:var(--r-lg);
+  background:var(--text);color:var(--bg);
+  box-shadow:0 12px 34px rgba(26,26,24,.30),0 2px 8px rgba(26,26,24,.18);
+  animation:bulk-in .16s ease-out;
+}
+@keyframes bulk-in{
+  from{opacity:0;transform:translate(-50%,10px)}
+  to{opacity:1;transform:translate(-50%,0)}
+}
+.bulk-bar strong{font-weight:600;font-size:13px;white-space:nowrap;padding-left:5px}
+.bulk-bar .hint{color:rgba(252,252,251,.60);font-size:12px;white-space:nowrap}
+.bulk-sep{width:1px;height:20px;background:rgba(252,252,251,.18)}
+.bulk-bar .btn{background:rgba(252,252,251,.10);border-color:rgba(252,252,251,.20);color:var(--bg)}
+.bulk-bar .btn:hover{background:rgba(252,252,251,.21);border-color:rgba(252,252,251,.36)}
+.bulk-bar .btn-ghost{background:transparent;border-color:transparent;color:rgba(252,252,251,.72)}
+.bulk-bar .btn-ghost:hover{background:rgba(252,252,251,.13);color:var(--bg)}
+/* color-scheme flips the native date picker's own icon and popup to the
+   dark variant, so it does not sit as a white slab on the dark bar. */
+.bulk-bar .input{
+  height:28px;width:142px;padding:0 8px;font-size:12px;color-scheme:dark;
+  background:rgba(252,252,251,.10);border-color:rgba(252,252,251,.20);color:var(--bg);
+}

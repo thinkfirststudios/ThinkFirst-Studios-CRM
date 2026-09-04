@@ -267,7 +267,10 @@
   }
 
   /* ── sortable table ──────────────────────────────────────────── */
-  /* cols: [{key,label,render(row),sort(row),width,cls}] */
+  /* cols: [{key,label,render(row),sort(row),width,cls}]
+     labelHTML replaces the escaped label when a header needs markup of
+     its own — a select-all checkbox, say. It is raw, so only ever pass
+     a literal. */
   function table(cols, rows, opts) {
     opts = opts || {};
     var sortKey = opts.sortKey, dir = opts.sortDir || 1;
@@ -289,7 +292,8 @@
       cols.map(function (c) {
         var ind = sortKey === c.key ? '<span class="sort-ind">' + (dir === 1 ? '▲' : '▼') + '</span>' : '';
         return '<th' + (c.sort ? ' class="sortable" data-sort="' + esc(c.key) + '"' : '') +
-               (c.width ? ' style="width:' + c.width + '"' : '') + '>' + esc(c.label) + ind + '</th>';
+               (c.width ? ' style="width:' + c.width + '"' : '') + '>' +
+               (c.labelHTML || esc(c.label)) + ind + '</th>';
       }).join('') +
       '</tr></thead><tbody>' +
       rows.map(function (r) {

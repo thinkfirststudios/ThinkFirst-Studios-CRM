@@ -822,6 +822,29 @@
     return rec;
   }
 
+  /* Apply one patch to many records at once.
+
+     Deliberately not a loop over update(): that logs an activity entry
+     per record, so resetting a dozen follow-up dates would bury the rest
+     of the day's history under a dozen identical lines, and it would
+     fire a dozen separate writes. One entry, one batched write. */
+  function updateMany(coll, ids, patch, label) {
+    var want = {}, touched = [];
+    ids.forEach(function (id) { want[id] = 1; });
+    (db[coll] || []).forEach(function (rec) {
+      if (!want[rec.id]) return;
+      Object.keys(patch).forEach(function (k) { rec[k] = patch[k]; });
+      rec.updatedAt = now();
+      touched.push(rec);
+    });
+    if (!touched.length) return [];
+    log('updated', coll, '', label || (touched.length + ' records'));
+    if (B.mode === 'local') B.persist(db);
+    else B.writeMany(coll, touched);
+    notify();
+    return touched;
+  }
+
   function remove(coll, id) {
     var rec = find(coll, id);
     db[coll] = db[coll].filter(function (r) { return r.id !== id; });
@@ -908,7 +931,8 @@
 
     uid: uid, today: today, shift: shift, dateKey: dateKey, nowISO: now,
     initials: initials, splitName: splitName,
-    all: all, find: find, insert: insert, insertMany: insertMany, update: update, remove: remove,
+    all: all, find: find, insert: insert, insertMany: insertMany, update: update, updateMany: updateMany,
+    remove: remove,
     childrenOf: childrenOf, removeCascade: removeCascade,
 
     /* ── orphans ────────────────────────────────────────────────────

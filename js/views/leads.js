@@ -44,7 +44,22 @@
              /* How many rows each queue is showing. Survives re-renders,
                 so expanding one and then acting on a row does not snap it
                 shut underneath you. */
-             mockupShown: PAGE, attentionShown: PAGE };
+             mockupShown: PAGE, attentionShown: PAGE,
+             /* Ticked rows, keyed by lead id. Pruned on every render to
+                what the filters actually show — see below. */
+             selected: {} };
+
+  /* Bulk follow-up presets, all counted from today rather than from
+     whatever each lead was set to before. "Next week" has to land on the
+     same day for every lead in the batch, or doing them together buys
+     you nothing over doing them one at a time. */
+  var PRESETS = [
+    { id: 'today', label: 'Today', days: 0 },
+    { id: 'tomorrow', label: 'Tomorrow', days: 1 },
+    { id: 'd3', label: 'In 3 days', days: 3 },
+    { id: 'week', label: 'Next week', days: 7 },
+    { id: 'd14', label: 'In 2 weeks', days: 14 }
+  ];
 
   /* Leads split into groups you actually work differently, rather than a
      status dropdown you have to remember to change. Active is the day
@@ -100,6 +115,16 @@
     });
 
     var attention = S.leadsNeedingAttention();
+
+    /* A selection only ever means "rows I can see right now". Carrying
+       ids across a filter or segment change would let a bulk reset land
+       on leads that scrolled out of view — the kind of edit nobody
+       notices until the follow-up quietly never happens. */
+    var visible = {};
+    rows.forEach(function (l) { visible[l.id] = 1; });
+    Object.keys(st.selected).forEach(function (id) {
+      if (!visible[id]) delete st.selected[id];
+    });
 
     el.innerHTML =
       '<div class="page-head">' +
@@ -171,14 +196,14 @@
         '<button class="btn btn-ghost btn-sm" id="clear">Clear</button>' +
         '<button class="btn btn-sm" id="exportCsv" style="margin-left:auto">Export CSV</button>' +
       '</div>' +
-      U.table(cols(), rows, {
+      U.table(cols(rows), rows, {
         rowLink: true, sortKey: st.sortKey, sortDir: st.sortDir,
         emptyHTML: U.empty(
           filtersActive() ? 'No leads match' : seg.empty[0],
           filtersActive() ? 'Try clearing the filters.' : seg.empty[1],
           seg.id === 'open' || seg.id === ''
             ? '<button class="btn btn-primary btn-sm" id="emptyNew">+ New Lead</button>' : '')
-      }) + '</div>';
+      }) + '</div>' + bulkBar();
 
     el.querySelector('#newLead').onclick = function () { openForm(null, root.render); };
     el.querySelector('#importBtn').onclick = function () { openImport(root.render); };
@@ -208,6 +233,7 @@
       onSort: function (k) { st.sortDir = st.sortKey === k ? -st.sortDir : 1; st.sortKey = k; root.render(); },
       onRow: function (id) { location.hash = '#/leads/' + id; }
     });
+    bindBulk(el, rows);
 
     function dueOpt(v, label) {
       return '<option value="' + v + '"' + (st.due === v ? ' selected' : '') + '>' + label + '</option>';
@@ -356,8 +382,114 @@
     return f.label;
   }
 
-  function cols() {
+
+  /* -- bulk follow-up ------------------------------------------------
+     The point of this screen is the morning pass: filter to what is
+     overdue, decide they can all wait a week, and say so once. Doing
+     that lead by lead is fifteen dialogs for one decision.
+
+     The bar ships in the DOM on every render and hides itself when the
+     selection is empty, because ticking a checkbox updates it in place
+     rather than re-rendering the page. A re-render per tick would reflow
+     the table under the cursor, so the second box you aimed for would no
+     longer be where you aimed. */
+  function bulkBar() {
+    return '<div class="bulk-bar" id="bulkBar" hidden>' +
+      '<strong id="bulkCount">0 selected</strong>' +
+      '<span class="bulk-sep"></span>' +
+      '<span class="hint">Follow up</span>' +
+      PRESETS.map(function (p) {
+        return '<button class="btn btn-sm" data-bulk="' + p.id + '">' + U.esc(p.label) + '</button>';
+      }).join('') +
+      '<input class="input" type="date" id="bulkDate" title="Pick a date">' +
+      '<span class="bulk-sep"></span>' +
+      '<button class="btn btn-ghost btn-sm" data-bulk="none" ' +
+        'title="Leave these leads with no follow-up booked">Unschedule</button>' +
+      '<button class="btn btn-ghost btn-sm" id="bulkCancel">Cancel</button>' +
+      '</div>';
+  }
+
+  function bindBulk(el, rows) {
+    var bar = el.querySelector('#bulkBar');
+    var all = el.querySelector('#pickAll');
+    var boxes = el.querySelectorAll('[data-pick]');
+
+    boxes.forEach(function (cb) {
+      cb.onclick = function () {
+        if (cb.checked) st.selected[cb.dataset.pick] = 1;
+        else delete st.selected[cb.dataset.pick];
+        sync();
+      };
+    });
+
+    if (all) all.onclick = function () {
+      st.selected = {};
+      if (all.checked) rows.forEach(function (l) { st.selected[l.id] = 1; });
+      boxes.forEach(function (cb) { cb.checked = !!st.selected[cb.dataset.pick]; });
+      sync();
+    };
+
+    el.querySelector('#bulkCancel').onclick = function () { clear(); };
+
+    el.querySelectorAll('[data-bulk]').forEach(function (b) {
+      b.onclick = function () {
+        if (b.dataset.bulk === 'none') return apply('', 'cleared');
+        PRESETS.forEach(function (p) {
+          if (p.id === b.dataset.bulk) apply(S.shift(p.days), p.label.toLowerCase());
+        });
+      };
+    });
+
+    var picker = el.querySelector('#bulkDate');
+    picker.onchange = function () {
+      if (picker.value) apply(picker.value, U.fmtDateShort(picker.value));
+    };
+
+    sync();
+
+    function sync() {
+      var n = Object.keys(st.selected).length;
+      bar.hidden = !n;
+      el.querySelector('#bulkCount').textContent =
+        n + ' lead' + (n === 1 ? '' : 's') + ' selected';
+      if (all) {
+        all.checked = n > 0 && n === rows.length;
+        /* A partial selection reads as neither on nor off, so clicking
+           the header once means "all of them" rather than toggling back
+           to empty. */
+        all.indeterminate = n > 0 && n < rows.length;
+      }
+    }
+
+    function clear() {
+      st.selected = {};
+      boxes.forEach(function (cb) { cb.checked = false; });
+      sync();
+    }
+
+    function apply(date, phrase) {
+      var ids = Object.keys(st.selected);
+      if (!ids.length) return;
+      S.updateMany('leads', ids, { nextFollowUp: date },
+        ids.length + ' leads · follow-up ' + (date ? 'set to ' + phrase : 'cleared'));
+      st.selected = {};
+      U.toast(ids.length + ' lead' + (ids.length === 1 ? '' : 's') + ' ' +
+        (date ? 'due ' + U.fmtDateShort(date) : 'left unscheduled'));
+      root.render();
+    }
+  }
+
+  function cols(rows) {
     return [
+      /* No sort on this column. Sorting by "is it ticked" is not a thing
+         anyone wants, and a sortable header would swallow the click that
+         means select-all. */
+      { key: 'pick', label: '', width: '30px', cls: 'pick-cell',
+        labelHTML: '<input type="checkbox" id="pickAll" title="Select all">',
+        render: function (l) {
+          return '<input type="checkbox" data-pick="' + U.esc(l.id) + '"' +
+            (st.selected[l.id] ? ' checked' : '') + '>';
+        } },
       { key: 'name', label: 'Lead', sort: function (l) { return l.name; },
         render: function (l) {
           return '<div><span class="link">' + U.esc(l.name) + '</span>' +
