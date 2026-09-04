@@ -616,3 +616,76 @@ body.auth-open .shell{display:none}
   font-family:var(--font-display);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--text-3);border-right:1px solid var(--line);padding-right:6px;
 }
+
+
+/* ── Screen capture shield ──────────────────────────────────────────
+   Applied on the lead screens only (body[data-shield]) — see
+   js/screenshield.js for what these two overlays can and cannot do.
+
+   Both sit above every other layer the app draws: the modal root is
+   100, the lightbox 150, toasts 200. A watermark that stopped below a
+   modal would leave the one screen worth capturing unmarked. */
+.shield-watermark{
+  position:fixed;inset:0;z-index:9000;pointer-events:none;
+  background-repeat:repeat;background-position:0 0;
+  /* Printed at native tile size; scaling it would blur the text. */
+  background-size:540px 260px;
+}
+
+/* `hidden` is how both overlays are switched off, and the UA rule that
+   implements it loses to any class that sets `display` — so the class
+   has to opt back out itself. */
+.shield-watermark[hidden],
+.shield-cover[hidden]{display:none !important}
+
+.shield-cover{
+  position:fixed;inset:0;z-index:9500;
+  background:var(--bg);
+  display:grid;place-items:center;padding:24px;
+  /* No animation: a fade would leave a frame or two of readable lead
+     data on screen at exactly the moment a capture tool is firing. */
+}
+/* Above the cover, and it never lifts — there is no click handler on
+   it and no state that hides it again. */
+.shield-gate{z-index:9600}
+
+.shield-cover-box{
+  max-width:420px;text-align:center;color:var(--text-2);
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r);padding:30px 28px;box-shadow:var(--shadow);
+}
+.shield-cover-ico{
+  width:38px;height:38px;stroke:var(--orange-fill);stroke-width:1.6;
+  fill:none;stroke-linecap:round;stroke-linejoin:round;margin-bottom:12px;
+}
+.shield-cover-box h2{
+  font-family:var(--font-display);font-size:19px;margin:0 0 8px;color:var(--text);
+}
+.shield-cover-box p{font-size:13px;line-height:1.55;margin:0 0 18px}
+
+/* While the cover is down the page underneath is blurred as well, so a
+   capture tool that composites layers cannot pull readable text out of
+   what is behind it. */
+body[data-shield-hidden] .shell,
+body[data-shield-hidden] .topbar,
+body[data-shield-hidden] .tabbar,
+body[data-shield-hidden] .modal-root{
+  filter:blur(18px);
+  -webkit-filter:blur(18px);
+}
+
+/* Printing a lead list is a screenshot with extra steps. */
+@media print{
+  body[data-shield] .shell,
+  body[data-shield] .topbar,
+  body[data-shield] .tabbar,
+  body[data-shield] .modal-root,
+  body[data-shield] .toast-root,
+  body[data-shield] .shield-watermark,
+  body[data-shield] .shield-cover{display:none !important}
+
+  body[data-shield]::after{
+    content:"ThinkFirst Studios CRM — lead data cannot be printed.";
+    display:block;padding:60px 40px;font:600 15px Inter,Helvetica,Arial,sans-serif;
+  }
+}

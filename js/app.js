@@ -47,6 +47,10 @@
       g.classList.toggle('active', (g.dataset.nav || '').split(' ').indexOf(nav) > -1);
     });
 
+    /* The capture shield only arms itself on the screens that show
+       lead contact details, so it needs the route that just drew. */
+    if (root.ScreenShield) root.ScreenShield.apply(ROUTES[r.name] || 'dashboard');
+
     try {
       view(viewEl, r.params);
       paintUpdateBanner();
