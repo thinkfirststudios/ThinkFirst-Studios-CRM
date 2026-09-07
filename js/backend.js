@@ -173,6 +173,44 @@
   var session = null;
   var pendingProbe = Promise.resolve({});
 
+    /* Read a whole table, however big it has become.
+
+       Supabase caps an API response at the project's "Max rows" setting,
+       which is 1000 by default. select('*') therefore returns the FIRST
+       1000 rows and reports no error at all — the app boots believing
+       that is the entire table, and a backup exported from it would be
+       just as short. Nothing anywhere announces the truncation. That is
+       fine at a hundred leads and silently wrong at a thousand and one.
+
+       So page until a page comes back empty. A SHORT page is not a
+       reliable end-of-table signal, because a short page is exactly what
+       the cap produces — only an empty one is honest. Each request
+       continues from however many rows actually arrived, so this works
+       whatever the cap is set to. */
+    function readAll(table) {
+      var STEP = 1000, MAX_PAGES = 500;   /* half a million rows is a later problem */
+      var out = [], pages = 0;
+
+      function page(from) {
+        var q = client.from(table).select('*');
+        /* The test stubs implement select() without range(). They hand
+           back every row at once, which needs no paging. */
+        var paged = q && typeof q.range === 'function';
+        if (paged) q = q.range(from, from + STEP - 1);
+
+        return q.then(function (r) {
+          if (r.error) return { __fail: table, __msg: r.error.message };
+          var got = r.data || [];
+          out = out.concat(got);
+          if (paged && got.length && ++pages < MAX_PAGES) return page(from + got.length);
+          return out;
+        }, function (e) {
+          return { __fail: table, __msg: (e && e.message) || String(e) };
+        });
+      }
+      return page(0);
+    }
+
   var Remote = {
     mode: 'supabase',
     needsAuth: true,
@@ -240,12 +278,7 @@
     hydrate: function () {
       var colls = Object.keys(TABLES);
       return Promise.all(colls.map(function (c) {
-        return client.from(TABLES[c]).select('*').then(function (r) {
-          if (r.error) return { __fail: TABLES[c], __msg: r.error.message };
-          return r.data || [];
-        }, function (e) {
-          return { __fail: TABLES[c], __msg: (e && e.message) || String(e) };
-        });
+        return readAll(TABLES[c]);
       })).then(function (results) {
         var failed = results.filter(function (r) { return r && r.__fail; });
 

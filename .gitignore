@@ -21,3 +21,13 @@ token.json
 
 # Screenshots dropped for lead extraction — never committed
 .tmp/
+
+# Lead lists dropped anywhere in the tree. These hold contact details for
+# real people who did not consent to being in a public repo - same reason
+# .tmp/ is ignored. Keep working copies in .tmp/leads/.
+*.pdf
+*contact*list*
+*Contact*List*
+
+# Local database backups taken with tools/backup.mjs
+.tmp/backups/

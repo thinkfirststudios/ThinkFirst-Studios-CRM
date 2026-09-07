@@ -21,5 +21,10 @@ clicks through the bulk follow-up flow — tick, count, select-all, apply,
 unschedule — because a route that renders is not the same as a checkbox
 that works.
 
+`paging.js` is the one to keep an eye on. Supabase caps an API response at
+the project's "Max rows" setting and reports no error when it truncates, so
+a table that outgrows the cap starts disappearing in silence. The suite
+stubs a server that enforces a cap and checks every row still arrives.
+
 These used to live in a temp directory and were lost when it was cleaned.
 Keep them here.
