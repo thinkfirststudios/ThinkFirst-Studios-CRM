@@ -134,7 +134,10 @@ try {
   await client.query('commit');
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const dir = path.join(ROOT, '.tmp', 'backups');
+  /* Deliberately NOT .tmp/ — that directory is disposable by project
+     convention and gets cleaned, which is the one thing a backup must
+     survive. gitignored, so it never reaches the repo. */
+  const dir = path.join(ROOT, 'backups');
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `crm-backup-${stamp}.json`);
   fs.writeFileSync(file, JSON.stringify(db, null, 2), 'utf8');

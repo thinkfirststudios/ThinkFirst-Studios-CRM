@@ -29,5 +29,6 @@ token.json
 *contact*list*
 *Contact*List*
 
-# Local database backups taken with tools/backup.mjs
-.tmp/backups/
+# Local database backups taken with tools/backup.mjs. Kept OUT of .tmp/
+# because .tmp/ is disposable by convention and these are not.
+backups/
