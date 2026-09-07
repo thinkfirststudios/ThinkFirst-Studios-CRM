@@ -1191,14 +1191,28 @@
     instagram:    ['instagram', 'ig', 'insta', 'instagram handle', 'instagram url'],
     tiktok:       ['tiktok', 'tik tok', 'tt', 'tiktok handle'],
     facebook:     ['facebook', 'fb', 'facebook page', 'fb page', 'facebook url'],
-    noteText:     ['notes', 'note', 'comment', 'comments', 'description', 'details']
+    noteText:     ['notes', 'note', 'comment', 'comments', 'description', 'details'],
+    /* Per-row rating and tags. The import-wide tag box applies one set to
+       everything, which is no use for a list that arrives already sorted
+       into segments — the whole reason to keep them is to filter by them
+       afterwards. */
+    rating:       ['rating', 'lead rating', 'temperature', 'tier'],
+    tagsCol:      ['tags', 'tag', 'labels', 'segment']
   };
   var FIELD_LABELS = [
     ['name', 'Company Name *'], ['contactName', 'Contact'], ['contactTitle', 'Title'],
     ['email', 'Email'], ['phone', 'Phone'], ['website', 'Website'], ['address', 'Location'],
     ['industry', 'Industry'], ['source', 'Source'], ['estValue', 'Est. Value'],
-    ['instagram', 'Instagram'], ['tiktok', 'TikTok'], ['facebook', 'Facebook'], ['noteText', 'Note']
+    ['instagram', 'Instagram'], ['tiktok', 'TikTok'], ['facebook', 'Facebook'],
+    ['rating', 'Rating'], ['tagsCol', 'Tags'], ['noteText', 'Note']
   ];
+
+  /* A tags cell may use commas or pipes. Pipes matter because a CSV cell
+     holding commas has to be quoted, and plenty of exports get that wrong. */
+  function parseRowTags(s) {
+    return S.parseTags(String(s || '').replace(/\|/g, ','));
+  }
+  var RATING_IDS = { hot: 1, warm: 1, cold: 1 };
 
   function norm(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
 
@@ -1339,6 +1353,11 @@
               facebook: S.socialHandle(cell('facebook')),
               source: cell('source') || opts.source || '',
               estValue: Number(String(cell('estValue')).replace(/[^0-9.]/g, '')) || 0,
+              /* An unrecognised rating falls back rather than being written
+                 through, so a stray value cannot invent a fourth rating that
+                 no filter or badge knows how to draw. */
+              rating: RATING_IDS[cell('rating').toLowerCase()] ? cell('rating').toLowerCase() : '',
+              rowTags: parseRowTags(cell('tagsCol')),
               noteText: cell('noteText')
             };
             if (!rec.name) {
@@ -1394,6 +1413,8 @@
         var pending = [];
         var rows = fresh.map(function (r) {
           var noteText = r.noteText; delete r.noteText;
+          var rowTags = r.rowTags || []; delete r.rowTags;
+          var rowRating = r.rating; delete r.rating;
           var lead = {
             id: S.uid('l'),
             name: r.name, contactName: r.contactName, contactTitle: r.contactTitle,
@@ -1401,11 +1422,14 @@
             instagram: r.instagram, tiktok: r.tiktok, facebook: r.facebook,
             address: r.address, industry: r.industry, source: r.source,
             estValue: r.estValue,
-            leadStatus: 'new', rating: 'warm',
+            leadStatus: 'new', rating: rowRating || 'warm',
             ownerId: opts.ownerId || S.me().id,
             nextFollowUp: opts.nextFollowUp || '',
             lastContactedAt: '',
-            tags: tags.slice(),
+            /* Import-wide tags first, then the row's own, de-duplicated so a
+               tag typed in the box does not appear twice on rows that carry
+               it in the file as well. */
+            tags: S.parseTags(tags.concat(rowTags).join(',')),
             convertedCustomerId: '', convertedAt: ''
           };
           if (noteText) pending.push({ id: lead.id, body: noteText });
