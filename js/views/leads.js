@@ -1277,9 +1277,16 @@
       wide: true,
       okText: 'Preview',
       body: '<p style="margin:0 0 14px;color:var(--text-2);font-size:13px">' +
-          'Copy the rows out of your spreadsheet — including the header row — and paste them below. ' +
-          'Commas, tabs and semicolons all work.</p>' +
+          'Choose a CSV file, or copy the rows out of your spreadsheet — including the header row — ' +
+          'and paste them below. Commas, tabs and semicolons all work.</p>' +
         '<div class="form-grid">' +
+          /* A file picker as well as the textarea. Pasting works fine for
+             the fifty rows off a screenshot, but a real exported list runs
+             to megabytes, and pasting one of those into a textarea is slow
+             enough to look broken. */
+          '<div class="field span-2"><label>CSV file</label>' +
+            '<input class="input" type="file" id="impFile" accept=".csv,.tsv,.txt,text/csv,text/plain">' +
+            '<div class="hint" id="impFileHint">Fills the box below. Nothing is uploaded — the file is read in this browser.</div></div>' +
           '<div class="field span-2"><label>Pasted rows</label>' +
             '<textarea class="input" name="raw" rows="9" style="min-height:170px;font-family:var(--font-mono);font-size:12px" ' +
               'placeholder="Company,Contact,Email,Phone,Website&#10;Acme Roofing,Dan Ruiz,dan@acme.com,(602) 555-0100,acme.com"></textarea></div>' +
@@ -1295,6 +1302,30 @@
             '<div class="hint">Applied to every imported lead so none of them land with no next step.</div>') +
           U.field('Tag them', U.tagInput('tagsRaw', [])) +
         '</div>',
+      onMount: function (box) {
+        var file = box.querySelector('#impFile');
+        var hint = box.querySelector('#impFileHint');
+        var area = box.querySelector('[name=raw]');
+        if (!file) return;
+        file.onchange = function () {
+          var f = file.files && file.files[0];
+          if (!f) return;
+          hint.textContent = 'Reading ' + f.name + '…';
+          var reader = new FileReader();
+          reader.onload = function () {
+            area.value = String(reader.result || '');
+            var lines = area.value.split(/\r?\n/).filter(function (l) { return l.trim(); }).length;
+            /* The header is one of them, so what the file offers is one
+               fewer than the line count. */
+            hint.textContent = f.name + ' — ' + Math.max(0, lines - 1) +
+              ' rows loaded. Press Preview to check the columns.';
+          };
+          reader.onerror = function () {
+            hint.textContent = 'Could not read that file. Paste the rows instead.';
+          };
+          reader.readAsText(f);
+        };
+      },
       onOk: function (box) {
         var v = U.values(box);
         if (!v.raw || !v.raw.trim()) { U.toast('Paste some rows first.', 'err'); return false; }
