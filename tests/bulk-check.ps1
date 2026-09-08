@@ -53,12 +53,17 @@ $driver = @'
     var all = document.getElementById('pickAll');
     var total = boxes.length;
 
+    // Assert what the browser actually paints, not just the property. The
+    // property was true the entire time the bar sat visible on screen.
+    function shown(el) { return getComputedStyle(el).display !== 'none'; }
     say('the bar starts hidden', bar.hidden === true, bar.hidden);
+    say('and is genuinely not painted', !shown(bar), getComputedStyle(bar).display);
     say('there is a select-all box', !!all);
 
     var id1 = boxes[0].dataset.pick, id2 = boxes[1].dataset.pick;
     boxes[0].click();
     say('one tick shows the bar', bar.hidden === false, bar.hidden);
+    say('and it is actually painted', shown(bar), getComputedStyle(bar).display);
     say('and it counts one', count.textContent === '1 lead selected', count.textContent);
     boxes[1].click();
     say('two ticks count two', count.textContent === '2 leads selected', count.textContent);
@@ -71,6 +76,7 @@ $driver = @'
     say('unticking drops the count', count.textContent === '1 lead selected', count.textContent);
     boxes[0].click();
     say('unticking the last one hides the bar', bar.hidden === true, bar.hidden);
+    say('and it leaves the screen', !shown(bar), getComputedStyle(bar).display);
     boxes[0].click(); boxes[1].click();
 
     var want = S.shift(7);
@@ -86,6 +92,7 @@ $driver = @'
     // The page re-rendered, so everything has to be looked up again.
     bar = document.getElementById('bulkBar');
     say('the bar cleared itself after acting', bar.hidden === true, bar.hidden);
+    say('and is off screen again', !shown(bar), getComputedStyle(bar).display);
     say('and no row is left ticked',
         [].slice.call(document.querySelectorAll('[data-pick]')).every(function (c) { return !c.checked; }));
 

@@ -500,27 +500,30 @@
           if (l.contactName && l.contactName !== l.name) sub.push(U.esc(l.contactName));
           if (l.contactTitle) sub.push(U.esc(l.contactTitle));
 
-          /* Phone and email on the row, dialable. This is a calling list:
-             having to open each lead to find the number is the difference
-             between working it and not. bindTable ignores clicks on links,
-             so these do not open the lead by accident. */
-          var reach = [];
-          if (l.phone) {
-            reach.push('<a class="link mono" href="tel:' +
-              U.esc(String(l.phone).replace(/[^0-9+]/g, '')) + '">' + U.esc(l.phone) + '</a>');
-          }
-          if (l.email) {
-            reach.push('<a class="link" href="mailto:' + U.esc(l.email) + '">' + U.esc(l.email) + '</a>');
-          }
-
+          /* Email stays here because it is long and varies wildly in
+             width; the phone gets its own column, where a fixed position
+             is what makes a calling list scannable. */
           return '<div><span class="link">' + U.esc(l.name) + '</span>' +
             (sub.length
               ? '<div class="muted" style="font-size:11.5px">' + sub.join(' · ') + '</div>' : '') +
-            (reach.length
-              ? '<div style="font-size:11.5px;margin-top:2px">' + reach.join('<span class="muted"> · </span>') + '</div>'
+            (l.email
+              ? '<div style="font-size:11.5px;margin-top:2px">' +
+                '<a class="link" href="mailto:' + U.esc(l.email) + '">' + U.esc(l.email) + '</a></div>'
               : '') +
             (S.tagsOf(l).length ? '<div style="margin-top:4px">' + U.tagChips(l.tags, 3) + '</div>' : '') +
             '</div>';
+        } },
+      /* Dialable, and sorted so the leads you can actually ring group
+         together — 277 of the realtor list have no number at all, and
+         they belong at the bottom of a calling session, not scattered
+         through it. bindTable ignores clicks on links, so tapping a
+         number dials instead of opening the lead. */
+      { key: 'phone', label: 'Phone', width: '150px',
+        sort: function (l) { return l.phone ? String(l.phone).replace(/\D/g, '') : 'zzz'; },
+        render: function (l) {
+          if (!l.phone) return '<span class="muted">—</span>';
+          return '<a class="link mono" style="font-size:12px;white-space:nowrap" href="tel:' +
+            U.esc(String(l.phone).replace(/[^0-9+]/g, '')) + '">' + U.esc(l.phone) + '</a>';
         } },
       { key: 'status', label: 'Status', sort: function (l) { return S.leadStatus(l.leadStatus).order; },
         render: function (l) {

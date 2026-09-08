@@ -117,10 +117,23 @@ $driver = @'
     /* Phone on the row itself - this is a calling list, and having to open
        each lead to find the number is the difference between working it
        and not. */
-    var cells = document.querySelectorAll('.tbl tbody tr td:nth-child(2)');
-    var withTel = 0;
-    cells.forEach(function (c) { if (c.querySelector('a[href^="tel:"]')) withTel++; });
-    say('the list shows dialable phone numbers', withTel > 0, withTel + ' rows');
+    // Phone has its own column now: pick, lead, phone -> the third cell.
+    var heads = [].map.call(document.querySelectorAll('.tbl thead th'),
+                            function (h) { return h.textContent.replace(/[^A-Za-z ]/g, '').trim(); });
+    say('there is a Phone column', heads.indexOf('Phone') === 2, heads.join(' | '));
+
+    var cells = document.querySelectorAll('.tbl tbody tr td:nth-child(3)');
+    var withTel = 0, dashes = 0;
+    cells.forEach(function (c) {
+      if (c.querySelector('a[href^="tel:"]')) withTel++;
+      else if (c.textContent.trim() === '—') dashes++;
+    });
+    say('the column shows dialable numbers', withTel > 0, withTel + ' rows');
+    // Every row accounted for: a number, or an honest dash. The realtor list
+    // has 277 people with no phone at all, and a blank cell would read as a
+    // bug rather than as missing source data.
+    say('and a dash wherever there is none', withTel + dashes === cells.length,
+        withTel + ' dialable + ' + dashes + ' dashes of ' + cells.length);
     say('and does not print the same name twice',
         !Array.prototype.some.call(cells, function (c) {
           var link = c.querySelector('span.link');
