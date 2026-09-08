@@ -1468,7 +1468,25 @@
         });
 
         S.insertMany('leads', rows, 'l', rows.length + ' leads imported');
-        pending.forEach(function (p) { S.addNote('lead', p.id, p.body); });
+
+        /* One batched write, not one per note.
+
+           addNote() sends the note, writes an activity entry, and notifies
+           every subscriber — which re-renders the whole app. That is right
+           for somebody typing a note. Looped over an import it is two HTTP
+           requests and a full re-render per row: a file with a note on each
+           of 2,526 leads meant five thousand requests and 2,526 redraws of a
+           2,500-row table, on a blocked main thread. The tab just looks
+           frozen, and anyone would close it — losing whatever had not been
+           flushed. */
+        if (pending.length) {
+          S.insertMany('notes', pending.map(function (p) {
+            return {
+              entityType: 'lead', entityId: p.id, authorId: S.me().id,
+              body: p.body, pinned: false
+            };
+          }), 'n', pending.length + ' notes from the import');
+        }
 
         U.toast(rows.length + ' lead' + (rows.length === 1 ? '' : 's') + ' imported.', 'ok');
         done();
