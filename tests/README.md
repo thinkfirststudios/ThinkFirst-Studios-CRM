@@ -7,6 +7,7 @@ No framework and no install step — plain Node and headless Edge.
     powershell -File tests/render-check.ps1   # every route, in a real browser
     powershell -File tests/bulk-check.ps1     # the bulk follow-up flow, clicked
     powershell -File tests/import-check.ps1   # paste, map and import a CSV
+    powershell -File tests/bulk-scale.ps1     # clear 2,526 follow-ups at once
 
 Each `.js` suite boots the real `js/store.js` and `js/backend.js` against a
 stubbed Supabase client, so it exercises the shipping code rather than a
