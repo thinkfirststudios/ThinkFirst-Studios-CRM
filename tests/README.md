@@ -26,6 +26,10 @@ clicks through the bulk follow-up flow — tick, count, select-all, apply,
 unschedule — because a route that renders is not the same as a checkbox
 that works.
 
+`assign.js` covers splitting a list between reps: even shares, dealt
+rather than sliced into regional blocks, nothing outside the selection
+touched, and each person's follow-up queue holding only their own.
+
 `bulk-delete.js` covers the one action with no undo: that the selection
 is respected exactly, that a lead takes its notes with it rather than
 leaving orphans in the totals, and that the delete goes out as one

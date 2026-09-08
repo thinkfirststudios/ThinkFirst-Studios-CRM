@@ -166,6 +166,53 @@ $driver = @'
     });
     say('it logged one line, not 2,526', acts.length === 1, acts.length);
 
+    assignThenDelete(S);
+  }
+
+  /* Handing the list out, the way three people sharing it would: select
+     everything, open Assign, tick the team, confirm. */
+  function assignThenDelete(S) {
+    var users = S.activeUsers();
+    note('active users: ' + users.length);
+
+    var all = document.querySelector('#pickAll');
+    all.checked = true; all.onclick();
+
+    var btn = document.querySelector('#bulkAssign');
+    say('there is an Assign action', !!btn);
+    if (!btn || users.length < 2) {
+      note('fewer than two active users - skipping the split');
+      return deleteNoPhone(S);
+    }
+    btn.click();
+
+    var boxes = document.querySelectorAll('.assignUser');
+    say('the dialog lists everyone', boxes.length === users.length, boxes.length);
+
+    // Tick all of them and read the previewed shares.
+    boxes.forEach(function (b) { if (!b.checked) { b.checked = true; b.onchange(); } });
+    var shares = [].map.call(document.querySelectorAll('[data-share]'), function (s) {
+      return parseInt(s.textContent, 10) || 0;
+    }).filter(function (n) { return n > 0; });
+    var total = shares.reduce(function (a, b) { return a + b; }, 0);
+    say('the preview accounts for every selected lead', total === 2526, total);
+    say('and splits them evenly', Math.max.apply(null, shares) - Math.min.apply(null, shares) <= 1,
+        shares.join('/'));
+
+    var t = Date.now();
+    var oks = document.querySelectorAll('.modal-root [data-ok]');
+    oks[oks.length - 1].click();
+    note('assign took ' + (Date.now() - t) + 'ms');
+
+    var counts = {};
+    S.all('leads').filter(function (l) { return l.source === 'Realtor List'; })
+      .forEach(function (l) { counts[l.ownerId] = (counts[l.ownerId] || 0) + 1; });
+    var owners = Object.keys(counts);
+    say('the leads are spread across the team', owners.length === users.length,
+        owners.map(function (o) { return S.user(o).name + '=' + counts[o]; }).join(' '));
+    say('and every one of them still has an owner',
+        S.all('leads').every(function (l) { return !!l.ownerId; }));
+
     deleteNoPhone(S);
   }
 

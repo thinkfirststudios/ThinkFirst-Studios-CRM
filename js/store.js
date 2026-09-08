@@ -892,6 +892,41 @@
      per record, so resetting a dozen follow-up dates would bury the rest
      of the day's history under a dozen identical lines, and it would
      fire a dozen separate writes. One entry, one batched write. */
+  /* Hand a selection out across one or more owners.
+
+     Dealt round-robin rather than sliced into contiguous blocks. The
+     realtor list arrived ordered by time zone and then area code, so
+     blocks would give one person every lead in the east and another every
+     lead in the west — along with whatever difference in quality happens
+     to travel with geography. Dealing evens both out, and the remainder
+     falls to the first few rather than to one unlucky person.
+
+     One batched write and one activity entry, like every other bulk
+     action here. */
+  function assignMany(coll, ids, ownerIds, label) {
+    if (!ids || !ids.length || !ownerIds || !ownerIds.length) return {};
+
+    var want = {};
+    ids.forEach(function (id, i) { want[id] = ownerIds[i % ownerIds.length]; });
+
+    var counts = {}, touched = [];
+    (db[coll] || []).forEach(function (rec) {
+      var owner = want[rec.id];
+      if (!owner) return;
+      rec.ownerId = owner;
+      rec.updatedAt = now();
+      counts[owner] = (counts[owner] || 0) + 1;
+      touched.push(rec);
+    });
+    if (!touched.length) return {};
+
+    log('assigned', coll, '', label || (touched.length + ' records reassigned'));
+    if (B.mode === 'local') B.persist(db);
+    else B.writeMany(coll, touched);
+    notify();
+    return counts;
+  }
+
   function updateMany(coll, ids, patch, label) {
     var want = {}, touched = [];
     ids.forEach(function (id) { want[id] = 1; });
@@ -1002,6 +1037,7 @@
     uid: uid, today: today, shift: shift, dateKey: dateKey, nowISO: now,
     initials: initials, splitName: splitName,
     all: all, find: find, insert: insert, insertMany: insertMany, update: update, updateMany: updateMany,
+    assignMany: assignMany,
     remove: remove,
     childrenOf: childrenOf, removeCascade: removeCascade,
 

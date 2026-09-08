@@ -421,11 +421,86 @@
       '<button class="btn btn-ghost btn-sm" data-bulk="none" ' +
         'title="Leave these leads with no follow-up booked">Unschedule</button>' +
       '<span class="bulk-sep"></span>' +
+      '<button class="btn btn-sm" id="bulkAssign">Assign to…</button>' +
+      '<span class="bulk-sep"></span>' +
       /* Sits past a separator, at the far end from the date presets, and
          asks before doing anything. A misclick here is not recoverable. */
       '<button class="btn btn-sm bulk-danger" id="bulkDelete">Delete</button>' +
       '<button class="btn btn-ghost btn-sm" id="bulkCancel">Cancel</button>' +
       '</div>';
+  }
+
+  /* Splitting a list between the people who will work it.
+
+     Three reps sharing one undivided list means three people ringing the
+     same person and nobody sure what is left. Every other CRM calls this
+     lead assignment or a call queue; here it is the owner field, which
+     every lead already has and which the dashboard already uses to show
+     each person their own follow-ups. */
+  function openAssign(ids, done) {
+    var users = S.activeUsers();
+    if (!users.length) { U.toast('No active users to assign to.', 'err'); return; }
+
+    U.modal({
+      title: 'Assign ' + ids.length + ' lead' + (ids.length === 1 ? '' : 's'),
+      okText: 'Assign',
+      body: '<p style="margin:0 0 12px;color:var(--text-2);font-size:13px">' +
+          'Tick everyone who should get a share. With more than one ticked the ' +
+          'leads are dealt out one at a time rather than in blocks, so nobody ends ' +
+          'up with a single region or the whole bottom of the list.</p>' +
+        '<div id="assignWho">' +
+          users.map(function (u) {
+            return '<label class="check" style="display:flex;gap:9px;align-items:center;padding:6px 0">' +
+              '<input type="checkbox" class="assignUser" value="' + U.esc(u.id) + '"' +
+                (u.id === S.me().id ? ' checked' : '') + '>' +
+              U.avatar(u.id, 'sm') +
+              '<span>' + U.esc(u.name) + '</span>' +
+              '<span class="muted" style="font-size:11.5px">' + U.esc(u.title || u.role || '') + '</span>' +
+              '<span class="mono" data-share="' + U.esc(u.id) + '" style="margin-left:auto;font-size:12px"></span>' +
+            '</label>';
+          }).join('') +
+        '</div>' +
+        '<div class="hint" id="assignHint" style="margin-top:10px"></div>',
+      onMount: function (box) {
+        var okBtn = box.querySelector('[data-ok]');
+        function paint() {
+          var picked = [].slice.call(box.querySelectorAll('.assignUser:checked'))
+            .map(function (c) { return c.value; });
+          /* Show each person's share before anything is committed — the
+             number is the whole point of the dialog. */
+          users.forEach(function (u) {
+            var cell = box.querySelector('[data-share="' + u.id + '"]');
+            var at = picked.indexOf(u.id);
+            if (at < 0) { cell.textContent = ''; return; }
+            var n = Math.floor(ids.length / picked.length) +
+                    (ids.length % picked.length > at ? 1 : 0);
+            cell.textContent = n + ' lead' + (n === 1 ? '' : 's');
+          });
+          box.querySelector('#assignHint').textContent = picked.length
+            ? (picked.length === 1
+                ? 'All ' + ids.length + ' go to one person.'
+                : 'Split between ' + picked.length + ' people.')
+            : 'Tick at least one person.';
+          okBtn.disabled = !picked.length;
+        }
+        box.querySelectorAll('.assignUser').forEach(function (c) { c.onchange = paint; });
+        paint();
+      },
+      onOk: function (box) {
+        var picked = [].slice.call(box.querySelectorAll('.assignUser:checked'))
+          .map(function (c) { return c.value; });
+        if (!picked.length) { U.toast('Pick at least one person.', 'err'); return false; }
+
+        var names = picked.map(function (id) { return S.user(id).name; }).join(', ');
+        var counts = S.assignMany('leads', ids, picked,
+          ids.length + ' leads assigned to ' + names);
+
+        U.toast(Object.keys(counts).map(function (id) {
+          return S.user(id).name.split(' ')[0] + ' ' + counts[id];
+        }).join(' · '));
+        done();
+      }
+    });
   }
 
   function bindBulk(el, rows) {
@@ -449,6 +524,12 @@
     };
 
     el.querySelector('#bulkCancel').onclick = function () { clear(); };
+
+    el.querySelector('#bulkAssign').onclick = function () {
+      var ids = Object.keys(st.selected);
+      if (!ids.length) return;
+      openAssign(ids, function () { st.selected = {}; root.render(); });
+    };
 
     el.querySelector('#bulkDelete').onclick = function () {
       var ids = Object.keys(st.selected);
