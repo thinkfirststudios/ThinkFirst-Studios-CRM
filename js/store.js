@@ -1457,12 +1457,21 @@
       return fuState(FOLLOW_UP.scheduled, d);
     },
     openLeads: function () { return db.leads.filter(API.isLeadOpen); },
-    /* Overdue, due today, or never scheduled — sorted most urgent first. */
+    /* Overdue or due today — a commitment you made and have not kept yet,
+       sorted most urgent first.
+
+       Leads with no date deliberately do NOT count. They used to, back when
+       every lead arrived one at a time and having no next step really was an
+       oversight. It stops being true the moment a list is imported on
+       purpose without dates: a few thousand unscheduled leads would put
+       every one of them in today's work and make the number mean nothing.
+       Nothing is hidden — "Unscheduled" is still one of the follow-up
+       filters on the leads list, and still its own badge on the row. */
     leadsNeedingAttention: function (userId) {
       return db.leads.filter(function (l) {
         if (userId && l.ownerId !== userId) return false;
         var k = API.followUpState(l).key;
-        return k === 'overdue' || k === 'today' || k === 'unscheduled';
+        return k === 'overdue' || k === 'today';
       }).sort(function (a, b) {
         var fa = API.followUpState(a), fb = API.followUpState(b);
         return fa.rank - fb.rank || String(a.nextFollowUp || '').localeCompare(String(b.nextFollowUp || ''));

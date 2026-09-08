@@ -23,6 +23,11 @@ clicks through the bulk follow-up flow — tick, count, select-all, apply,
 unschedule — because a route that renders is not the same as a checkbox
 that works.
 
+`attention.js` pins what "Follow Up Now" means: overdue or due today,
+never a lead nobody has scheduled. Narrowing it is what stops a large
+undated import from reading as thousands of things due now, and the suite
+checks the real work still shows up.
+
 `paging.js` is the one to keep an eye on. Supabase caps an API response at
 the project's "Max rows" setting and reports no error when it truncates, so
 a table that outgrows the cap starts disappearing in silence. The suite

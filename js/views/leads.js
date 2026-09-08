@@ -103,7 +103,7 @@
       if (st.mockup && S.mockupStatus(l.mockupStatus).id !== st.mockup) return false;
       if (st.due) {
         var k = S.followUpState(l).key;
-        if (st.due === 'attention' && k !== 'overdue' && k !== 'today' && k !== 'unscheduled') return false;
+        if (st.due === 'attention' && k !== 'overdue' && k !== 'today') return false;
         if (st.due !== 'attention' && k !== st.due) return false;
       }
       if (st.q) {
@@ -142,7 +142,7 @@
       '<div class="grid g-4" style="margin-bottom:14px">' +
         kpi('Open Leads', String(stats.open), S.money(stats.value) + ' estimated', 'accent') +
         kpi('Needs Follow-Up', String(stats.attention),
-            stats.attention ? 'overdue, due today, or unscheduled' : 'all scheduled',
+            stats.attention ? 'overdue or due today' : 'nothing due',
             stats.attention ? 'danger' : 'ok') +
         kpi('Qualified', String(stats.qualified), 'ready to convert', '') +
         kpi('Converted', String(stats.converted),
@@ -314,7 +314,7 @@
     return '<div class="card" style="margin-bottom:14px">' +
       '<div class="card-head"><span class="card-title">Follow Up Now</span>' +
         '<span class="kcol-count">' + list.length + '</span>' +
-        '<div class="page-actions"><span class="hint">Overdue, due today, or never scheduled</span></div></div>' +
+        '<div class="page-actions"><span class="hint">Overdue or due today</span></div></div>' +
       list.slice(0, st.attentionShown).map(function (l) {
         var f = S.followUpState(l);
         return '<div class="wo-row">' +

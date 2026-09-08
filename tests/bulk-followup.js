@@ -109,8 +109,12 @@ const activityCount = () => S.all('activity').length;
   ok('and it reads as unscheduled',
      S.followUpState(S.find('leads', a.id)).key === 'unscheduled',
      S.followUpState(S.find('leads', a.id)).key);
-  ok('unscheduled leads count as needing attention',
-     S.leadsNeedingAttention().some(l => l.id === a.id));
+  /* Clearing the date takes a lead OUT of the follow-up queue. It used to
+     put it in, as "unscheduled" - which meant clearing a stamped date moved
+     the noise rather than removing it. */
+  ok('and it leaves the follow-up queue entirely',
+     !S.leadsNeedingAttention().some(l => l.id === a.id));
+  ok('while still being an open lead', S.isLeadOpen(S.find('leads', a.id)));
 
   console.log('\n-- ids that are not there');
   reset();

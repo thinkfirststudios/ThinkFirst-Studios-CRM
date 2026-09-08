@@ -122,12 +122,14 @@ const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim
   ok('the segments are all offered in the tag filter',
      seg.every(t => S.allTags().indexOf(t) > -1), S.allTags().join(','));
 
-  console.log('\n-- a blank follow-up still reads as needing attention');
-  /* The chosen import leaves the date blank, so this is expected, not a bug.
-     Asserting it keeps the surprise out of the reader's day. */
-  ok('unscheduled leads are in the attention queue',
-     S.leadsNeedingAttention().length === seg.length,
+  console.log('\n-- a blank follow-up does not manufacture urgent work');
+  /* Importing a list without dates is a deliberate act, not an oversight, so
+     none of it lands in today's queue. It used to, which made a large import
+     read as thousands of things due now. See tests/attention.js. */
+  ok('unscheduled leads stay out of the attention queue',
+     S.leadsNeedingAttention().length === 0,
      S.leadsNeedingAttention().length);
+  ok('but they are still open leads', S.all('leads').every(l => S.isLeadOpen(l)));
 
   console.log('\n' + (fails ? 'FAILURES: ' + fails : 'ALL PASS'));
   process.exit(fails ? 1 : 0);
