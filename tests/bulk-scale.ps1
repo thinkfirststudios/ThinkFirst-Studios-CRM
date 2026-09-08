@@ -73,7 +73,10 @@ $driver = @'
     for (var i = 0; i < N; i++) {
       batch.push({
         name: 'Realtor ' + i, contactName: 'Realtor ' + i, contactTitle: 'Realtor',
-        email: 'realtor' + i + '@example.com', phone: '', website: '',
+        email: 'realtor' + i + '@example.com',
+        // Every third one has no number, mirroring the real list.
+        phone: (i % 3 === 0) ? '' : '(555) 555-' + (1000 + (i % 9000)),
+        website: '',
         instagram: '', tiktok: '', facebook: '',
         address: 'Somewhere', industry: 'Real Estate', source: 'Realtor List',
         estValue: 0, leadStatus: 'new', rating: 'cold',
@@ -149,6 +152,56 @@ $driver = @'
       return /follow-up/i.test(String(e.detail || '')) && /cleared/i.test(String(e.detail || ''));
     });
     say('it logged one line, not 2,526', acts.length === 1, acts.length);
+
+    deleteNoPhone(S);
+  }
+
+  /* The delete path, driven the way a person would: filter to the ones with
+     no number, select all, press Delete, confirm. */
+  function deleteNoPhone(S) {
+    var sel = document.querySelector('#freach');
+    say('a contact filter exists', !!sel);
+    if (!sel) { finish(); return; }
+    sel.value = 'nophone';
+    sel.onchange();
+
+    var boxes = document.querySelectorAll('[data-pick]');
+    var expected = S.all('leads').filter(function (l) { return !l.phone; }).length;
+    say('the filter shows exactly the ones with no phone',
+        boxes.length === expected, boxes.length + ' of ' + expected);
+    say('and every row on screen really has none',
+        [].every.call(boxes, function (b) {
+          return !S.find('leads', b.dataset.pick).phone;
+        }));
+
+    var all = document.querySelector('#pickAll');
+    all.checked = true; all.onclick();
+
+    var leadsBefore = S.all('leads').length;
+    var withPhone = S.all('leads').filter(function (l) { return l.phone; }).length;
+
+    var t = Date.now();
+    document.querySelector('#bulkDelete').click();
+
+    // A confirmation stands between the click and the deletion.
+    var dialog = document.querySelector('.modal-root [data-ok]');
+    say('it asks before deleting', !!dialog);
+    if (!dialog) { finish(); return; }
+    say('nothing is deleted until you confirm',
+        S.all('leads').length === leadsBefore, S.all('leads').length);
+    dialog.click();
+    note('delete took ' + (Date.now() - t) + 'ms');
+
+    say('the ones with no phone are gone',
+        S.all('leads').filter(function (l) { return !l.phone; }).length === 0,
+        S.all('leads').filter(function (l) { return !l.phone; }).length);
+    say('and every lead with a phone survived',
+        S.all('leads').filter(function (l) { return l.phone; }).length === withPhone,
+        S.all('leads').filter(function (l) { return l.phone; }).length + ' of ' + withPhone);
+    say('no orphaned notes were left',
+        S.all('notes').every(function (n) {
+          return n.entityType !== 'lead' || !!S.find('leads', n.entityId);
+        }));
 
     note('total ' + (Date.now() - t0) + 'ms end to end');
     finish();

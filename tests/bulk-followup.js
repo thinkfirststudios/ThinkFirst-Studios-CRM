@@ -30,7 +30,9 @@ const client = {
     upsert: b => { calls.upsert.push({ table: t, rows: [].concat(b) }); return thenable({ error: null }); },
     update: b => { calls.update.push({ table: t, row: b }); return { eq: () => thenable({ error: null }) }; },
     insert: b => { calls.insert.push({ table: t, rows: [].concat(b) }); return thenable({ error: null }); },
-    delete: () => ({ eq: () => thenable({ error: null }), neq: () => thenable({ error: null }) })
+    delete: () => ({ eq: () => thenable({ error: null }),
+                 in: () => thenable({ error: null }),
+                 neq: () => thenable({ error: null }) })
   }),
   channel: () => ({ on: () => ({ subscribe: () => {} }), subscribe: () => {} })
 };

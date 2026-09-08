@@ -25,6 +25,11 @@ clicks through the bulk follow-up flow — tick, count, select-all, apply,
 unschedule — because a route that renders is not the same as a checkbox
 that works.
 
+`bulk-delete.js` covers the one action with no undo: that the selection
+is respected exactly, that a lead takes its notes with it rather than
+leaving orphans in the totals, and that the delete goes out as one
+request per chunk rather than one per row.
+
 `attention.js` pins what "Follow Up Now" means: overdue or due today,
 never a lead nobody has scheduled. Narrowing it is what stops a large
 undated import from reading as thousands of things due now, and the suite

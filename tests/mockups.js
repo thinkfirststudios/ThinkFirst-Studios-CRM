@@ -46,7 +46,9 @@ const client = {
   auth: { getSession: () => Promise.resolve({ data: { session: { user: { id: 'u' } } } }), onAuthStateChange: () => {} },
   from: t => ({ select: () => thenable({ data: rows[t] || [], error: null }),
                 upsert: () => thenable({ error: null }), insert: () => thenable({ error: null }),
-                delete: () => ({ eq: () => thenable({ error: null }), neq: () => thenable({ error: null }) }) }),
+                delete: () => ({ eq: () => thenable({ error: null }),
+                 in: () => thenable({ error: null }),
+                 neq: () => thenable({ error: null }) }) }),
   channel: () => ({ on: () => ({ subscribe: () => {} }), subscribe: () => {} })
 };
 const win = { localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },

@@ -162,6 +162,7 @@
     },
     write: function () { /* persist() already wrote the whole db */ },
     writeMany: function () { /* ditto */ },
+    deleteMany: function () { /* ditto */ },
     replaceAll: function (db) { Local.persist(db); return Promise.resolve(); },
     subscribe: function () {},
     session: function () { return null; },
@@ -346,6 +347,35 @@
       q.then(function (r) {
         if (r && r.error) fail(table, op, r.error.message);
       }, function (e) { fail(table, op, e.message); });
+    },
+
+    /* Deleting a batch in one request per chunk rather than one per row.
+       A per-row loop is what turns "remove 277 leads" into 277 requests,
+       and the same again for their notes. */
+    deleteMany: function (coll, ids) {
+      var table = TABLES[coll];
+      if (!table || !client || READ_ONLY[coll] || !ids || !ids.length) return;
+      if (Remote.missing.indexOf(table) > -1) return;
+      var CHUNK = 200;
+      function done(r) { if (r && r.error) fail(table, 'delete', r.error.message); }
+      function died(e) { fail(table, 'delete', e.message); }
+
+      for (var i = 0; i < ids.length; i += CHUNK) {
+        (function (batch) {
+          var q = client.from(table).delete();
+          /* One request for the batch where the client can do it, falling
+             back to one apiece where it cannot. Same shape as the limit()
+             guard in probeColumns: the app has to work against whatever
+             build of supabase-js the page happens to have loaded. */
+          if (q && typeof q['in'] === 'function') {
+            q['in']('id', batch).then(done, died);
+          } else {
+            batch.forEach(function (id) {
+              client.from(table).delete().eq('id', id).then(done, died);
+            });
+          }
+        })(ids.slice(i, i + CHUNK));
+      }
     },
 
     /* One round trip for a whole batch (bulk import). Chunked because a

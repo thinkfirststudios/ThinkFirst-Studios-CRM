@@ -52,7 +52,9 @@ function makeClient(cap, rows, log) {
         },
         upsert: () => thenable({ error: null }),
         insert: () => thenable({ error: null }),
-        delete: () => ({ eq: () => thenable({ error: null }), neq: () => thenable({ error: null }) })
+        delete: () => ({ eq: () => thenable({ error: null }),
+                 in: () => thenable({ error: null }),
+                 neq: () => thenable({ error: null }) })
       };
       return q;
     },

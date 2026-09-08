@@ -919,8 +919,14 @@
       add('contacts', 'contacts', db.contacts.filter(function (c) { return c.accountId === id; }));
       add('opportunities', 'opportunities', db.opportunities.filter(function (o) { return o.accountId === id; }));
     }
-    if (coll === 'customers' || coll === 'vendors' || coll === 'opportunities') {
-      var type = coll === 'customers' ? 'customer' : coll === 'vendors' ? 'vendor' : 'opportunity';
+    /* A lead's notes and tasks belong to it and nothing else. They were
+       missing from this list, so deleting a lead left them behind — and
+       every lead from an import carries a note, which made a bulk delete
+       an orphan factory. */
+    if (coll === 'customers' || coll === 'vendors' || coll === 'opportunities' || coll === 'leads') {
+      var type = coll === 'customers' ? 'customer'
+        : coll === 'vendors' ? 'vendor'
+        : coll === 'leads' ? 'lead' : 'opportunity';
       add('work orders', 'workOrders', db.workOrders.filter(function (w) {
         return w.entityType === type && w.entityId === id;
       }));
@@ -1041,15 +1047,46 @@
         return true;
       });
     },
+    /* Delete a batch, taking each record's children with it.
+
+       Batched on both counts: one request per chunk instead of one per
+       row, and one activity entry instead of one per record. Removing a
+       few hundred leads that each carry a note is otherwise a thousand
+       requests and a history nobody can read. */
     removeMany: function (coll, ids) {
-      if (!ids.length) return 0;
-      var set = {};
-      ids.forEach(function (id) { set[id] = 1; });
-      db[coll] = db[coll].filter(function (r) { return !set[r.id]; });
-      ids.forEach(function (id) { push(coll, 'delete', { id: id }); });
-      log('deleted', coll, '', ids.length + ' records removed in bulk');
+      if (!ids || !ids.length) return 0;
+
+      var doomed = {};                       // collection -> [ids]
+      function mark(c, id) {
+        if (!doomed[c]) doomed[c] = [];
+        doomed[c].push(id);
+      }
+      ids.forEach(function (id) {
+        childrenOf(coll, id).forEach(function (g) {
+          g.rows.forEach(function (r) { mark(g.coll, r.id); });
+        });
+        mark(coll, id);
+      });
+
+      var counts = {};
+      Object.keys(doomed).forEach(function (c) {
+        var set = {};
+        doomed[c].forEach(function (id) { set[id] = 1; });
+        var before = (db[c] || []).length;
+        db[c] = (db[c] || []).filter(function (r) { return !set[r.id]; });
+        counts[c] = before - db[c].length;
+        if (B.mode !== 'local') B.deleteMany(c, doomed[c]);
+      });
+      if (B.mode === 'local') B.persist(db);
+
+      /* Name what went with them, so the audit line explains a note count
+         that dropped by more than anybody deleted by hand. */
+      var extra = Object.keys(counts).filter(function (c) { return c !== coll && counts[c]; })
+        .map(function (c) { return counts[c] + ' ' + c; });
+      log('deleted', coll, '', (counts[coll] || 0) + ' records removed in bulk' +
+        (extra.length ? ' (with ' + extra.join(', ') + ')' : ''));
       notify();
-      return ids.length;
+      return counts[coll] || 0;
     },
 
     /* reference */

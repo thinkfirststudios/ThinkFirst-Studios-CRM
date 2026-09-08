@@ -726,6 +726,10 @@ body[data-shield-hidden] .modal-root{
 .bulk-bar .btn:hover{background:rgba(252,252,251,.21);border-color:rgba(252,252,251,.36)}
 .bulk-bar .btn-ghost{background:transparent;border-color:transparent;color:rgba(252,252,251,.72)}
 .bulk-bar .btn-ghost:hover{background:rgba(252,252,251,.13);color:var(--bg)}
+/* The one destructive action on the bar, coloured so it never reads as
+   just another preset. */
+.bulk-bar .bulk-danger{background:rgba(215,31,36,.92);border-color:rgba(215,31,36,.92);color:#fff}
+.bulk-bar .bulk-danger:hover{background:#D71F24;border-color:#D71F24}
 /* color-scheme flips the native date picker's own icon and popup to the
    dark variant, so it does not sit as a white slab on the dark bar. */
 .bulk-bar .input{

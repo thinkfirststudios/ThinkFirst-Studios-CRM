@@ -40,7 +40,7 @@
   }
 
   var st = { q: '', status: 'open', rating: '', owner: '', source: '', tag: '', due: '',
-             mockup: '', sortKey: 'follow', sortDir: 1,
+             mockup: '', reach: '', sortKey: 'follow', sortDir: 1,
              /* How many rows each queue is showing. Survives re-renders,
                 so expanding one and then acting on a row does not snap it
                 shut underneath you. */
@@ -101,6 +101,13 @@
       if (st.source && l.source !== st.source) return false;
       if (st.tag && !S.hasTag(l, st.tag)) return false;
       if (st.mockup && S.mockupStatus(l.mockupStatus).id !== st.mockup) return false;
+      /* Whether you can actually reach them. 277 of the realtor list have
+         no number at all, and finding those is the first step to doing
+         anything about them. */
+      if (st.reach === 'phone' && !l.phone) return false;
+      if (st.reach === 'nophone' && l.phone) return false;
+      if (st.reach === 'email' && !l.email) return false;
+      if (st.reach === 'noneither' && (l.phone || l.email)) return false;
       if (st.due) {
         var k = S.followUpState(l).key;
         if (st.due === 'attention' && k !== 'overdue' && k !== 'today') return false;
@@ -178,6 +185,10 @@
           dueOpt('soon', 'This week') + dueOpt('scheduled', 'Later') +
         '</select>' +
         '<select class="input" id="frating"><option value="">Any rating</option>' + U.options(S.LEAD_RATINGS, st.rating) + '</select>' +
+        '<select class="input" id="freach"><option value="">Any contact</option>' +
+          reachOpt('phone', 'Has a phone') + reachOpt('nophone', 'No phone') +
+          reachOpt('email', 'Has an email') + reachOpt('noneither', 'No phone or email') +
+        '</select>' +
         '<select class="input" id="fmockup"><option value="">Any mockup</option>' +
           U.options(S.MOCKUP_STATUSES, st.mockup) + '</select>' +
         '<select class="input" id="fowner"><option value="">All owners</option>' + U.options(S.activeUsers(), st.owner, 'id', 'name') + '</select>' +
@@ -215,7 +226,7 @@
     el.querySelectorAll('#segNav button').forEach(function (b) {
       b.onclick = function () { st.status = b.dataset.seg; root.render(); };
     });
-    [['#fdue', 'due'], ['#frating', 'rating'], ['#fmockup', 'mockup'],
+    [['#fdue', 'due'], ['#frating', 'rating'], ['#fmockup', 'mockup'], ['#freach', 'reach'],
      ['#fowner', 'owner'], ['#fsource', 'source'], ['#ftag', 'tag']].forEach(function (pair) {
       if (el.querySelector(pair[0])) bindFilter(el, pair[0], pair[1]);
     });
@@ -223,6 +234,7 @@
       /* Clears the filters, not the group — being bounced back to Active
          while reading the dead pile is not "clear", it is "cancel". */
       st.q = ''; st.rating = ''; st.owner = ''; st.source = ''; st.tag = ''; st.due = ''; st.mockup = '';
+      st.reach = '';
       root.render();
     };
     el.querySelector('#exportCsv').onclick = function () { exportCsv(rows); };
@@ -237,6 +249,9 @@
 
     function dueOpt(v, label) {
       return '<option value="' + v + '"' + (st.due === v ? ' selected' : '') + '>' + label + '</option>';
+    }
+    function reachOpt(v, label) {
+      return '<option value="' + v + '"' + (st.reach === v ? ' selected' : '') + '>' + label + '</option>';
     }
     function bindFilter(scope, sel, key, isText) {
       var node = scope.querySelector(sel);
@@ -253,7 +268,7 @@
   };
 
   function filtersActive() {
-    return !!(st.q || st.rating || st.owner || st.source || st.tag || st.due || st.mockup);
+    return !!(st.q || st.rating || st.owner || st.source || st.tag || st.due || st.mockup || st.reach);
   }
 
   function sourcesInUse() {
@@ -405,6 +420,10 @@
       '<span class="bulk-sep"></span>' +
       '<button class="btn btn-ghost btn-sm" data-bulk="none" ' +
         'title="Leave these leads with no follow-up booked">Unschedule</button>' +
+      '<span class="bulk-sep"></span>' +
+      /* Sits past a separator, at the far end from the date presets, and
+         asks before doing anything. A misclick here is not recoverable. */
+      '<button class="btn btn-sm bulk-danger" id="bulkDelete">Delete</button>' +
       '<button class="btn btn-ghost btn-sm" id="bulkCancel">Cancel</button>' +
       '</div>';
   }
@@ -430,6 +449,40 @@
     };
 
     el.querySelector('#bulkCancel').onclick = function () { clear(); };
+
+    el.querySelector('#bulkDelete').onclick = function () {
+      var ids = Object.keys(st.selected);
+      if (!ids.length) return;
+
+      /* Count what goes with them before asking, so the number in the
+         dialog is the real one. Every imported lead carries a note. */
+      var extra = {};
+      ids.forEach(function (id) {
+        S.childrenOf('leads', id).forEach(function (g) {
+          extra[g.label] = (extra[g.label] || 0) + g.rows.length;
+        });
+      });
+      var groups = Object.keys(extra).map(function (k) {
+        return { label: k, rows: new Array(extra[k]) };
+      });
+
+      /* Say how many can still be emailed. Deleting a lead with no phone
+         is reasonable; deleting one you could still have written to is a
+         decision worth making on purpose. */
+      var emailable = ids.filter(function (id) {
+        var l = S.find('leads', id);
+        return l && l.email;
+      }).length;
+
+      U.confirmDelete(ids.length + ' lead' + (ids.length === 1 ? '' : 's'), function () {
+        var n = S.removeMany('leads', ids);
+        st.selected = {};
+        U.toast(n + ' lead' + (n === 1 ? '' : 's') + ' deleted.');
+        root.render();
+      }, groups.concat(emailable
+        ? [{ label: 'of them have an email address', rows: new Array(emailable) }]
+        : []));
+    };
 
     el.querySelectorAll('[data-bulk]').forEach(function (b) {
       b.onclick = function () {
