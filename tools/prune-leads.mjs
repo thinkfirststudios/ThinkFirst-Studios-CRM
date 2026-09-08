@@ -1,7 +1,9 @@
-/* Delete imported leads that have no phone number.
+/* Delete leads that came from an import.
  *
- *   node tools/prune-leads.mjs                 # show what would go, delete nothing
- *   node tools/prune-leads.mjs --confirm       # actually delete
+ *   node tools/prune-leads.mjs                        # no-phone ones, dry run
+ *   node tools/prune-leads.mjs --confirm              # no-phone ones, for real
+ *   node tools/prune-leads.mjs --scope=all            # all of them, dry run
+ *   node tools/prune-leads.mjs --scope=all --confirm  # all of them, for real
  *
  * Asks for the database password at a hidden prompt, same as backup.mjs.
  * Set SUPABASE_DB_PASSWORD to skip it, but never put it on the command line
@@ -25,6 +27,18 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROJECT_REF = 'xfczbofrfsgumeicjuoy';
 const SOURCE = 'Realtor List';
 const CONFIRM = process.argv.includes('--confirm');
+
+/* Two scopes, and the wider one has to be asked for by name. Defaulting to
+   everything would make a mistyped flag a catastrophe instead of a no-op. */
+const SCOPE = (process.argv.find(a => a.startsWith('--scope=')) || '--scope=no-phone')
+  .split('=')[1];
+if (SCOPE !== 'no-phone' && SCOPE !== 'all') {
+  console.error(`Unknown --scope=${SCOPE}. Use "no-phone" or "all".`);
+  process.exit(1);
+}
+const WHERE = SCOPE === 'all'
+  ? 'source = $1'
+  : `source = $1 and (phone is null or btrim(phone) = '')`;
 
 const REGIONS = [
   'us-east-1', 'us-west-1', 'us-east-2', 'us-west-2',
@@ -84,12 +98,12 @@ try {
   const { rows: all } = await client.query(
     `select count(*)::int as n from public.leads where source = $1`, [SOURCE]);
   const { rows: doomed } = await client.query(
-    `select * from public.leads
-      where source = $1 and (phone is null or btrim(phone) = '')
-      order by name`, [SOURCE]);
+    `select * from public.leads where ${WHERE} order by name`, [SOURCE]);
 
   console.log(`\nleads from "${SOURCE}": ${all[0].n}`);
-  console.log(`of those, with no phone number: ${doomed.length}`);
+  console.log(SCOPE === 'all'
+    ? `scope: ALL of them — ${doomed.length} would be deleted`
+    : `of those, with no phone number: ${doomed.length}`);
 
   if (!doomed.length) {
     console.log('\nNothing to do.');
@@ -113,7 +127,7 @@ try {
 
   if (!CONFIRM) {
     console.log('\nThis was a dry run. Nothing was deleted.');
-    console.log('Run again with --confirm to go ahead.');
+    console.log(`Run again with --scope=${SCOPE} --confirm to go ahead.`);
     process.exit(0);
   }
 
@@ -153,9 +167,12 @@ try {
   const { rows: stillBlank } = await client.query(
     `select count(*)::int as n from public.leads
       where source = $1 and (phone is null or btrim(phone) = '')`, [SOURCE]);
+  const summary = SCOPE === 'all'
+    ? `"${SOURCE}" now holds ${left[0].n} leads`
+    : `"${SOURCE}" now holds ${left[0].n} leads, ${stillBlank[0].n} of them without a phone`;
 
   console.log(`\ndeleted ${delLeads.rowCount} leads and ${delNotes.rowCount} notes`);
-  console.log(`"${SOURCE}" now holds ${left[0].n} leads, ${stillBlank[0].n} of them without a phone`);
+  console.log(summary);
   console.log('\nReload the CRM to see it.');
   console.log('To undo: Admin → Data & Backup → Restore Backup will not merge, so restore');
   console.log('the full backup instead, or hand me ' + path.basename(file) + ' and I will re-import it.');
