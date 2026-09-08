@@ -121,6 +121,12 @@
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) checkForNewBuild();
   });
+  /* ...and on a timer, because neither of those fires in a tab nobody
+     leaves. The boot check only knows about deploys that had already
+     happened when the page opened; sit in the CRM through a deploy after
+     that and it would never say a word, which is how somebody ends up
+     reporting a fix as broken while running the code from before it. */
+  setInterval(checkForNewBuild, 3 * 60 * 1000);
 
   /* ── "your database is behind" banner ────────────────────────────
      A feature whose table is missing is unavailable, but that is no
