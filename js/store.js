@@ -725,15 +725,66 @@
         resolveMe();
 
         if (B.mode === 'supabase' && B.session()) {
-          B.onError = function (table, op, msg) {
-            if (root.UI) root.UI.toast('Could not save to ' + table + ': ' + msg, 'err');
-          };
+          B.onError = failureReporter();
           B.subscribe(applyRemote);
         }
 
         booted = true;
         return { authenticated: B.mode === 'local' || !!B.session() };
       });
+  }
+
+  /* ── reporting failed writes ─────────────────────────────────────
+     Writes fail in storms, not one at a time: whatever knocked out one
+     request has usually knocked out every request in flight. Raising a
+     toast per failure buried the screen under thousands of identical
+     messages, which hid the only thing worth reading.
+
+     So failures collect for a moment and are reported once each, with a
+     count. "Failed to fetch" gets its own wording, because it is not a
+     rejected write — it is the request never leaving. The change is sitting
+     in this tab and nowhere else, and the only way to find out what really
+     saved is to reload, so the message says exactly that. */
+  var OFFLINE_WRITE = /failed to fetch|networkerror|load failed|network request failed/i;
+
+  function failureReporter() {
+    var groups = {}, order = [], timer = null;
+
+    function flush() {
+      timer = null;
+      var keys = order;
+      var seen = groups;
+      groups = {}; order = [];
+      if (!root.UI) return;
+      keys.forEach(function (k) {
+        var g = seen[k];
+        if (g.offline) {
+          root.UI.toast('Could not reach the server, so ' + g.n + ' change' +
+            (g.n === 1 ? '' : 's') + ' to ' + g.table +
+            ' may not be saved. Reload to see what did.', 'err');
+        } else {
+          root.UI.toast('Could not save to ' + g.table + ': ' + g.msg +
+            (g.n > 1 ? ' (' + g.n + ' times)' : ''), 'err');
+        }
+      });
+    }
+
+    return function (table, op, msg) {
+      var offline = OFFLINE_WRITE.test(String(msg));
+      /* Every offline failure on one table is one problem, however many
+         requests it took down. A rejected write is grouped by its message
+         instead, since two different rejections are two different things
+         to fix. */
+      var key = table + '|' + (offline ? '__offline' : String(msg));
+      if (groups[key]) {
+        groups[key].n++;
+      } else {
+        groups[key] = { table: table, msg: String(msg), offline: offline, n: 1 };
+        order.push(key);
+      }
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(flush, 500);
+    };
   }
 
   /* A teammate changed something — fold it into the cache and repaint. */

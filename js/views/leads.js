@@ -492,9 +492,33 @@
         } },
       { key: 'name', label: 'Lead', sort: function (l) { return l.name; },
         render: function (l) {
+          /* For a business the contact is a different person and worth a
+             line. For a sole trader — every realtor on the list — the lead
+             IS the contact, and printing the name twice just takes up the
+             room the phone number needs. */
+          var sub = [];
+          if (l.contactName && l.contactName !== l.name) sub.push(U.esc(l.contactName));
+          if (l.contactTitle) sub.push(U.esc(l.contactTitle));
+
+          /* Phone and email on the row, dialable. This is a calling list:
+             having to open each lead to find the number is the difference
+             between working it and not. bindTable ignores clicks on links,
+             so these do not open the lead by accident. */
+          var reach = [];
+          if (l.phone) {
+            reach.push('<a class="link mono" href="tel:' +
+              U.esc(String(l.phone).replace(/[^0-9+]/g, '')) + '">' + U.esc(l.phone) + '</a>');
+          }
+          if (l.email) {
+            reach.push('<a class="link" href="mailto:' + U.esc(l.email) + '">' + U.esc(l.email) + '</a>');
+          }
+
           return '<div><span class="link">' + U.esc(l.name) + '</span>' +
-            '<div class="muted" style="font-size:11.5px">' +
-              U.esc(l.contactName || '') + (l.contactTitle ? ' · ' + U.esc(l.contactTitle) : '') + '</div>' +
+            (sub.length
+              ? '<div class="muted" style="font-size:11.5px">' + sub.join(' · ') + '</div>' : '') +
+            (reach.length
+              ? '<div style="font-size:11.5px;margin-top:2px">' + reach.join('<span class="muted"> · </span>') + '</div>'
+              : '') +
             (S.tagsOf(l).length ? '<div style="margin-top:4px">' + U.tagChips(l.tags, 3) + '</div>' : '') +
             '</div>';
         } },
