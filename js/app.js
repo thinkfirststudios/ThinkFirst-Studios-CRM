@@ -59,9 +59,21 @@
       viewEl.innerHTML = U.empty('Something broke rendering this screen', err.message,
         '<button class="btn" onclick="location.reload()">Reload</button>');
     }
-    window.scrollTo(0, 0);
+    /* Only jump to the top when the screen actually changed.
+
+       render() is not just navigation: it is also how the app repaints
+       after any change, including one a teammate made that arrived over
+       realtime. Scrolling on every call meant reading down a long list
+       and being thrown back to the top a moment later by an edit that had
+       nothing to do with where you were looking. */
+    var key = r.name + '/' + (r.params.id || '');
+    if (key !== lastRoute) {
+      lastRoute = key;
+      window.scrollTo(0, 0);
+    }
     paintUserChip();
   }
+  var lastRoute = null;
   root.render = render;
 
   /* ── "you are running an old build" banner ───────────────────────

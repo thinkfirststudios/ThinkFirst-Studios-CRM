@@ -791,7 +791,7 @@
   function applyRemote(coll, event, newRow, oldRow) {
     if (coll === 'settings') {
       if (newRow) db.settings = newRow;
-      if (root.render) root.render();
+      repaintSoon();
       return;
     }
     var list = db[coll];
@@ -808,7 +808,20 @@
     else list.push(newRow);
 
     notify();
-    if (root.render) root.render();
+    repaintSoon();
+  }
+
+  /* Realtime arrives in bursts — a bulk change on another machine sends one
+     event per row, and repainting the whole app for each of them redraws a
+     2,500-row table thousands of times over. Collect them for a moment and
+     draw once. */
+  var repaintTimer = null;
+  function repaintSoon() {
+    if (repaintTimer || !root.render) return;
+    repaintTimer = setTimeout(function () {
+      repaintTimer = null;
+      root.render();
+    }, 150);
   }
 
   /* ── activity log ────────────────────────────────────────────── */

@@ -120,11 +120,24 @@ $driver = @'
     all.onclick();
     note('select-all took ' + (Date.now() - t) + 'ms');
 
-    var count = document.querySelector('#bulkCount');
-    say('the bar counts every one of them',
-        count && count.textContent === '2526 leads selected', count && count.textContent);
+    /* Read the count against the rows actually on screen, and let a
+       pending repaint settle first - the bar re-syncs after one, so
+       sampling the instant after the click can catch it mid-flight. */
+    until(function () {
+      var c = document.querySelector('#bulkCount');
+      var n = document.querySelectorAll('[data-pick]').length;
+      return (c && c.textContent === n + ' leads selected') ? c : null;
+    }, 'the bar counts every row on screen', function () {
+      var c = document.querySelector('#bulkCount');
+      say('and that is all 2,526 of them',
+          c.textContent === '2526 leads selected', c.textContent);
+      afterSelectAll(S, existing, existingDates, stamped);
+    });
+  }
 
-    t = Date.now();
+  function afterSelectAll(S, existing, existingDates, stamped) {
+    var t = Date.now();
+
     document.querySelector('[data-bulk="none"]').click();
     note('unschedule took ' + (Date.now() - t) + 'ms');
 

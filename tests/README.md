@@ -10,6 +10,7 @@ No framework and no install step — plain Node and headless Edge.
     powershell -File tests/bulk-scale.ps1     # clear 2,526 follow-ups at once
     powershell -File tests/import-scale.ps1   # import 2,526 rows, with notes
     powershell -File tests/import-real.ps1    # import the actual realtor CSV
+    powershell -File tests/scroll-check.ps1   # scroll survives a repaint
 
 Each `.js` suite boots the real `js/store.js` and `js/backend.js` against a
 stubbed Supabase client, so it exercises the shipping code rather than a
