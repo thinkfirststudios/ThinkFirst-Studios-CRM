@@ -37,6 +37,8 @@ ap.add_argument('--state', help='state or region as it appears in the address '
 ap.add_argument('--area', help='comma separated area codes')
 ap.add_argument('--segment', help='own-site, brokerage-page, no-site-found, not-a-realtor')
 ap.add_argument('--not-segment', help='comma separated segments to leave out')
+ap.add_argument('--not-state', help='comma separated states to leave out, for '
+                                    'everything outside somebody else territory')
 ap.add_argument('--rating', help='hot, warm or cold')
 ap.add_argument('--skip', type=int, default=0, help='drop this many from the front')
 ap.add_argument('--limit', type=int, help='take at most this many')
@@ -86,6 +88,15 @@ if a.state:
     # next - which is exactly the bookkeeping that gets forgotten.
     want = {x.strip().lower() for x in a.state.split(',') if x.strip()}
     sel = [r for r in sel if state_of(r).lower() in want]
+if a.not_state:
+    # The other side of a territory. Naming the states somebody else owns is
+    # shorter and safer than listing the forty-six they do not - a state left
+    # off that list is a market nobody ever calls.
+    drop = {x.strip().lower() for x in a.not_state.split(',') if x.strip()}
+    before = len(sel)
+    sel = [r for r in sel if state_of(r).lower() not in drop]
+    if before != len(sel):
+        print('left out %d in: %s' % (before - len(sel), ', '.join(sorted(drop))))
 if a.area:
     want = {x.strip() for x in a.area.split(',') if x.strip()}
     sel = [r for r in sel if r['areaCode'] in want]
