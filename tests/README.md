@@ -33,6 +33,12 @@ is a branch rather than a special case - which is what lets this ship
 before anybody is configured. It runs in local mode because switching
 who is acting is the whole subject, and only local mode allows it.
 
+`owner-lock.js` covers who may be named as an owner: a rep gets their
+name and no picker, and the value posted is the record's current owner so
+that opening a teammate's account and pressing Save does not take it over.
+Its last assertion reads the view sources and fails if a new screen builds
+an owner select of its own, which is how the rule stays in one place.
+
 `signin-log.js` covers sign-ins reaching the activity feed, and - the
 half that matters - staying quiet for reloads, second tabs and restored
 sessions, so the log never fills with events nobody performed.
