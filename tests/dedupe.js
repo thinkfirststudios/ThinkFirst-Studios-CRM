@@ -67,6 +67,38 @@ const S = win.Store;
   ok('email still wins over everything',
      k({ name: 'X', email: 'a@b.com', instagram: 'zzz' }) === 'e:a@b.com');
 
+  console.log('\n-- a roster: many people, one domain');
+  /* The Brazil list is fifteen agents at one brokerage, each on a page of
+     the firm's own site. Keying on the domain made them one lead and threw
+     fourteen realtors away as duplicates - and the import still reported
+     success, which is the part that would have gone unnoticed. */
+  const roster = [
+    { name: 'Imobiliaria Invista', contactName: 'Anderson Coutinho',
+      website: 'https://www.imobiliariainvista.com.br/corretores/anderson-coutinho' },
+    { name: 'Imobiliaria Invista', contactName: 'Carlos Mauricio',
+      website: 'https://www.imobiliariainvista.com.br/corretores/carlos-mauricio' },
+    { name: 'Imobiliaria Invista', contactName: 'Zenilda',
+      website: 'https://www.imobiliariainvista.com.br/corretores/zenilda' }
+  ];
+  const rk = roster.map(k);
+  ok('three agents, three keys', new Set(rk).size === 3, rk.join(' '));
+  ok('and the firm is still visible in the key',
+     rk.every(x => x.indexOf('d:imobiliariainvista.com.br|') === 0), rk[0]);
+
+  console.log('\n-- but the same person is still the same lead');
+  ok('re-imported unchanged', k(roster[0]) === k(roster[0]));
+  ok('a second page on the same site does not split one person',
+     k({ name: 'Chef', contactName: 'Mathias', website: 'chef-mathias.com/about' }) ===
+     k({ name: 'Chef', contactName: 'Mathias', website: 'chef-mathias.com' }));
+  ok('two people at one company do split',
+     k({ name: 'Chef Co', contactName: 'Mathias', website: 'chef-mathias.com' }) !==
+     k({ name: 'Chef Co', contactName: 'Dana', website: 'chef-mathias.com' }));
+  ok('a shared team instagram still separates the agents behind it',
+     k({ name: 'Gralha', contactName: 'Flavia', instagram: 'gralhaimoveis' }) !==
+     k({ name: 'Gralha', contactName: 'Andre', instagram: 'gralhaimoveis' }));
+  ok('and a record naming nobody keys exactly as it used to',
+     k({ name: 'Chef', website: 'chef-mathias.com' }) === 'd:chef-mathias.com');
+
   console.log('\n-- falling through to the name');
   ok('no contact details at all', k({ name: 'Studio ABM Builders' }) === 'n:studioabmbuilders');
   ok('a platform url with no path is not identity',

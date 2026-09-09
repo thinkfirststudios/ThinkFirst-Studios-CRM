@@ -1933,6 +1933,19 @@
       if (!rec) return '';
       if (rec.email) return 'e:' + String(rec.email).trim().toLowerCase();
 
+      /* Everything below identifies a BUSINESS, so where a person is named
+         they are part of the identity. A brokerage roster is fifteen agents
+         behind one domain - imobiliariainvista.com.br/corretores/<name> for
+         each of them - and keying on the domain alone made all fifteen the
+         same lead, so fourteen realtors were skipped as duplicates and the
+         import quietly delivered a third of the list.
+
+         The path cannot carry this instead: chef-mathias.com/about and
+         chef-mathias.com are deliberately the same business. Two records
+         naming two different people are two people. */
+      var who = String(rec.contactName || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+      var sfx = who ? '|' + who : '';
+
       /* A social handle identifies a business; the platform it sits on
          does not. Half of these leads list "facebook.com/theirpage" as
          their website, and taking the bare domain made every one of them
@@ -1941,7 +1954,7 @@
       var handles = ['instagram', 'facebook', 'tiktok'];
       for (var i = 0; i < handles.length; i++) {
         var h = socialHandle(rec[handles[i]]);
-        if (h) return 's:' + handles[i] + '/' + h.toLowerCase();
+        if (h) return 's:' + handles[i] + '/' + h.toLowerCase() + sfx;
       }
 
       if (rec.website) {
@@ -1953,12 +1966,12 @@
            the host is shared by everyone. With no path there is nothing
            to identify, so fall through to the name. */
         if (SHARED_HOSTS.test(host)) {
-          if (path) return 's:' + host + '/' + path;
+          if (path) return 's:' + host + '/' + path + sfx;
         } else if (host) {
-          return 'd:' + host;
+          return 'd:' + host + sfx;
         }
       }
-      return 'n:' + String(rec.name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+      return 'n:' + String(rec.name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '') + sfx;
     },
     /* Existing leads AND customers — re-importing a list must not create a
        second lead for somebody you already sold to. */
