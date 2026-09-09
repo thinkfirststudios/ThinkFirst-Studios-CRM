@@ -32,7 +32,8 @@ ap.add_argument('--src', default=DEFAULT_SRC)
 ap.add_argument('--phone', action='store_true', help='only leads with a phone number')
 ap.add_argument('--no-phone', action='store_true', help='only leads without one')
 ap.add_argument('--tz', help='time zone: Eastern, Central, Mountain, Pacific, Hawaii, Alaska')
-ap.add_argument('--state', help='state or region, as it appears in the address column')
+ap.add_argument('--state', help='state or region as it appears in the address '
+                                'column; comma separated for a territory')
 ap.add_argument('--area', help='comma separated area codes')
 ap.add_argument('--segment', help='own-site, brokerage-page, no-site-found, not-a-realtor')
 ap.add_argument('--not-segment', help='comma separated segments to leave out')
@@ -80,8 +81,11 @@ if a.tz:
     want = a.tz.strip().lower()
     sel = [r for r in sel if r['timeZone'].strip().lower() == want]
 if a.state:
-    want = a.state.strip().lower()
-    sel = [r for r in sel if state_of(r).lower() == want]
+    # Comma separated, because a territory is a handful of states and
+    # running the tool once per state would need each run excluded from the
+    # next - which is exactly the bookkeeping that gets forgotten.
+    want = {x.strip().lower() for x in a.state.split(',') if x.strip()}
+    sel = [r for r in sel if state_of(r).lower() in want]
 if a.area:
     want = {x.strip() for x in a.area.split(',') if x.strip()}
     sel = [r for r in sel if r['areaCode'] in want]
