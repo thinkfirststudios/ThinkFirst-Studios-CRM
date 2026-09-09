@@ -160,7 +160,32 @@ $driver = @'
         imp.querySelector('[name=ownerId]') && imp.querySelector('[name=ownerId]').value);
     U.closeModal();
 
-    finish();
+    /* The activity feed carries lead names and note previews, so it is
+       admin-only. A rep writing to it must still work, or every action
+       they take raises a save error. */
+    var before = S.all('activity').length;
+    S.update('leads', S.all('leads').filter(function (l) {
+      return l.ownerId === frank.id;
+    })[0].id, { rating: 'hot' }, 'rep edit');
+    say('a rep can still write to the log', S.all('activity').length > before,
+        S.all('activity').length - before);
+
+    location.hash = '#/dashboard';
+    setTimeout(function () {
+      var cards = [].map.call(document.querySelectorAll('.card-title'),
+                              function (t) { return t.textContent; });
+      say('a rep gets no Team Activity card', cards.indexOf('Team Activity') < 0,
+          cards.join(' | '));
+
+      S.setMe(admin.id);
+      window.render();
+      var adminCards = [].map.call(document.querySelectorAll('.card-title'),
+                                   function (t) { return t.textContent; });
+      say('an admin still gets it', adminCards.indexOf('Team Activity') > -1,
+          adminCards.join(' | '));
+      finish();
+    }, 80);
+    return;
   }
 })();
 </script>

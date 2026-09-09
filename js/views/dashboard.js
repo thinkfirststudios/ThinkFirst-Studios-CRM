@@ -119,10 +119,17 @@
             }).join('') + '</div>' : '<div class="empty" style="padding:30px"><div>Nothing bills in the next two weeks.</div></div>') +
           '</div>' +
 
-          '<div class="card">' +
-            '<div class="card-head"><span class="card-title">Team Activity</span></div>' +
-            '<div class="card-body">' + U.timeline(S.all('activity'), 12) + '</div>' +
-          '</div>' +
+          /* Admins only. The feed carries lead names and the opening of
+             every note, so showing it to a rep would hand back exactly what
+             scoping their leads was meant to keep apart. The database
+             enforces the same rule; this stops an empty card appearing
+             where a useful one used to be. */
+          (S.isAdmin()
+            ? '<div class="card">' +
+                '<div class="card-head"><span class="card-title">Team Activity</span></div>' +
+                '<div class="card-body">' + U.timeline(S.all('activity'), 12) + '</div>' +
+              '</div>'
+            : '') +
         '</div>' +
       '</div>';
 
