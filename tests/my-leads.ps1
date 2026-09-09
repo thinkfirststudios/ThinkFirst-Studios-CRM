@@ -48,6 +48,7 @@ $driver = @'
 
   function run() {
     var S = window.Store;
+    var U = window.UI;
 
     // Two reps and the admin, with a list split between them.
     var frank = S.insert('users', { name: 'Frank Doyle', role: 'rep', active: true,
@@ -118,16 +119,46 @@ $driver = @'
     S.setMe(frank.id);
     window.render();
 
-    say('a rep lands on their own leads',
-        document.querySelector('[data-scope="mine"]').className.indexOf('on') > -1);
-    say('and sees only those', rows() === franksLeads, rows() + ' of ' + franksLeads);
+    say('a rep sees only their own', rows() === franksLeads, rows() + ' of ' + franksLeads);
     say('every one of which is theirs',
         [].every.call(document.querySelectorAll('[data-pick]'), function (b) {
           return S.find('leads', b.dataset.pick).ownerId === frank.id;
         }));
 
-    document.querySelector('[data-scope="all"]').click();
-    say('a rep can still look at the whole team', rows() === everyone, rows());
+    /* A rep is not offered the whole team at all. Showing a view they are
+       not allowed invites the click and then has to refuse it. */
+    say('no Everyone tab is offered', !document.querySelector('[data-scope="all"]'));
+    say('and no owner dropdown either', !document.querySelector('#fowner'));
+
+    // Clearing the filters must not be a way out of their own book.
+    document.querySelector('#clear').click();
+    say('Clear keeps them in their own leads', rows() === franksLeads, rows());
+
+    // Nor may they hand leads to somebody else.
+    document.querySelectorAll('[data-pick]')[0].click();
+    say('the bulk bar has no Assign for a rep', !document.querySelector('#bulkAssign'));
+
+    // But adding their own has to keep working - that is the point.
+    window.Views.leads.openForm(null, function () {});
+    var box = document.querySelector('.modal-root');
+    say('a rep can still add a lead', !!box.querySelector('[name=name]'));
+    say('owned by them, not chosen',
+        !!box.querySelector('input[type=hidden][name=ownerId]') &&
+        box.querySelector('input[type=hidden][name=ownerId]').value === frank.id,
+        box.querySelector('[name=ownerId]') && box.querySelector('[name=ownerId]').value);
+    say('with no owner picker to get it wrong with',
+        !box.querySelector('select[name=ownerId]'));
+    U.closeModal();
+
+    // ...and so does importing their own list.
+    window.Views.leads.openImport(function () {});
+    var imp = document.querySelector('.modal-root');
+    say('a rep can still import a list', !!imp.querySelector('[name=raw]'));
+    say('and those land owned by them',
+        imp.querySelector('input[type=hidden][name=ownerId]') &&
+        imp.querySelector('input[type=hidden][name=ownerId]').value === frank.id,
+        imp.querySelector('[name=ownerId]') && imp.querySelector('[name=ownerId]').value);
+    U.closeModal();
 
     finish();
   }

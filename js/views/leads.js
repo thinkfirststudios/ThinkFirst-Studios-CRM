@@ -101,9 +101,17 @@
        Keyed on who is acting rather than a once-ever flag, so switching
        user re-picks the right default — and so an admin who chooses
        Everyone keeps it, since a repaint does not change who they are. */
-    if (st.scopeFor !== S.me().id) {
+    var repOnly = S.me().role === 'rep';
+    if (repOnly) {
+      /* Pinned on every render, not just when the acting user changes. A rep
+         has no way out of their own book from this screen — not the
+         switcher, not the owner dropdown, not a stale filter carried over
+         from before their role was set. */
+      st.owner = S.me().id;
       st.scopeFor = S.me().id;
-      st.owner = S.me().role === 'rep' ? S.me().id : '';
+    } else if (st.scopeFor !== S.me().id) {
+      st.scopeFor = S.me().id;
+      st.owner = '';
     }
     var mineCount = S.all('leads').filter(function (l) {
       return seg.match(l) && l.ownerId === S.me().id;
@@ -189,12 +197,17 @@
            three people, "All owners" is the wrong thing to land on. This
            drives the owner filter below rather than adding a second,
            conflicting one, so the dropdown always agrees with it. */
-        '<div class="seg" id="scopeNav" style="margin-left:8px">' +
-          '<button data-scope="mine" class="' + (st.owner === S.me().id ? 'on' : '') + '">' +
-            'My leads<span class="seg-count">' + mineCount + '</span></button>' +
-          '<button data-scope="all" class="' + (st.owner ? '' : 'on') + '">' +
-            'Everyone<span class="seg-count">' + S.all('leads').filter(seg.match).length + '</span></button>' +
-        '</div>' +
+        (repOnly
+          /* No Everyone tab for a rep: offering a view they are not allowed
+             is worse than not offering it, because it invites the click and
+             then has to refuse it. */
+          ? '<span class="hint" style="margin-left:8px">Your leads · ' + mineCount + '</span>'
+          : '<div class="seg" id="scopeNav" style="margin-left:8px">' +
+              '<button data-scope="mine" class="' + (st.owner === S.me().id ? 'on' : '') + '">' +
+                'My leads<span class="seg-count">' + mineCount + '</span></button>' +
+              '<button data-scope="all" class="' + (st.owner ? '' : 'on') + '">' +
+                'Everyone<span class="seg-count">' + S.all('leads').filter(seg.match).length + '</span></button>' +
+            '</div>') +
         (seg.id === 'dead'
           ? '<span class="hint" style="margin-left:auto">These were a real fit. ' +
             'Open one and use “Put back in play” when the timing changes.</span>'
@@ -216,7 +229,12 @@
         '</select>' +
         '<select class="input" id="fmockup"><option value="">Any mockup</option>' +
           U.options(S.MOCKUP_STATUSES, st.mockup) + '</select>' +
-        '<select class="input" id="fowner"><option value="">All owners</option>' + U.options(S.activeUsers(), st.owner, 'id', 'name') + '</select>' +
+        /* The owner dropdown is the same control as the switcher, so a rep
+           does not get one either — it would be a second door to the same
+           room. */
+        (repOnly ? ''
+          : '<select class="input" id="fowner"><option value="">All owners</option>' +
+            U.options(S.activeUsers(), st.owner, 'id', 'name') + '</select>') +
         (sourcesInUse().length
           ? '<select class="input" id="fsource"><option value="">All sources</option>' +
               sourcesInUse().map(function (s) {
@@ -300,6 +318,26 @@
       }
     }
   };
+
+  /* Who owns a lead, as a form field.
+
+     A rep may add and keep their own leads — that is the point of giving
+     them the CRM — but not hand one to somebody else, and the database
+     refuses it either way once rep-scope.sql is applied. Offering a picker
+     they cannot use would turn a clear rule into a confusing error, so
+     they get their own name and a hidden value instead. */
+  function ownerField(currentId) {
+    var me = S.me();
+    if (me.role !== 'rep') {
+      return U.field('Owner', '<select class="input" name="ownerId">' +
+        U.options(S.activeUsers(), currentId || me.id, 'id', 'name') + '</select>');
+    }
+    return U.field('Owner',
+      '<input type="hidden" name="ownerId" value="' + U.esc(me.id) + '">' +
+      '<div class="split" style="padding:7px 0">' + U.avatar(me.id, 'sm') +
+        '<span>' + U.esc(me.name) + '</span></div>' +
+      '<div class="hint">Leads you add are yours.</div>');
+  }
 
   function filtersActive() {
     return !!(st.q || st.rating || st.owner || st.source || st.tag || st.due || st.mockup || st.reach);
@@ -454,8 +492,11 @@
       '<span class="bulk-sep"></span>' +
       '<button class="btn btn-ghost btn-sm" data-bulk="none" ' +
         'title="Leave these leads with no follow-up booked">Unschedule</button>' +
-      '<span class="bulk-sep"></span>' +
-      '<button class="btn btn-sm" id="bulkAssign">Assign to…</button>' +
+      /* Handing leads to other people is a manager's job, and the
+         database refuses it from a rep anyway. */
+      (S.me().role === 'rep' ? '' :
+        '<span class="bulk-sep"></span>' +
+        '<button class="btn btn-sm" id="bulkAssign">Assign to…</button>') +
       '<span class="bulk-sep"></span>' +
       /* Sits past a separator, at the far end from the date presets, and
          asks before doing anything. A misclick here is not recoverable. */
@@ -559,7 +600,8 @@
 
     el.querySelector('#bulkCancel').onclick = function () { clear(); };
 
-    el.querySelector('#bulkAssign').onclick = function () {
+    var assignBtn = el.querySelector('#bulkAssign');
+    if (assignBtn) assignBtn.onclick = function () {
       var ids = Object.keys(st.selected);
       if (!ids.length) return;
       openAssign(ids, function () { st.selected = {}; root.render(); });
@@ -1145,7 +1187,7 @@
           '<select class="input" name="leadStatus">' + U.options(pickable, l.leadStatus) + '</select>' +
           '<div class="hint" id="statusHint">' + U.esc(S.leadStatus(l.leadStatus).hint) + '</div>') +
         U.field('Rating', '<select class="input" name="rating">' + U.options(S.LEAD_RATINGS, l.rating || 'warm') + '</select>') +
-        U.field('Owner', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), l.ownerId, 'id', 'name') + '</select>') +
+        ownerField(l.ownerId) +
         U.field('Next Follow-Up',
           '<input class="input" type="date" name="nextFollowUp" value="' + U.esc(l.nextFollowUp || '') + '">' +
           '<div class="hint">Leave blank only if this lead is closed — an open lead with no date is flagged.</div>') +
@@ -1327,7 +1369,7 @@
           '<select class="input" name="contactRole"><option value="">—</option>' +
             S.CONTACT_ROLES.map(function (r) { return '<option value="' + U.esc(r) + '">' + U.esc(r) + '</option>'; }).join('') +
           '</select>') +
-        U.field('Owner', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), l.ownerId, 'id', 'name') + '</select>') +
+        ownerField(l.ownerId) +
         U.field('Billing Type',
           '<select class="input" name="billingType">' + U.options(S.BILLING_TYPES, 'paid') + '</select>' +
           '<div class="hint">Pro Bono keeps the account out of revenue.</div>') +
@@ -1485,7 +1527,14 @@
           '<div class="field span-2"><label>Pasted rows</label>' +
             '<textarea class="input" name="raw" rows="9" style="min-height:170px;font-family:var(--font-mono);font-size:12px" ' +
               'placeholder="Company,Contact,Email,Phone,Website&#10;Acme Roofing,Dan Ruiz,dan@acme.com,(602) 555-0100,acme.com"></textarea></div>' +
-          U.field('Owner for imported leads', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), S.me().id, 'id', 'name') + '</select>') +
+          (S.me().role === 'rep'
+            ? U.field('Owner for imported leads',
+                '<input type="hidden" name="ownerId" value="' + U.esc(S.me().id) + '">' +
+                '<div class="split" style="padding:7px 0">' + U.avatar(S.me().id, 'sm') +
+                  '<span>' + U.esc(S.me().name) + '</span></div>' +
+                '<div class="hint">Leads you import are yours.</div>')
+            : U.field('Owner for imported leads', '<select class="input" name="ownerId">' +
+                U.options(S.activeUsers(), S.me().id, 'id', 'name') + '</select>')) +
           U.field('Source label',
             '<input class="input" name="source" list="leadSourceOptions2" value="List / Import">' +
             '<datalist id="leadSourceOptions2">' +
