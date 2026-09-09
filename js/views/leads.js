@@ -323,26 +323,6 @@
     }
   };
 
-  /* Who owns a lead, as a form field.
-
-     A rep may add and keep their own leads — that is the point of giving
-     them the CRM — but not hand one to somebody else, and the database
-     refuses it either way once rep-scope.sql is applied. Offering a picker
-     they cannot use would turn a clear rule into a confusing error, so
-     they get their own name and a hidden value instead. */
-  function ownerField(currentId) {
-    var me = S.me();
-    if (me.role !== 'rep') {
-      return U.field('Owner', '<select class="input" name="ownerId">' +
-        U.options(S.assignableUsers(), currentId || me.id, 'id', 'name') + '</select>');
-    }
-    return U.field('Owner',
-      '<input type="hidden" name="ownerId" value="' + U.esc(me.id) + '">' +
-      '<div class="split" style="padding:7px 0">' + U.avatar(me.id, 'sm') +
-        '<span>' + U.esc(me.name) + '</span></div>' +
-      '<div class="hint">Leads you add are yours.</div>');
-  }
-
   function filtersActive() {
     return !!(st.q || st.rating || st.owner || st.source || st.tag || st.due || st.mockup || st.reach);
   }
@@ -1191,7 +1171,7 @@
           '<select class="input" name="leadStatus">' + U.options(pickable, l.leadStatus) + '</select>' +
           '<div class="hint" id="statusHint">' + U.esc(S.leadStatus(l.leadStatus).hint) + '</div>') +
         U.field('Rating', '<select class="input" name="rating">' + U.options(S.LEAD_RATINGS, l.rating || 'warm') + '</select>') +
-        ownerField(l.ownerId) +
+        U.ownerField('Owner', l.ownerId, 'Leads you add stay yours.') +
         U.field('Next Follow-Up',
           '<input class="input" type="date" name="nextFollowUp" value="' + U.esc(l.nextFollowUp || '') + '">' +
           '<div class="hint">Leave blank only if this lead is closed — an open lead with no date is flagged.</div>') +
@@ -1373,7 +1353,7 @@
           '<select class="input" name="contactRole"><option value="">—</option>' +
             S.CONTACT_ROLES.map(function (r) { return '<option value="' + U.esc(r) + '">' + U.esc(r) + '</option>'; }).join('') +
           '</select>') +
-        ownerField(l.ownerId) +
+        U.ownerField('Owner', l.ownerId, 'Leads you add stay yours.') +
         U.field('Billing Type',
           '<select class="input" name="billingType">' + U.options(S.BILLING_TYPES, 'paid') + '</select>' +
           '<div class="hint">Pro Bono keeps the account out of revenue.</div>') +
@@ -1531,14 +1511,7 @@
           '<div class="field span-2"><label>Pasted rows</label>' +
             '<textarea class="input" name="raw" rows="9" style="min-height:170px;font-family:var(--font-mono);font-size:12px" ' +
               'placeholder="Company,Contact,Email,Phone,Website&#10;Acme Roofing,Dan Ruiz,dan@acme.com,(602) 555-0100,acme.com"></textarea></div>' +
-          (S.me().role === 'rep'
-            ? U.field('Owner for imported leads',
-                '<input type="hidden" name="ownerId" value="' + U.esc(S.me().id) + '">' +
-                '<div class="split" style="padding:7px 0">' + U.avatar(S.me().id, 'sm') +
-                  '<span>' + U.esc(S.me().name) + '</span></div>' +
-                '<div class="hint">Leads you import are yours.</div>')
-            : U.field('Owner for imported leads', '<select class="input" name="ownerId">' +
-                U.options(S.assignableUsers(), S.me().id, 'id', 'name') + '</select>')) +
+          U.ownerField('Owner for imported leads', S.me().id, 'Leads you import stay yours.') +
           U.field('Source label',
             '<input class="input" name="source" list="leadSourceOptions2" value="List / Import">' +
             '<datalist id="leadSourceOptions2">' +

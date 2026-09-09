@@ -212,7 +212,7 @@
         U.field('Rating', '<select class="input" name="rating">' +
           [5, 4, 3, 2, 1].map(function (n) { return '<option value="' + n + '"' + (String(v.rating) === String(n) ? ' selected' : '') + '>' + n + ' / 5</option>'; }).join('') +
           '</select>') +
-        U.field('Relationship Owner', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), v.ownerId, 'id', 'name') + '</select>') +
+        U.ownerField('Relationship Owner', v.ownerId) +
         U.field('Tags', U.tagInput('tagsRaw', v.tags)) +
         U.field('Location', '<input class="input" name="address" value="' + U.esc(v.address || '') + '">') +
         U.field('Website', '<input class="input" name="website" placeholder="example.com" value="' + U.esc(v.website || '') + '">') +

@@ -386,7 +386,7 @@
       okText: isNew ? 'Create Account' : 'Save Changes',
       body: '<div class="form-grid">' +
         U.field('Account Name *', '<input class="input" name="name" value="' + U.esc(a.name || '') + '" required>') +
-        U.field('Account Owner', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), a.ownerId, 'id', 'name') + '</select>') +
+        U.ownerField('Account Owner', a.ownerId) +
         U.field('Type',
           '<select class="input" name="accountType">' + U.options(S.ACCOUNT_TYPES, derived) + '</select>' +
           '<div class="hint">' + (hasWon

@@ -425,7 +425,7 @@
             S.OPP_TYPES.map(function (t) {
               return '<option value="' + U.esc(t) + '"' + (t === o.type ? ' selected' : '') + '>' + U.esc(t) + '</option>';
             }).join('') + '</select>') +
-        U.field('Owner', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), o.ownerId, 'id', 'name') + '</select>') +
+        U.ownerField('Owner', o.ownerId) +
         U.field('Source',
           '<input class="input" name="leadSource" list="oppSourceOptions" value="' + U.esc(o.leadSource || '') + '">' +
           '<datalist id="oppSourceOptions">' +

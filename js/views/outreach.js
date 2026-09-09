@@ -480,7 +480,7 @@
         U.field('Next Follow-Up',
           '<input class="input" type="date" name="nextFollowUp" value="' + U.esc(S.shift(2)) + '">' +
           '<div class="hint">An open lead with no next touch is how leads go quiet.</div>') +
-        U.field('Owner', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), S.me().id, 'id', 'name') + '</select>') +
+        U.ownerField('Owner', S.me().id) +
         '<div class="field span-2"><label>Note</label>' +
           '<textarea class="input" name="note" placeholder="What they asked for.">' +
           U.esc(o.summary || '') + '</textarea></div>' +
@@ -525,7 +525,7 @@
           '<input class="input" type="number" min="1" max="90" name="cadenceDays" value="' + U.esc(g.cadenceDays || 7) + '">' +
           '<div class="hint">The minimum gap. This group will not be suggested again until it has passed — ' +
           'posting too often is what gets you removed.</div>') +
-        U.field('Owner', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), g.ownerId, 'id', 'name') + '</select>') +
+        U.ownerField('Owner', g.ownerId) +
         '<div class="field span-2"><label>Group rules</label>' +
           '<input class="input" name="rules" value="' + U.esc(g.rules || '') + '" ' +
             'placeholder="Promo posts Fridays only. One per week.">' +

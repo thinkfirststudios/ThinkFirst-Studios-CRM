@@ -251,7 +251,7 @@
             }).join('') + '</select>') +
         U.field('Reports To', '<input class="input" name="reportsTo" value="' + U.esc(c.reportsTo || '') + '">') +
         U.socialFields(c) +
-        U.field('Owner', '<select class="input" name="ownerId">' + U.options(S.activeUsers(), c.ownerId, 'id', 'name') + '</select>') +
+        U.ownerField('Owner', c.ownerId) +
         U.field('Tags', U.tagInput('tagsRaw', c.tags)) +
         '<div class="field span-2"><label class="check" style="width:fit-content">' +
           '<input type="checkbox" name="isPrimary"' + (c.isPrimary || defaultPrimary ? ' checked' : '') + '>' +

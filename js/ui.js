@@ -102,6 +102,45 @@
     return '<div class="field' + (span ? ' span-2' : '') + '"><label>' + esc(label) + '</label>' + inner + '</div>';
   }
 
+  /* Who owns a record, as a form field. Every screen that assigns an owner
+     goes through here, so the rule lives in one place.
+
+     A rep works their own book: they may add records and keep them, but not
+     hand one to somebody else, and for leads the database refuses it either
+     way. Offering a picker they cannot use would turn a clear rule into a
+     confusing error, so they get a name and a hidden value instead.
+
+     The hidden value is the record's CURRENT owner, not always the rep. A
+     rep opening a teammate's account would otherwise take it over by doing
+     nothing but pressing Save.
+
+     For everybody else the list is assignableUsers(), which is branch-aware
+     - but an owner already on the record is added back if the branch rule
+     would drop them, because a name missing from a <select> is a silent
+     reassignment on the next save. */
+  function ownerField(label, currentId, hint) {
+    var me = S.me();
+    var ownerId = currentId || me.id;
+
+    if (me.role === 'rep') {
+      return field(label,
+        '<input type="hidden" name="ownerId" value="' + esc(ownerId) + '">' +
+        '<div class="split" style="padding:7px 0">' + avatar(ownerId, 'sm') +
+          '<span>' + esc(S.user(ownerId).name) + '</span></div>' +
+        '<div class="hint">' + esc(hint || (ownerId === me.id
+          ? 'Records you add stay yours.'
+          : 'Only a manager can reassign this.')) + '</div>');
+    }
+
+    var list = S.assignableUsers();
+    var has = false;
+    for (var i = 0; i < list.length; i++) { if (list[i].id === ownerId) { has = true; break; } }
+    if (ownerId && !has) list = list.concat([S.user(ownerId)]);
+
+    return field(label, '<select class="input" name="ownerId">' +
+      options(list, ownerId, 'id', 'name') + '</select>');
+  }
+
   /* Comma-separated tag entry with autocomplete from tags already in use,
      so the same idea doesn't end up spelled three ways. */
   function tagInput(name, tags) {
@@ -403,7 +442,7 @@
     esc: esc, fmtDate: fmtDate, fmtDateShort: fmtDateShort, fmtWhen: fmtWhen, dueTone: dueTone,
     badge: badge, statusBadge: statusBadge, woBadge: woBadge,
     avatar: avatar, avatarColor: avatarColor, userCell: userCell,
-    empty: empty, options: options, field: field, serviceChecks: serviceChecks,
+    empty: empty, options: options, field: field, ownerField: ownerField, serviceChecks: serviceChecks,
     tagInput: tagInput, tagChips: tagChips, billingTypeBadge: billingTypeBadge,
     socialFields: socialFields, socialChips: socialChips,
     toast: toast, modal: modal, closeModal: closeModal, confirmDelete: confirmDelete,
