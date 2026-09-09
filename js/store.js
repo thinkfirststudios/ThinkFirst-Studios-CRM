@@ -727,11 +727,34 @@
         if (B.mode === 'supabase' && B.session()) {
           B.onError = failureReporter();
           B.subscribe(applyRemote);
+          noteSignIn();
         }
 
         booted = true;
         return { authenticated: B.mode === 'local' || !!B.session() };
       });
+  }
+
+  /* Record the sign-in that just happened.
+
+     It cannot be written when it happens: signing in precedes the store
+     booting, so there is no database to write to and the page reloads
+     immediately afterwards. The sign-in screen leaves a mark on the tab
+     instead and the entry is written here, once there is somewhere to put
+     it and a user to attribute it to.
+
+     Only a real sign-in leaves that mark, so restoring a session, opening
+     a second tab, or reloading the page records nothing — otherwise the
+     log would fill with an event nobody performed. */
+  function noteSignIn() {
+    if (!meId) return;
+    var how;
+    try {
+      how = sessionStorage.getItem('crm:signedIn');
+      if (!how) return;
+      sessionStorage.removeItem('crm:signedIn');
+    } catch (e) { return; }
+    log(how === 'up' ? 'created their account' : 'signed in', 'user', meId, '');
   }
 
   /* ── reporting failed writes ─────────────────────────────────────

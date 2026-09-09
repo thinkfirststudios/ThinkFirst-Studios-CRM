@@ -26,6 +26,10 @@ clicks through the bulk follow-up flow — tick, count, select-all, apply,
 unschedule — because a route that renders is not the same as a checkbox
 that works.
 
+`signin-log.js` covers sign-ins reaching the activity feed, and - the
+half that matters - staying quiet for reloads, second tabs and restored
+sessions, so the log never fills with events nobody performed.
+
 `assign.js` covers splitting a list between reps: even shares, dealt
 rather than sliced into regional blocks, nothing outside the selection
 touched, and each person's follow-up queue holding only their own.

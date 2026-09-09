@@ -210,6 +210,12 @@
             mode = 'in';
             return;
           }
+          /* Leave a mark for the store to find on the way back up. The
+             activity log lives in the database, and at this moment there
+             is no database — the page is about to reload and boot it. Per
+             tab, so a second tab opening later does not record a sign-in
+             that never happened. */
+          try { sessionStorage.setItem('crm:signedIn', mode); } catch (e) { /* private mode */ }
           location.reload();
         }).catch(function (err) {
           paint(friendly(err));
