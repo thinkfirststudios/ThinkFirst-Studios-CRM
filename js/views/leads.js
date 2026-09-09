@@ -113,10 +113,10 @@
       st.scopeFor = S.me().id;
       st.owner = '';
     }
-    var mineCount = S.all('leads').filter(function (l) {
+    var mineCount = S.visibleLeads().filter(function (l) {
       return seg.match(l) && l.ownerId === S.me().id;
     }).length;
-    var rows = S.all('leads').filter(function (l) {
+    var rows = S.visibleLeads().filter(function (l) {
       if (!seg.match(l)) return false;
       if (st.rating && (l.rating || 'warm') !== st.rating) return false;
       if (st.owner && l.ownerId !== st.owner) return false;
@@ -187,7 +187,7 @@
       '<div class="toolbar" style="gap:6px">' +
         '<div class="seg" id="segNav">' +
           SEGMENTS.map(function (x) {
-            var n = S.all('leads').filter(x.match).length;
+            var n = S.visibleLeads().filter(x.match).length;
             return '<button data-seg="' + U.esc(x.id) + '" class="' + (x.id === st.status ? 'on' : '') + '">' +
               U.esc(x.label) + '<span class="seg-count">' + n + '</span></button>';
           }).join('') +
@@ -206,7 +206,11 @@
               '<button data-scope="mine" class="' + (st.owner === S.me().id ? 'on' : '') + '">' +
                 'My leads<span class="seg-count">' + mineCount + '</span></button>' +
               '<button data-scope="all" class="' + (st.owner ? '' : 'on') + '">' +
-                'Everyone<span class="seg-count">' + S.all('leads').filter(seg.match).length + '</span></button>' +
+                /* "Everyone" means everyone this person may see — for a
+                   branch manager that is their branch, not the company. */
+                (S.me().role === 'manager' ? 'My branch' : 'Everyone') +
+                '<span class="seg-count">' + S.visibleLeads().filter(seg.match).length +
+                '</span></button>' +
             '</div>') +
         (seg.id === 'dead'
           ? '<span class="hint" style="margin-left:auto">These were a real fit. ' +
@@ -234,7 +238,7 @@
            room. */
         (repOnly ? ''
           : '<select class="input" id="fowner"><option value="">All owners</option>' +
-            U.options(S.activeUsers(), st.owner, 'id', 'name') + '</select>') +
+            U.options(S.assignableUsers(), st.owner, 'id', 'name') + '</select>') +
         (sourcesInUse().length
           ? '<select class="input" id="fsource"><option value="">All sources</option>' +
               sourcesInUse().map(function (s) {
@@ -330,7 +334,7 @@
     var me = S.me();
     if (me.role !== 'rep') {
       return U.field('Owner', '<select class="input" name="ownerId">' +
-        U.options(S.activeUsers(), currentId || me.id, 'id', 'name') + '</select>');
+        U.options(S.assignableUsers(), currentId || me.id, 'id', 'name') + '</select>');
     }
     return U.field('Owner',
       '<input type="hidden" name="ownerId" value="' + U.esc(me.id) + '">' +
@@ -513,8 +517,8 @@
      every lead already has and which the dashboard already uses to show
      each person their own follow-ups. */
   function openAssign(ids, done) {
-    var users = S.activeUsers();
-    if (!users.length) { U.toast('No active users to assign to.', 'err'); return; }
+    var users = S.assignableUsers();
+    if (!users.length) { U.toast('No one to assign to.', 'err'); return; }
 
     U.modal({
       title: 'Assign ' + ids.length + ' lead' + (ids.length === 1 ? '' : 's'),
@@ -1164,7 +1168,7 @@
   function openForm(l, done) {
     var isNew = !l;
     l = l || {
-      leadStatus: 'new', rating: 'warm', ownerId: S.me().id,
+      leadStatus: 'new', rating: 'warm', ownerId: S.me().id, branch: S.myBranch(),
       nextFollowUp: S.shift(2), source: '', tags: []
     };
     /* "Converted" is set by converting, never picked from a dropdown —
@@ -1534,7 +1538,7 @@
                   '<span>' + U.esc(S.me().name) + '</span></div>' +
                 '<div class="hint">Leads you import are yours.</div>')
             : U.field('Owner for imported leads', '<select class="input" name="ownerId">' +
-                U.options(S.activeUsers(), S.me().id, 'id', 'name') + '</select>')) +
+                U.options(S.assignableUsers(), S.me().id, 'id', 'name') + '</select>')) +
           U.field('Source label',
             '<input class="input" name="source" list="leadSourceOptions2" value="List / Import">' +
             '<datalist id="leadSourceOptions2">' +
@@ -1699,6 +1703,10 @@
             estValue: r.estValue,
             leadStatus: 'new', rating: rowRating || 'warm',
             ownerId: opts.ownerId || S.me().id,
+            /* Imported leads belong to the branch of whoever imported them.
+               Without this they land blank and a branch manager cannot see
+               the list they just brought in. */
+            branch: S.myBranch(),
             nextFollowUp: opts.nextFollowUp || '',
             lastContactedAt: '',
             /* Import-wide tags first, then the row's own, de-duplicated so a

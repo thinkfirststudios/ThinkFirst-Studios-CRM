@@ -74,6 +74,15 @@
         { key: 'role', label: 'Role', render: function (u) {
             return U.badge(u.role, u.role === 'admin' ? 'b-orange' : u.role === 'manager' ? 'b-blue' : 'b-grey');
           } },
+        { key: 'branch', label: 'Branch', sort: function (u) { return u.branch || ''; },
+          render: function (u) {
+            /* An admin is not in a branch — they are above them — so saying
+               one would be misleading rather than merely blank. */
+            if (u.role === 'admin') return '<span class="muted">all branches</span>';
+            return u.branch
+              ? '<span class="chip">' + U.esc(u.branch) + '</span>'
+              : '<span class="muted">—</span>';
+          } },
         { key: 'load', label: 'Open Work', cls: 'right', render: function (u) {
             var n = S.all('workOrders').filter(function (w) { return w.assigneeId === u.id && w.status !== 'complete'; }).length;
             return '<span class="mono">' + n + '</span>';
@@ -121,6 +130,13 @@
         U.field('Full Name *', '<input class="input" name="name" value="' + U.esc(u.name || '') + '">') +
         U.field('Email', '<input class="input" type="email" name="email" value="' + U.esc(u.email || '') + '">') +
         U.field('Job Title', '<input class="input" name="title" value="' + U.esc(u.title || '') + '">') +
+        U.field('Branch',
+          '<input class="input" name="branch" list="branchOptions" value="' + U.esc(u.branch || '') + '">' +
+          '<datalist id="branchOptions">' +
+            S.allBranches().map(function (b) { return '<option value="' + U.esc(b) + '">'; }).join('') +
+          '</datalist>' +
+          '<div class="hint">A manager sees every lead in their branch and no others. ' +
+            'Leave blank for the original team — blank is a branch like any other.</div>') +
         U.field('Role', '<select class="input" name="role">' +
           S.ROLES.map(function (r) { return '<option value="' + r + '"' + (u.role === r ? ' selected' : '') + '>' + r + '</option>'; }).join('') +
           '</select>') +

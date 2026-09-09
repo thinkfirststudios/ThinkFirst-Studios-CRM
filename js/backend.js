@@ -78,9 +78,10 @@
     customers: ['accountType', 'billingType', 'tags', 'convertedFromLeadId',
                 'instagram', 'tiktok', 'facebook'],
     contacts:  ['instagram', 'tiktok', 'facebook'],
+    profiles:  ['branch'],
     leads:     ['lostReason', 'outreachId', 'instagram', 'tiktok', 'facebook',
                 'mockupStatus', 'mockupTypes', 'mockupUrl', 'mockupReadyAt', 'mockupSentAt',
-                'convertedContactId', 'convertedOpportunityId'],
+                'convertedContactId', 'convertedOpportunityId', 'branch'],
     vendors:   ['tags'],
     settings:  ['mrrGoalCents', 'outreachDailyGoal']
   };

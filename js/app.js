@@ -160,6 +160,7 @@
     lostReason: 'Lead close reasons', outreachId: 'Outreach attribution',
     accountType: 'Account types', billingType: 'Billing types', tags: 'Tags',
     mrrGoalCents: 'The MRR goal', outreachDailyGoal: 'The outreach target',
+    branch: 'Branches',
     convertedFromLeadId: 'Lead conversion links',
     convertedContactId: 'Lead conversion links', convertedOpportunityId: 'Lead conversion links'
   };

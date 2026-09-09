@@ -2044,6 +2044,46 @@
     },
     signOut: function () { return B.signOut(); },
     isAdmin: function () { return API.me().role === 'admin'; },
+
+    /* Which branch the acting user runs or belongs to. A blank branch is a
+       branch, not "unset" — everything that existed before branches were
+       added has one, so a blank-branch manager sees exactly what they saw
+       before and nothing moves until somebody sets a value. */
+    myBranch: function () { return API.me().branch || ''; },
+
+    /* Branches actually in use, for the picker. Offered rather than typed
+       freely so "Brazil" and "brazil" do not quietly become two
+       territories that cannot see each other. */
+    allBranches: function () {
+      var seen = {};
+      db.users.forEach(function (u) { if (u.branch) seen[u.branch] = 1; });
+      db.leads.forEach(function (l) { if (l.branch) seen[l.branch] = 1; });
+      return Object.keys(seen).sort();
+    },
+
+    /* Who this person may hand a lead to. An admin may pick anybody; a
+       manager only their own branch, because a lead moved outside it is a
+       lead they can no longer see — and the database refuses it anyway. */
+    assignableUsers: function () {
+      var me = API.me();
+      var users = db.users.filter(function (u) { return u.active; });
+      if (me.role === 'admin') return users;
+      return users.filter(function (u) { return (u.branch || '') === (me.branch || ''); });
+    },
+
+    /* Leads this person may work: admins all, managers their branch,
+       everybody else their own. Mirrors the SQL in branches.sql — the
+       database is what enforces it, this is what the screens draw. */
+    visibleLeads: function () {
+      var me = API.me();
+      if (me.role === 'admin') return db.leads.slice();
+      if (me.role === 'manager') {
+        return db.leads.filter(function (l) {
+          return (l.branch || '') === (me.branch || '');
+        });
+      }
+      return db.leads.filter(function (l) { return l.ownerId === me.id; });
+    },
     canManage: function () { var r = API.me().role; return r === 'admin' || r === 'manager'; },
     user: function (id) { return find('users', id) || { id: '', name: 'Unassigned', role: '', email: '' }; },
     activeUsers: function () { return db.users.filter(function (u) { return u.active; }); },

@@ -27,6 +27,12 @@ clicks through the bulk follow-up flow — tick, count, select-all, apply,
 unschedule — because a route that renders is not the same as a checkbox
 that works.
 
+`branches.js` covers territories: a manager sees their branch and no
+other, a rep sees their own leads wherever they are, and a blank branch
+is a branch rather than a special case - which is what lets this ship
+before anybody is configured. It runs in local mode because switching
+who is acting is the whole subject, and only local mode allows it.
+
 `signin-log.js` covers sign-ins reaching the activity feed, and - the
 half that matters - staying quiet for reloads, second tabs and restored
 sessions, so the log never fills with events nobody performed.
