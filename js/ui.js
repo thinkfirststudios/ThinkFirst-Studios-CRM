@@ -118,6 +118,33 @@
      - but an owner already on the record is added back if the branch rule
      would drop them, because a name missing from a <select> is a silent
      reassignment on the next save. */
+  /* Which branch a lead belongs to, as a form field.
+
+     This has to be on the form even when nobody may change it. UI.values()
+     only collects named inputs, so a form with no branch input saves a lead
+     with no branch — which reads as the blank branch, the US. A manager in
+     Brazil adding a lead by hand would file it in the office they cannot
+     see, and never find it again.
+
+     Only an admin gets a choice; for everybody else it is their own branch,
+     carried in a hidden input. There is nothing to decide, so there is
+     nothing on screen. */
+  function branchField(label, current) {
+    var me = S.me();
+    if (me.role !== 'admin') {
+      return '<input type="hidden" name="branch" value="' + esc(S.myBranch()) + '">';
+    }
+    var known = S.allBranches();
+    return field(label,
+      '<input class="input" name="branch" list="branchPickOptions" value="' +
+        esc(current == null ? S.myBranch() : current) + '">' +
+      '<datalist id="branchPickOptions">' +
+        known.map(function (b) { return '<option value="' + esc(b) + '">'; }).join('') +
+      '</datalist>' +
+      '<div class="hint">Who sees these: a manager sees every lead in their branch. ' +
+        'Leave blank for the original team — blank is a branch like any other.</div>');
+  }
+
   function ownerField(label, currentId, hint) {
     var me = S.me();
     var ownerId = currentId || me.id;
@@ -442,7 +469,7 @@
     esc: esc, fmtDate: fmtDate, fmtDateShort: fmtDateShort, fmtWhen: fmtWhen, dueTone: dueTone,
     badge: badge, statusBadge: statusBadge, woBadge: woBadge,
     avatar: avatar, avatarColor: avatarColor, userCell: userCell,
-    empty: empty, options: options, field: field, ownerField: ownerField, serviceChecks: serviceChecks,
+    empty: empty, options: options, field: field, ownerField: ownerField, branchField: branchField, serviceChecks: serviceChecks,
     tagInput: tagInput, tagChips: tagChips, billingTypeBadge: billingTypeBadge,
     socialFields: socialFields, socialChips: socialChips,
     toast: toast, modal: modal, closeModal: closeModal, confirmDelete: confirmDelete,

@@ -149,6 +149,9 @@
         var v = U.values(box);
         if (!v.name) { U.toast('Name is required.', 'err'); return false; }
         v.active = (v.active || []).length > 0;
+        /* "brazil" typed here beside a "Brazil" already in use would put
+           this person in a territory of one, seeing none of the leads. */
+        v.branch = S.normalizeBranch(v.branch);
         if (isNew) S.insert('users', v, 'u', v.name);
         else S.update('users', u.id, v, v.name);
         U.toast('Saved.', 'ok');

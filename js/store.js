@@ -2051,6 +2051,22 @@
        before and nothing moves until somebody sets a value. */
     myBranch: function () { return API.me().branch || ''; },
 
+    /* Settle on one spelling for a branch. The picker offers what is
+       already in use, but the field still accepts typing, and "brazil"
+       stored beside "Brazil" would be two territories that cannot see each
+       other — a manager staring at an empty list with the leads right
+       there in the table. Matching case-insensitively and adopting the
+       spelling already in use is what makes the picker's promise true. */
+    normalizeBranch: function (value) {
+      var v = String(value == null ? '' : value).trim();
+      if (!v) return '';
+      var known = API.allBranches();
+      for (var i = 0; i < known.length; i++) {
+        if (known[i].toLowerCase() === v.toLowerCase()) return known[i];
+      }
+      return v;
+    },
+
     /* Branches actually in use, for the picker. Offered rather than typed
        freely so "Brazil" and "brazil" do not quietly become two
        territories that cannot see each other. */

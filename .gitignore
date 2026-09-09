@@ -32,3 +32,8 @@ token.json
 # Local database backups taken with tools/backup.mjs. Kept OUT of .tmp/
 # because .tmp/ is disposable by convention and these are not.
 backups/
+
+# Lead lists waiting on somebody to import them. Real contact details,
+# and not disposable the way .tmp/ is.
+standby/*
+!standby/README.md

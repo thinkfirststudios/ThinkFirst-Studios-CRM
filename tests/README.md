@@ -33,6 +33,13 @@ is a branch rather than a special case - which is what lets this ship
 before anybody is configured. It runs in local mode because switching
 who is acting is the whole subject, and only local mode allows it.
 
+`branch-field.js` covers a lead carrying its branch out of the form. The
+form had no branch input at all, and UI.values() only collects named
+inputs, so a lead added by hand saved with no branch - the blank one, the
+US - and a manager in Brazil would have filed it where they cannot see it.
+It also covers settling on one spelling, because "brazil" beside "Brazil"
+is two territories and the symptom is an empty list.
+
 `owner-lock.js` covers who may be named as an owner: a rep gets their
 name and no picker, and the value posted is the record's current owner so
 that opening a teammate's account and pressing Save does not take it over.

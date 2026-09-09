@@ -1172,6 +1172,7 @@
           '<div class="hint" id="statusHint">' + U.esc(S.leadStatus(l.leadStatus).hint) + '</div>') +
         U.field('Rating', '<select class="input" name="rating">' + U.options(S.LEAD_RATINGS, l.rating || 'warm') + '</select>') +
         U.ownerField('Owner', l.ownerId, 'Leads you add stay yours.') +
+        U.branchField('Branch', l.branch) +
         U.field('Next Follow-Up',
           '<input class="input" type="date" name="nextFollowUp" value="' + U.esc(l.nextFollowUp || '') + '">' +
           '<div class="hint">Leave blank only if this lead is closed — an open lead with no date is flagged.</div>') +
@@ -1215,6 +1216,7 @@
         if (!v.name) { U.toast('Company name is required.', 'err'); return false; }
         v.estValue = Number(v.estValue) || 0;
         v.tags = S.parseTags(v.tagsRaw); delete v.tagsRaw;
+        v.branch = S.normalizeBranch(v.branch);
         S.cleanSocials(v);
         var note = v.openingNote; delete v.openingNote;
 
@@ -1354,6 +1356,7 @@
             S.CONTACT_ROLES.map(function (r) { return '<option value="' + U.esc(r) + '">' + U.esc(r) + '</option>'; }).join('') +
           '</select>') +
         U.ownerField('Owner', l.ownerId, 'Leads you add stay yours.') +
+        U.branchField('Branch', l.branch) +
         U.field('Billing Type',
           '<select class="input" name="billingType">' + U.options(S.BILLING_TYPES, 'paid') + '</select>' +
           '<div class="hint">Pro Bono keeps the account out of revenue.</div>') +
@@ -1512,6 +1515,7 @@
             '<textarea class="input" name="raw" rows="9" style="min-height:170px;font-family:var(--font-mono);font-size:12px" ' +
               'placeholder="Company,Contact,Email,Phone,Website&#10;Acme Roofing,Dan Ruiz,dan@acme.com,(602) 555-0100,acme.com"></textarea></div>' +
           U.ownerField('Owner for imported leads', S.me().id, 'Leads you import stay yours.') +
+          U.branchField('Branch for imported leads') +
           U.field('Source label',
             '<input class="input" name="source" list="leadSourceOptions2" value="List / Import">' +
             '<datalist id="leadSourceOptions2">' +
@@ -1555,6 +1559,7 @@
           U.toast('That looks like a header row with no data under it.', 'err');
           return false;
         }
+        v.branch = S.normalizeBranch(v.branch);
         setTimeout(function () { previewImport(grid, v, done); }, 0);
       }
     });
@@ -1676,10 +1681,11 @@
             estValue: r.estValue,
             leadStatus: 'new', rating: rowRating || 'warm',
             ownerId: opts.ownerId || S.me().id,
-            /* Imported leads belong to the branch of whoever imported them.
-               Without this they land blank and a branch manager cannot see
-               the list they just brought in. */
-            branch: S.myBranch(),
+            /* Imported leads belong to a branch, or a branch manager
+               cannot see the list that was just brought in for them. An
+               admin picks it — they have no branch of their own to inherit
+               — and everybody else gets theirs. */
+            branch: opts.branch,
             nextFollowUp: opts.nextFollowUp || '',
             lastContactedAt: '',
             /* Import-wide tags first, then the row's own, de-duplicated so a
