@@ -94,6 +94,20 @@
 
     var stats = S.leadStats();
     var seg = segment();
+
+    /* Reps land on their own leads; admins and managers land on everyone's,
+       because their job is the overview.
+
+       Keyed on who is acting rather than a once-ever flag, so switching
+       user re-picks the right default — and so an admin who chooses
+       Everyone keeps it, since a repaint does not change who they are. */
+    if (st.scopeFor !== S.me().id) {
+      st.scopeFor = S.me().id;
+      st.owner = S.me().role === 'rep' ? S.me().id : '';
+    }
+    var mineCount = S.all('leads').filter(function (l) {
+      return seg.match(l) && l.ownerId === S.me().id;
+    }).length;
     var rows = S.all('leads').filter(function (l) {
       if (!seg.match(l)) return false;
       if (st.rating && (l.rating || 'warm') !== st.rating) return false;
@@ -170,6 +184,17 @@
               U.esc(x.label) + '<span class="seg-count">' + n + '</span></button>';
           }).join('') +
         '</div>' +
+        /* Whose leads. A rep opening the CRM should be looking at their own
+           book, not the whole team's - and with the list split between
+           three people, "All owners" is the wrong thing to land on. This
+           drives the owner filter below rather than adding a second,
+           conflicting one, so the dropdown always agrees with it. */
+        '<div class="seg" id="scopeNav" style="margin-left:8px">' +
+          '<button data-scope="mine" class="' + (st.owner === S.me().id ? 'on' : '') + '">' +
+            'My leads<span class="seg-count">' + mineCount + '</span></button>' +
+          '<button data-scope="all" class="' + (st.owner ? '' : 'on') + '">' +
+            'Everyone<span class="seg-count">' + S.all('leads').filter(seg.match).length + '</span></button>' +
+        '</div>' +
         (seg.id === 'dead'
           ? '<span class="hint" style="margin-left:auto">These were a real fit. ' +
             'Open one and use “Put back in play” when the timing changes.</span>'
@@ -226,6 +251,12 @@
     el.querySelectorAll('#segNav button').forEach(function (b) {
       b.onclick = function () { st.status = b.dataset.seg; root.render(); };
     });
+    el.querySelectorAll('#scopeNav button').forEach(function (b) {
+      b.onclick = function () {
+        st.owner = b.dataset.scope === 'mine' ? S.me().id : '';
+        root.render();
+      };
+    });
     [['#fdue', 'due'], ['#frating', 'rating'], ['#fmockup', 'mockup'], ['#freach', 'reach'],
      ['#fowner', 'owner'], ['#fsource', 'source'], ['#ftag', 'tag']].forEach(function (pair) {
       if (el.querySelector(pair[0])) bindFilter(el, pair[0], pair[1]);
@@ -233,7 +264,10 @@
     el.querySelector('#clear').onclick = function () {
       /* Clears the filters, not the group — being bounced back to Active
          while reading the dead pile is not "clear", it is "cancel". */
-      st.q = ''; st.rating = ''; st.owner = ''; st.source = ''; st.tag = ''; st.due = ''; st.mockup = '';
+      /* Owner is deliberately not reset. It is no longer a filter but the
+         My leads / Everyone view, and clearing the filters should not
+         quietly move a rep from their own book to the whole team's. */
+      st.q = ''; st.rating = ''; st.source = ''; st.tag = ''; st.due = ''; st.mockup = '';
       st.reach = '';
       root.render();
     };
