@@ -33,6 +33,20 @@ is a branch rather than a special case - which is what lets this ship
 before anybody is configured. It runs in local mode because switching
 who is acting is the whole subject, and only local mode allows it.
 
+`import-brazil.ps1` drives the real Brazil CSV through the real dialog.
+It exists because that file breaks importers in ways the US one does not:
+accented names, social profiles instead of websites, and fifteen agents
+behind one brokerage domain. It caught the dedupe bug below. Its literals
+are \uXXXX escapes - PowerShell 5.1 reads a BOM-less .ps1 as ANSI, so a
+non-ASCII character in the driver arrives mangled and the test then fails
+on its own encoding rather than on the app.
+
+`dedupe.js` also covers the roster case: many people, one domain. Keying
+on the domain alone made all fifteen Invista agents the same lead, so
+fourteen realtors were dropped as duplicates - and the import still
+reported success, which is the part that would have gone unnoticed.
+
+
 `branch-field.js` covers a lead carrying its branch out of the form. The
 form had no branch input at all, and UI.values() only collects named
 inputs, so a lead added by hand saved with no branch - the blank one, the
