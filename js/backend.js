@@ -279,9 +279,31 @@
        happens after an update that adds several tables at once. */
     hydrate: function () {
       var colls = Object.keys(TABLES);
+      /* Time every table. "The CRM is slow" is not something anyone can act
+         on; "notes took 9 seconds" is. This prints once per boot, costs
+         nothing, and means the next report comes with a number attached -
+         a policy that runs per row shows up here and nowhere else. */
+      var t0 = (root.performance && root.performance.now) ? root.performance.now() : 0;
+      var timings = [];
       return Promise.all(colls.map(function (c) {
-        return readAll(TABLES[c]);
+        var start = t0 ? root.performance.now() : 0;
+        return readAll(TABLES[c]).then(function (rows) {
+          if (t0) {
+            timings.push({ table: TABLES[c], ms: root.performance.now() - start,
+                           rows: (rows && rows.length) || 0 });
+          }
+          return rows;
+        });
       })).then(function (results) {
+        if (t0 && root.console && root.console.log) {
+          var total = root.performance.now() - t0;
+          timings.sort(function (a, b) { return b.ms - a.ms; });
+          root.console.log('CRM load ' + total.toFixed(0) + 'ms — slowest tables: ' +
+            timings.slice(0, 5).map(function (x) {
+              return x.table + ' ' + x.ms.toFixed(0) + 'ms/' + x.rows + ' rows';
+            }).join(', '));
+          Remote.lastLoad = { totalMs: total, tables: timings };
+        }
         var failed = results.filter(function (r) { return r && r.__fail; });
 
         /* Only stop for something that cannot be worked around: a core
