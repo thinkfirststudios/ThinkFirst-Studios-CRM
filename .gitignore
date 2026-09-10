@@ -37,3 +37,7 @@ backups/
 # and not disposable the way .tmp/ is.
 standby/*
 !standby/README.md
+
+# Python bytecode cache
+__pycache__/
+*.pyc
