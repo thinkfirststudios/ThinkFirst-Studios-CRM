@@ -950,6 +950,141 @@
     return counts;
   }
 
+  /* Match a list of mockup URLs back to the leads they were built for.
+
+     The mockups are published one folder per business, so the last path
+     segment is the business name with the punctuation knocked out. That is
+     close to the lead name but not equal to it: the folder drops "&", drops
+     a trailing "e Interiores", and in two cases the original list carries a
+     typo the folder does not ("Areis" for Areias, "Marmoria" for
+     Marmoraria).
+
+     So this tries progressively looser rules and stops at the first that
+     produces exactly ONE candidate. Anything ambiguous is reported rather
+     than guessed, because attaching a mockup to the wrong business is a
+     mistake nobody catches until it is presented to them. */
+  function slugify(s) {
+    return String(s == null ? '' : s)
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')   /* accents off */
+      .toLowerCase()
+      .replace(/&/g, ' ')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  /* How alike two slugs are, 0..1. Longest common subsequence over
+     characters - enough to see through a one-letter typo without pulling in
+     a similarity library. */
+  function likeness(a, b) {
+    if (!a.length || !b.length) return 0;
+    var prev = [], cur = [], i, j;
+    for (j = 0; j <= b.length; j++) prev[j] = 0;
+    for (i = 1; i <= a.length; i++) {
+      cur[0] = 0;
+      for (j = 1; j <= b.length; j++) {
+        cur[j] = a.charAt(i - 1) === b.charAt(j - 1)
+          ? prev[j - 1] + 1
+          : Math.max(prev[j], cur[j - 1]);
+      }
+      for (j = 0; j <= b.length; j++) prev[j] = cur[j];
+    }
+    return (2 * prev[b.length]) / (a.length + b.length);
+  }
+
+  function matchMockupUrls(urls, pool) {
+    var leads = (pool || API.visibleLeads()).map(function (l) {
+      return { lead: l, slug: slugify(l.name) };
+    });
+    var out = { matched: [], unmatched: [], ambiguous: [] };
+    var taken = {};
+
+    (urls || []).forEach(function (raw) {
+      var url = String(raw || '').trim();
+      if (!url) return;
+      var seg = url.replace(/[?#].*$/, '').replace(/\/+$/, '');
+      seg = slugify(seg.slice(seg.lastIndexOf('/') + 1));
+      if (!seg) { out.unmatched.push({ url: url, slug: seg }); return; }
+
+      function pick(list, how) {
+        var free = list.filter(function (c) { return !taken[c.lead.id]; });
+        if (free.length !== 1) return null;
+        taken[free[0].lead.id] = 1;
+        out.matched.push({ url: url, slug: seg, lead: free[0].lead, how: how });
+        return true;
+      }
+
+      var exact = leads.filter(function (c) { return c.slug === seg; });
+      if (exact.length > 1) { out.ambiguous.push({ url: url, slug: seg, names: exact.map(function (c) { return c.lead.name; }) }); return; }
+      if (pick(exact, 'exact')) return;
+
+      /* One name is the other with a suffix: "Delpizzo Arquitetura" for
+         "Delpizzo Arquitetura e Interiores", or the folder being the more
+         specific of the two ("paradiso-mercato-e-caffe" for "Paradiso"). */
+      if (pick(leads.filter(function (c) {
+        return c.slug.indexOf(seg + '-') === 0 || seg.indexOf(c.slug + '-') === 0;
+      }), 'prefix')) return;
+
+      /* Every word of the folder appears in the name, so a dropped joining
+         word ("Kaza Arquitetura e Interiores") still lands. */
+      var words = seg.split('-');
+      if (pick(leads.filter(function (c) {
+        var have = c.slug.split('-');
+        return words.every(function (w) { return have.indexOf(w) > -1; });
+      }), 'contains')) return;
+
+      /* Last resort, for a typo. Needs to be both very close AND clearly
+         closer than the runner-up, or it is not a match, it is a guess. */
+      var scored = leads.filter(function (c) { return !taken[c.lead.id]; })
+        .map(function (c) { return { c: c, score: likeness(seg, c.slug) }; })
+        .sort(function (a, b) { return b.score - a.score; });
+      if (scored.length && scored[0].score >= 0.82 &&
+          (scored.length === 1 || scored[0].score - scored[1].score >= 0.08)) {
+        taken[scored[0].c.lead.id] = 1;
+        out.matched.push({ url: url, slug: seg, lead: scored[0].c.lead,
+                           how: 'close (' + scored[0].score.toFixed(2) + ')' });
+        return;
+      }
+      /* Only name a runner-up when it is actually near. Offering the last
+         unclaimed lead as "closest" to a folder that resembles nothing is
+         an invitation to pair them by hand, and that is the one mistake
+         this whole screen exists to prevent. */
+      out.unmatched.push({ url: url, slug: seg,
+                           nearest: (scored.length && scored[0].score >= 0.5)
+                             ? scored[0].c.lead.name : '' });
+    });
+    return out;
+  }
+
+  /* Attach many mockups in one write. Same shape as assignMany: each record
+     gets its own value, they go out in one batch, and the log gets one line
+     rather than eighty-four. */
+  function setMockupsMany(pairs, label) {
+    if (!pairs || !pairs.length) return [];
+    var want = {};
+    pairs.forEach(function (p) { want[p.id] = p.url; });
+
+    var touched = [];
+    (db.leads || []).forEach(function (rec) {
+      var url = want[rec.id];
+      if (url === undefined) return;
+      rec.mockupUrl = url;
+      /* Built and not yet sent - which is what puts it on the "ready to
+         send" card, the whole point of recording it. A mockup already
+         marked sent is left alone; re-attaching a link is not un-sending. */
+      if (rec.mockupStatus !== 'sent') rec.mockupStatus = 'ready';
+      if (!rec.mockupReadyAt) rec.mockupReadyAt = today();
+      rec.updatedAt = now();
+      touched.push(rec);
+    });
+    if (!touched.length) return [];
+
+    log('mockup', 'leads', '', label || (touched.length + ' mockups attached'));
+    if (B.mode === 'local') B.persist(db);
+    else B.writeMany('leads', touched);
+    notify();
+    return touched;
+  }
+
   function updateMany(coll, ids, patch, label) {
     var want = {}, touched = [];
     ids.forEach(function (id) { want[id] = 1; });
@@ -1061,6 +1196,8 @@
     initials: initials, splitName: splitName,
     all: all, find: find, insert: insert, insertMany: insertMany, update: update, updateMany: updateMany,
     assignMany: assignMany,
+    matchMockupUrls: matchMockupUrls, setMockupsMany: setMockupsMany,
+    slugify: slugify,
     remove: remove,
     childrenOf: childrenOf, removeCascade: removeCascade,
 

@@ -164,6 +164,7 @@
               : 'every open lead has a next touch booked') + '</div></div>' +
         '<div class="page-actions">' +
           '<button class="btn" id="importBtn">Import list</button>' +
+          '<button class="btn" id="mockupsBtn">Attach mockups</button>' +
           '<button class="btn btn-primary" id="newLead">+ New Lead</button>' +
         '</div>' +
       '</div>' +
@@ -265,6 +266,7 @@
 
     el.querySelector('#newLead').onclick = function () { openForm(null, root.render); };
     el.querySelector('#importBtn').onclick = function () { openImport(root.render); };
+    el.querySelector('#mockupsBtn').onclick = function () { openAttachMockups(root.render); };
     var emptyNew = el.querySelector('#emptyNew');
     if (emptyNew) emptyNew.onclick = function () { openForm(null, root.render); };
     if (params.new) openForm(null, function () { location.hash = '#/leads'; root.render(); });
@@ -1493,6 +1495,98 @@
       }
     });
     return map;
+  }
+
+  /* ── attaching a batch of mockups ────────────────────────────────
+
+     Mockups get built in bulk and published one folder per business, so
+     they arrive as a list of links with no lead id anywhere in them. Doing
+     this by hand is eighty-four searches and eighty-four dialogs, which is
+     how it ends up not being done at all - and an unrecorded mockup is
+     finished work nobody is chasing.
+
+     Matching is shown before it is applied. A link attached to the wrong
+     business is not caught until somebody presents it to them. */
+  function openAttachMockups(done) {
+    U.modal({
+      title: 'Attach mockups',
+      wide: true,
+      okText: 'Match',
+      body: '<p style="margin:0 0 14px;color:var(--text-2);font-size:13px">' +
+          'Paste the published mockup links, one per line. Each is matched to a lead by ' +
+          'the last part of its address — <span style="font-family:var(--font-mono)">' +
+          '/brazil-leads-mockups/<strong>casa-mare-floripa</strong>/</span> finds Casa Maré Floripa. ' +
+          'You will see every pairing before anything is saved.</p>' +
+        '<div class="form-grid">' +
+          '<div class="field span-2"><label>Mockup links</label>' +
+            '<textarea class="input" name="urls" rows="10" ' +
+              'style="min-height:190px;font-family:var(--font-mono);font-size:12px" ' +
+              'placeholder="https://thinkfirststudios.github.io/brazil-leads-mockups/a-baleeira/&#10;' +
+              'https://thinkfirststudios.github.io/brazil-leads-mockups/boni-restaurante/"></textarea></div>' +
+        '</div>',
+      onOk: function (box) {
+        var urls = U.values(box).urls.split(/\r?\n/).filter(function (l) { return l.trim(); });
+        if (!urls.length) { U.toast('Paste at least one link.', 'err'); return false; }
+        setTimeout(function () { previewMockups(urls, done); }, 0);
+      }
+    });
+  }
+
+  function previewMockups(urls, done) {
+    var r = S.matchMockupUrls(urls);
+    var replacing = r.matched.filter(function (m) { return m.lead.mockupUrl; }).length;
+
+    U.modal({
+      title: 'Check the matches',
+      wide: true,
+      okText: r.matched.length ? 'Attach ' + r.matched.length + ' mockup' + (r.matched.length === 1 ? '' : 's') : 'Nothing to attach',
+      body: '<div class="split" style="margin-bottom:10px;flex-wrap:wrap">' +
+          U.badge(r.matched.length + ' matched', r.matched.length ? 'b-green' : 'b-grey') +
+          (r.unmatched.length ? U.badge(r.unmatched.length + ' not matched', 'b-yellow') : '') +
+          (r.ambiguous.length ? U.badge(r.ambiguous.length + ' ambiguous', 'b-red') : '') +
+          (replacing ? U.badge(replacing + ' replacing a link already there', 'b-yellow') : '') +
+          '<span class="hint" style="margin-left:auto">Each becomes “Ready to send”.</span>' +
+        '</div>' +
+        (r.matched.length
+          ? U.table([
+              { key: 'lead', label: 'Lead', render: function (m) {
+                  return '<span class="strong">' + U.esc(m.lead.name) + '</span>' +
+                    (m.lead.mockupUrl ? '<div class="muted" style="font-size:11px">replacing an existing link</div>' : ''); } },
+              { key: 'slug', label: 'Folder', render: function (m) {
+                  return '<span style="font-family:var(--font-mono);font-size:12px">' + U.esc(m.slug) + '</span>'; } },
+              { key: 'how', label: 'Matched on', render: function (m) {
+                  return m.how === 'exact' ? '<span class="muted">name</span>'
+                    : '<span class="chip">' + U.esc(m.how) + '</span>'; } }
+            ], r.matched, {})
+          : '') +
+        (r.unmatched.length
+          ? '<div class="card" style="margin-top:12px;border-color:rgba(232,185,49,.4)"><div class="card-body">' +
+            '<strong>No lead for these ' + r.unmatched.length + ':</strong>' +
+            '<div class="hint" style="margin-top:6px">' +
+              r.unmatched.map(function (u) {
+                return U.esc(u.slug) + (u.nearest ? ' <span class="muted">— closest was ' + U.esc(u.nearest) + '</span>' : '');
+              }).join('<br>') +
+            '</div><div class="hint" style="margin-top:8px">Left alone. Rename the folder to match the lead, or fix the lead name, and paste again.</div>' +
+            '</div></div>'
+          : '') +
+        (r.ambiguous.length
+          ? '<div class="card" style="margin-top:12px;border-color:rgba(229,72,77,.4)"><div class="card-body">' +
+            '<strong>Two leads share a name, so these were not guessed:</strong>' +
+            '<div class="hint" style="margin-top:6px">' +
+              r.ambiguous.map(function (a) {
+                return U.esc(a.slug) + ' <span class="muted">— ' + U.esc(a.names.join(', ')) + '</span>';
+              }).join('<br>') +
+            '</div></div></div>'
+          : ''),
+      onOk: function () {
+        if (!r.matched.length) return false;
+        S.setMockupsMany(r.matched.map(function (m) {
+          return { id: m.lead.id, url: m.url };
+        }), r.matched.length + ' mockups attached');
+        U.toast(r.matched.length + ' mockups attached and marked ready to send.', 'ok');
+        done();
+      }
+    });
   }
 
   function openImport(done) {
