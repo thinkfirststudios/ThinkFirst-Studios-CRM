@@ -2289,6 +2289,22 @@
       return n;
     },
 
+    /* Every note on a kind of record, gathered per record in one pass.
+
+       The leads list needs this to search inside notes, and it is called
+       once per render rather than per row on purpose: asking notesFor()
+       inside the row filter is a scan of every note for every lead, which
+       is a thousand leads times a thousand notes and turns a keystroke
+       into a freeze. */
+    noteIndex: function (type) {
+      var out = {};
+      db.notes.forEach(function (n) {
+        if (n.entityType !== type || !n.body) return;
+        out[n.entityId] = out[n.entityId] ? (out[n.entityId] + ' ' + n.body) : n.body;
+      });
+      return out;
+    },
+
     /* work orders */
     workOrdersFor: function (type, id) {
       return db.workOrders.filter(function (w) { return w.entityType === type && w.entityId === id; });

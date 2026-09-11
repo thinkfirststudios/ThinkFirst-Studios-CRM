@@ -116,6 +116,8 @@
     var mineCount = S.visibleLeads().filter(function (l) {
       return seg.match(l) && l.ownerId === S.me().id;
     }).length;
+    /* One pass over the notes, not one per row. */
+    var noteIdx = S.noteIndex('lead');
     var rows = S.visibleLeads().filter(function (l) {
       if (!seg.match(l)) return false;
       if (st.rating && (l.rating || 'warm') !== st.rating) return false;
@@ -136,8 +138,12 @@
         if (st.due !== 'attention' && k !== st.due) return false;
       }
       if (st.q) {
+        /* Notes included, because what a rep learned on the phone only ever
+           lives there. "Which of these asked for a mockup" was unanswerable
+           without opening every lead in turn. */
         var hay = [l.name, l.contactName, l.email, l.phone, l.industry, l.address, l.website,
-          l.source, S.socialSearchText(l)].concat(S.tagsOf(l)).join(' ').toLowerCase();
+          l.source, S.socialSearchText(l), noteIdx[l.id] || '']
+          .concat(S.tagsOf(l)).join(' ').toLowerCase();
         if (hay.indexOf(st.q.toLowerCase()) < 0) return false;
       }
       return true;
@@ -221,7 +227,7 @@
             : '') +
       '</div>' +
       '<div class="toolbar">' +
-        '<input class="input" id="fq" placeholder="Search name, contact, email…" value="' + U.esc(st.q) + '">' +
+        '<input class="input" id="fq" placeholder="Search name, contact, email, notes…" value="' + U.esc(st.q) + '">' +
         '<select class="input" id="fdue"><option value="">Any follow-up</option>' +
           dueOpt('attention', 'Needs attention') + dueOpt('overdue', 'Overdue') +
           dueOpt('today', 'Due today') + dueOpt('unscheduled', 'Unscheduled') +
@@ -1824,7 +1830,8 @@
     var head = ['Company', 'Contact', 'Title', 'Email', 'Phone', 'Status', 'Rating',
       'Next Follow-Up', 'Last Contacted', 'Est. Value', 'Source', 'Owner', 'Industry', 'Location',
       'Website', 'Instagram', 'TikTok', 'Facebook',
-      'Mockup', 'Mockup Types', 'Mockup Link', 'Mockup Ready', 'Mockup Sent', 'Tags'];
+      'Mockup', 'Mockup Types', 'Mockup Link', 'Mockup Ready', 'Mockup Sent', 'Tags',
+      'Notes'];
     var lines = [head.join(',')].concat(rows.map(function (l) {
       return [l.name, l.contactName, l.contactTitle, l.email, l.phone,
         S.leadStatus(l.leadStatus).label, S.leadRating(l.rating).label,
@@ -1832,7 +1839,10 @@
         S.user(l.ownerId).name, l.industry, l.address, l.website,
         l.instagram, l.tiktok, l.facebook,
         S.mockupStatus(l.mockupStatus).label, S.mockupTypesOf(l).join(' | '), l.mockupUrl,
-        l.mockupReadyAt, l.mockupSentAt, S.tagsOf(l).join(' | ')]
+        l.mockupReadyAt, l.mockupSentAt, S.tagsOf(l).join(' | '),
+        /* What was actually said. An export without it is a contact list,
+           not a record of the conversation. */
+        S.notesFor('lead', l.id).map(function (n) { return n.body; }).join('  //  ')]
         .map(function (f) { return '"' + String(f == null ? '' : f).replace(/"/g, '""') + '"'; }).join(',');
     }));
     root.download('thinkfirst-leads-' + S.today() + '.csv', lines.join('\n'), 'text/csv');
