@@ -227,6 +227,9 @@
      Task, Event and logged Call, as in Salesforce. One table: they
      share every field that matters and differ only in whether they
      have a time and whether they start life already done. */
+  var CALLBACK_KIND = { id: 'callback', label: 'Call back', tone: 'b-orange', verb: 'Call back',
+    hint: 'A call you have booked with a lead, with what to say when you ring.' };
+
   var TASK_KINDS = [
     { id: 'task',  label: 'Task',  tone: 'b-blue',   verb: 'New Task',
       hint: 'Something to do by a date.' },
@@ -1457,6 +1460,11 @@
     TASK_KINDS: TASK_KINDS,
     taskKind: function (id) {
       for (var i = 0; i < TASK_KINDS.length; i++) if (TASK_KINDS[i].id === id) return TASK_KINDS[i];
+      /* Not in TASK_KINDS on purpose: that list drives the "New Task / Log a
+         Call / New Event" buttons in Activities, and a call back with no
+         lead behind it is a reminder to ring nobody. They are made from a
+         lead, and only ever shown with one. */
+      if (id === 'callback') return CALLBACK_KIND;
       return TASK_KINDS[0];
     },
     isTaskDone: function (t) { return t && t.status === 'completed'; },
@@ -1530,6 +1538,70 @@
       }, (want ? 'completed ' : 'reopened ') + t.subject);
       return find('tasks', id);
     },
+    /* ── call backs ─────────────────────────────────────────────────
+       The follow-up date says WHEN to ring a lead again. A rep who has
+       just booked somebody needs two more things the date cannot hold:
+       the time they agreed, and what to open with - "wants pricing for
+       the 3-bed listing, call after 3". Without those the list is a list
+       of names, and the context lives on a sticky note.
+
+       Stored as tasks, which already carry a date, a time, a description
+       and a link to the lead, so this needed no change to the database.
+       One open call back per lead: booking again moves it rather than
+       stacking a second reminder to ring the same person. */
+    callbackFor: function (leadId) {
+      for (var i = 0; i < db.tasks.length; i++) {
+        var t = db.tasks[i];
+        if (t.kind === 'callback' && t.entityType === 'lead' && t.entityId === leadId &&
+            !API.isTaskDone(t)) return t;
+      }
+      return null;
+    },
+
+    /* Everyone this person may ring, soonest first. Visibility comes from
+       the lead, so a rep's list is exactly their own book. */
+    callbacks: function () {
+      var byId = {};
+      API.visibleLeads().forEach(function (l) { byId[l.id] = l; });
+      return db.tasks.filter(function (t) {
+        return t.kind === 'callback' && t.entityType === 'lead' && byId[t.entityId] &&
+          !API.isTaskDone(t);
+      }).map(function (t) {
+        return { task: t, lead: byId[t.entityId] };
+      }).sort(function (a, b) {
+        return String(a.task.dueDate || '9999').localeCompare(String(b.task.dueDate || '9999')) ||
+          String(a.task.startTime || '99:99').localeCompare(String(b.task.startTime || '99:99'));
+      });
+    },
+
+    scheduleCallback: function (leadId, o) {
+      var l = find('leads', leadId);
+      if (!l) return null;
+      o = o || {};
+      var date = o.date || shift(2);
+      var existing = API.callbackFor(leadId);
+      var t;
+      if (existing) {
+        update('tasks', existing.id, {
+          dueDate: date, startTime: o.time || '', description: o.reminder || ''
+        }, 'call back with ' + l.name + ' moved to ' + date);
+        t = find('tasks', existing.id);
+      } else {
+        t = API.addTask({
+          kind: 'callback', subject: 'Call back ' + l.name, description: o.reminder || '',
+          dueDate: date, startTime: o.time || '', entityType: 'lead', entityId: leadId,
+          /* The lead's owner, not whoever clicked: an admin booking a call
+             for Josh should land on Josh's list. */
+          assigneeId: l.ownerId || meId || ''
+        });
+      }
+      /* The follow-up date and the call back are the same appointment.
+         Letting them disagree would put one person in two places on two
+         different days. */
+      if (l.nextFollowUp !== date) update('leads', leadId, { nextFollowUp: date }, 'follow-up for ' + l.name);
+      return t;
+    },
+
     /* Every route that can own an activity, so one panel serves them all. */
     entityHref: function (type, id) {
       var seg = type === 'vendor' ? 'vendors'
@@ -1931,6 +2003,17 @@
       }
       update('leads', id, patch, 'contacted ' + l.name);
       if (opts.note) API.addNote('lead', id, opts.note);
+
+      /* The call back was the reason for the call, so logging the call is
+         doing it. Only ones due by then: a call back booked for Friday is
+         still wanted when a rep happens to reach the lead on Wednesday. */
+      var on = opts.date || today();
+      db.tasks.slice().forEach(function (t) {
+        if (t.kind === 'callback' && t.entityType === 'lead' && t.entityId === id &&
+            !API.isTaskDone(t) && String(t.dueDate || '') <= on) {
+          API.completeTask(t.id, true);
+        }
+      });
       return find('leads', id);
     },
 

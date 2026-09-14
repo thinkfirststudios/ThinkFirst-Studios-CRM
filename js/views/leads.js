@@ -151,6 +151,13 @@
 
     var attention = S.leadsNeedingAttention();
 
+    /* The call-back list follows the same My leads / Everyone choice as the
+       table, so an admin looking at Josh's book sees Josh's calls. */
+    var cbMode = st.status === 'callbacks';
+    var callbacks = S.callbacks().filter(function (c) {
+      return !st.owner || c.lead.ownerId === st.owner;
+    });
+
     /* A selection only ever means "rows I can see right now". Carrying
        ids across a filter or segment change would let a bulk reset land
        on leads that scrolled out of view — the kind of edit nobody
@@ -187,8 +194,8 @@
               : 'nothing decided yet', 'ok') +
       '</div>' +
 
-      (seg.id === 'open' ? mockupCard(S.mockupsReadyToSend()) : '') +
-      (seg.id === 'open' ? attentionCard(attention) : '') +
+      (seg.id === 'open' && !cbMode ? mockupCard(S.mockupsReadyToSend()) : '') +
+      (seg.id === 'open' && !cbMode ? attentionCard(attention) : '') +
 
       '<div class="card">' +
       '<div class="toolbar" style="gap:6px">' +
@@ -198,6 +205,8 @@
             return '<button data-seg="' + U.esc(x.id) + '" class="' + (x.id === st.status ? 'on' : '') + '">' +
               U.esc(x.label) + '<span class="seg-count">' + n + '</span></button>';
           }).join('') +
+          '<button data-seg="callbacks" class="' + (cbMode ? 'on' : '') + '">' +
+            'Call backs<span class="seg-count">' + callbacks.length + '</span></button>' +
         '</div>' +
         /* Whose leads. A rep opening the CRM should be looking at their own
            book, not the whole team's - and with the list split between
@@ -226,6 +235,7 @@
             ? '<span class="hint" style="margin-left:auto">Never a fit. Kept so the same name is not chased twice.</span>'
             : '') +
       '</div>' +
+      (cbMode ? callbacksPanel(callbacks) : (
       '<div class="toolbar">' +
         '<input class="input" id="fq" placeholder="Search name, contact, email, notes…" value="' + U.esc(st.q) + '">' +
         '<select class="input" id="fdue"><option value="">Any follow-up</option>' +
@@ -268,7 +278,7 @@
           filtersActive() ? 'Try clearing the filters.' : seg.empty[1],
           seg.id === 'open' || seg.id === ''
             ? '<button class="btn btn-primary btn-sm" id="emptyNew">+ New Lead</button>' : '')
-      }) + '</div>' + bulkBar();
+      }))) + '</div>' + bulkBar();
 
     el.querySelector('#newLead').onclick = function () { openForm(null, root.render); };
     el.querySelector('#importBtn').onclick = function () { openImport(root.render); };
@@ -277,7 +287,7 @@
     if (emptyNew) emptyNew.onclick = function () { openForm(null, root.render); };
     if (params.new) openForm(null, function () { location.hash = '#/leads'; root.render(); });
 
-    bindFilter(el, '#fq', 'q', true);
+    if (el.querySelector('#fq')) bindFilter(el, '#fq', 'q', true);
     el.querySelectorAll('#segNav button').forEach(function (b) {
       b.onclick = function () { st.status = b.dataset.seg; root.render(); };
     });
@@ -291,7 +301,8 @@
      ['#fowner', 'owner'], ['#fsource', 'source'], ['#ftag', 'tag']].forEach(function (pair) {
       if (el.querySelector(pair[0])) bindFilter(el, pair[0], pair[1]);
     });
-    el.querySelector('#clear').onclick = function () {
+    var clearBtn = el.querySelector('#clear');
+    if (clearBtn) clearBtn.onclick = function () {
       /* Clears the filters, not the group — being bounced back to Active
          while reading the dead pile is not "clear", it is "cancel". */
       /* Owner is deliberately not reset. It is no longer a filter but the
@@ -301,9 +312,11 @@
       st.reach = '';
       root.render();
     };
-    el.querySelector('#exportCsv').onclick = function () { exportCsv(rows); };
+    var exportBtn = el.querySelector('#exportCsv');
+    if (exportBtn) exportBtn.onclick = function () { exportCsv(rows); };
 
     bindAttention(el);
+    bindCallbacks(el);
 
     U.bindTable(el, {
       onSort: function (k) { st.sortDir = st.sortKey === k ? -st.sortDir : 1; st.sortKey = k; root.render(); },
@@ -823,6 +836,11 @@
           '</div>' +
           '<div class="page-actions">' +
             (S.isLeadOpen(l) ? '<button class="btn btn-sm" id="logBtn">Log contact</button>' : '') +
+            (S.isLeadOpen(l)
+              ? '<button class="btn btn-sm" id="cbBtn">' +
+                  (S.callbackFor(l.id) ? 'Call back · ' + U.esc(whenLabel(S.callbackFor(l.id))) : 'Call back') +
+                '</button>'
+              : '') +
             (S.isLeadOpen(l) ? '<button class="btn btn-primary btn-sm" id="convBtn">Convert to Customer</button>' : '') +
             '<button class="btn btn-sm" id="editBtn">Edit</button>' +
             (S.canManage() ? '<button class="btn btn-sm btn-danger" id="delBtn">Delete</button>' : '') +
@@ -873,6 +891,8 @@
     el.querySelector('#editBtn').onclick = function () { openForm(l, rerender); };
     var logBtn = el.querySelector('#logBtn');
     if (logBtn) logBtn.onclick = function () { openLogContact(l.id, rerender); };
+    var cbBtn = el.querySelector('#cbBtn');
+    if (cbBtn) cbBtn.onclick = function () { openCallback(l, rerender); };
     var convBtn = el.querySelector('#convBtn');
     if (convBtn) convBtn.onclick = function () { openConvert(l, rerender); };
     var delBtn = el.querySelector('#delBtn');
@@ -1244,6 +1264,121 @@
   }
 
   /* ── log a contact ───────────────────────────────────────────── */
+  /* ── call backs ──────────────────────────────────────────────────
+     Asked for by a rep who books calls a few days out and wanted one place
+     to see them with what he promised each person. The follow-up queue
+     only shows what is due now; this shows everything booked, soonest
+     first, with the time and the reminder on the row so the call can be
+     made straight from the list. */
+  function clock(hhmm) {
+    var p = String(hhmm || '').split(':');
+    var h = parseInt(p[0], 10);
+    if (isNaN(h)) return String(hhmm || '');
+    return (h % 12 || 12) + ':' + (p[1] || '00') + (h < 12 ? ' AM' : ' PM');
+  }
+
+  function whenLabel(t) {
+    var d = S.daysUntil(t.dueDate);
+    var day = d < -1 ? Math.abs(d) + ' days late'
+      : d === -1 ? 'Yesterday'
+      : d === 0 ? 'Today'
+      : d === 1 ? 'Tomorrow'
+      : U.fmtDateShort(t.dueDate);
+    return day + (t.startTime ? ' · ' + clock(t.startTime) : '');
+  }
+
+  function whenTone(t) {
+    var d = S.daysUntil(t.dueDate);
+    return d < 0 ? 'b-red' : d === 0 ? 'b-orange' : 'b-blue';
+  }
+
+  function callbacksPanel(list) {
+    var rep = S.me().role === 'rep';
+    var head = '<div class="card-head"><span class="card-title">Call Backs</span>' +
+      '<span class="kcol-count">' + list.length + '</span>' +
+      '<div class="page-actions"><span class="hint">Soonest first. Logging the call clears it.</span></div></div>';
+    if (!list.length) {
+      return head + '<div class="card-body">' + U.empty('No call backs booked',
+        'When you log a contact, tick “Add to my call backs” — or use Call back on any lead.') + '</div>';
+    }
+    return head + list.map(function (c) {
+      var t = c.task, l = c.lead;
+      var d = S.daysUntil(t.dueDate);
+      return '<div class="wo-row" data-cbrow="' + U.esc(t.id) + '">' +
+        '<span class="prio-flag" style="background:' +
+          (d < 0 ? '#D71F24' : d === 0 ? '#AF5300' : '#3B6FD4') + '"></span>' +
+        '<div class="wo-main">' +
+          '<div class="wo-title"><a class="link" href="#/leads/' + U.esc(l.id) + '">' + U.esc(l.name) + '</a>' +
+            (l.contactName && l.contactName !== l.name
+              ? ' <span class="muted">· ' + U.esc(l.contactName) + '</span>' : '') +
+          '</div>' +
+          (t.description
+            ? '<div class="cb-reminder" style="margin:3px 0 4px">' + U.esc(t.description) + '</div>'
+            : '') +
+          '<div class="wo-sub">' +
+            (l.phone
+              ? '<a class="link mono" href="tel:' + U.esc(String(l.phone).replace(/[^0-9+]/g, '')) + '">' +
+                  U.esc(l.phone) + '</a>'
+              : '<span>no phone</span>') +
+            U.badge(S.leadStatus(l.leadStatus).label, S.leadStatus(l.leadStatus).tone) +
+            (rep ? '' : '<span>' + U.esc(S.user(l.ownerId).name) + '</span>') +
+          '</div>' +
+        '</div>' +
+        '<div class="wo-side">' +
+          U.badge(whenLabel(t), whenTone(t)) +
+          '<button class="btn btn-sm" data-logcontact="' + U.esc(l.id) + '">Log call</button>' +
+          '<button class="btn btn-ghost btn-sm" data-cbmove="' + U.esc(t.id) + '">Reschedule</button>' +
+          '<button class="btn btn-ghost btn-sm" data-cbdone="' + U.esc(t.id) + '">Done</button>' +
+        '</div></div>';
+    }).join('');
+  }
+
+  function bindCallbacks(el) {
+    el.querySelectorAll('[data-cbdone]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        var t = S.completeTask(b.dataset.cbdone, true);
+        U.toast('Call back cleared' + (t ? ' — ' + t.subject.replace('Call back ', '') : '') + '.', 'ok');
+        root.render();
+      };
+    });
+    el.querySelectorAll('[data-cbmove]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        var t = S.find('tasks', b.dataset.cbmove);
+        var l = t && S.find('leads', t.entityId);
+        if (l) openCallback(l, root.render);
+      };
+    });
+  }
+
+  /* Booking, or moving, the one call back a lead can have. */
+  function openCallback(l, done) {
+    var cur = S.callbackFor(l.id);
+    var date = cur ? cur.dueDate
+      : (l.nextFollowUp && S.daysUntil(l.nextFollowUp) >= 0 ? l.nextFollowUp : S.shift(2));
+    U.modal({
+      title: (cur ? 'Move call back — ' : 'Call back — ') + l.name,
+      okText: cur ? 'Save' : 'Add to call backs',
+      body: '<div class="form-grid">' +
+        U.field('Day', '<input class="input" type="date" name="date" value="' + U.esc(date) + '">') +
+        U.field('Time (optional)', '<input class="input" type="time" name="time" value="' + U.esc(cur ? cur.startTime : '') + '">') +
+        '<div class="field span-2"><label>What to remember</label>' +
+          '<textarea class="input" name="reminder" rows="3" placeholder="Wants pricing on the 3-bed listing. Call after 3, ask for Laura.">' +
+            U.esc(cur ? cur.description : '') + '</textarea>' +
+          '<div class="hint">Shown on the call-back list, so you can make the call without opening the lead.</div></div>' +
+      '</div>',
+      onOk: function (box) {
+        var v = U.values(box);
+        if (!v.date) { U.toast('Pick a day for the call back.', 'err'); return false; }
+        S.scheduleCallback(l.id, { date: v.date, time: v.time, reminder: v.reminder });
+        U.toast('Call back with ' + l.name + ' booked for ' +
+          whenLabel({ dueDate: v.date, startTime: v.time }) + '.', 'ok');
+        done();
+      }
+    });
+  }
+
   function openLogContact(id, done) {
     var l = S.find('leads', id);
     if (!l) return;
@@ -1266,8 +1401,26 @@
         U.field('Next Follow-Up',
           '<input class="input" type="date" name="nextFollowUp" value="' + U.esc(l.nextFollowUp && S.daysUntil(l.nextFollowUp) > 0 ? l.nextFollowUp : S.shift(7)) + '">' +
           '<div class="hint">Clearing this leaves the lead with no next touch — it will show up as needing attention.</div>', true) +
+        /* Booked here rather than in a second dialog, because the moment you
+           have just agreed a time on the phone is the moment you will
+           actually write it down. */
+        '<div class="field span-2"><label class="check">' +
+          '<input type="checkbox" name="callback" value="1" id="cbToggle"> Add to my call backs</label>' +
+          (S.callbackFor(l.id)
+            ? '<div class="hint">Already booked: ' + U.esc(whenLabel(S.callbackFor(l.id))) + '. Ticking this moves it.</div>'
+            : '<div class="hint">Uses the Next Follow-Up date above.</div>') +
+        '</div>' +
+        '<div class="field" id="cbTimeWrap" style="display:none"><label>Call back time (optional)</label>' +
+          '<input class="input" type="time" name="cbTime"></div>' +
+        '<div class="field span-2" id="cbNoteWrap" style="display:none"><label>What to remember</label>' +
+          '<input class="input" name="cbReminder" placeholder="Wants pricing — call after 3, ask for Laura"></div>' +
       '</div>',
       onMount: function (box) {
+        var cb = box.querySelector('#cbToggle');
+        cb.onchange = function () {
+          box.querySelector('#cbTimeWrap').style.display = cb.checked ? '' : 'none';
+          box.querySelector('#cbNoteWrap').style.display = cb.checked ? '' : 'none';
+        };
         var sel = box.querySelector('[name=leadStatus]');
         var field = box.querySelector('#logReason');
         var toggle = function () {
@@ -1278,11 +1431,23 @@
       },
       onOk: function (box) {
         var v = U.values(box);
+        var wantsCallback = (v.callback || []).length > 0;
+        if (wantsCallback && !v.nextFollowUp) {
+          U.toast('Set a Next Follow-Up date — that is the day of the call back.', 'err');
+          return false;
+        }
         S.logContact(l.id, {
           note: v.note, date: v.date, nextFollowUp: v.nextFollowUp,
           leadStatus: v.leadStatus, lostReason: v.lostReason
         });
-        U.toast('Contact logged for ' + l.name + '.', 'ok');
+        /* After logContact, which clears the call back that was due — so a
+           new one booked on the same call is not cleared along with it. */
+        if (wantsCallback) {
+          S.scheduleCallback(l.id, { date: v.nextFollowUp, time: v.cbTime, reminder: v.cbReminder });
+        }
+        U.toast('Contact logged for ' + l.name +
+          (wantsCallback ? ' — call back booked for ' +
+            whenLabel({ dueDate: v.nextFollowUp, startTime: v.cbTime }) : '') + '.', 'ok');
         done();
       }
     });
