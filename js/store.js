@@ -2434,6 +2434,30 @@
        inside the row filter is a scan of every note for every lead, which
        is a thousand leads times a thousand notes and turns a keystroke
        into a freeze. */
+    /* Leads someone has written a note on, with the latest one.
+
+       Almost every imported lead arrives carrying a note - "From the realtor
+       contact list", a walk-in's description - so "has a note" would flag
+       nearly every row and mean nothing. Those are written in the same
+       moment as the lead itself, so a note from within two minutes of the
+       lead being created is treated as part of the import, and anything
+       later as something a person left. One pass over the notes, built once
+       per render. */
+    leadNoteFlags: function () {
+      var born = {};
+      db.leads.forEach(function (l) { born[l.id] = Date.parse(l.createdAt || ''); });
+      var out = {};
+      db.notes.forEach(function (n) {
+        if (n.entityType !== 'lead' || !n.body || !(n.entityId in born)) return;
+        var made = Date.parse(n.createdAt || '');
+        if (!isNaN(made) && !isNaN(born[n.entityId]) && Math.abs(made - born[n.entityId]) < 120000) return;
+        var f = out[n.entityId] || (out[n.entityId] = { count: 0, latest: null });
+        f.count++;
+        if (!f.latest || String(n.createdAt || '') > String(f.latest.createdAt || '')) f.latest = n;
+      });
+      return out;
+    },
+
     noteIndex: function (type) {
       var out = {};
       db.notes.forEach(function (n) {

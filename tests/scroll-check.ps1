@@ -95,11 +95,14 @@ $driver = @'
     setTimeout(function () {
       say('changing screen scrolls to the top', y() === 0, y());
 
-      // ...and coming back to a screen also starts at the top.
+      // ...but coming BACK to a screen returns you to where you were on it.
+      // It used to start at the top, which put a rep working down a long
+      // list back at row one every time they opened a lead and came back.
       window.scrollTo(0, 300);
       location.hash = '#/leads';
       setTimeout(function () {
-        say('and so does coming back', y() === 0, y());
+        say('coming back returns to where you were', Math.abs(y() - parked) < 5,
+            'was ' + parked + ', now ' + y());
         finish();
       }, 60);
     }, 60);

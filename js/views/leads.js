@@ -94,6 +94,8 @@
 
   /* ── list ────────────────────────────────────────────────────── */
   root.Views.leads = function (el, params) {
+    /* A repaint replaces the row the menu was pointing at. */
+    hideStatusMenu();
     if (params.id) return detail(el, params.id);
 
     var stats = S.leadStats();
@@ -327,6 +329,7 @@
       onRow: function (id) { location.hash = '#/leads/' + id; }
     });
     bindBulk(el, rows);
+    bindStatusPicks(el);
 
     function dueOpt(v, label) {
       return '<option value="' + v + '"' + (st.due === v ? ' selected' : '') + '>' + label + '</option>';
@@ -367,6 +370,122 @@
   /* A button per link the lead has. Labelled by kind, so a lead with both
      a website and a design mockup shows which is which instead of two
      identical "View" buttons. */
+  /* ── a note someone left ──────────────────────────────────────────
+     Shown before the name, so you know there is something to read before
+     you ring - and the latest note is in the tooltip, so often you do not
+     need to open the lead at all. */
+  function noteFlagIcon(f) {
+    var n = f.latest;
+    var who = n && n.authorId ? S.user(n.authorId).name.split(' ')[0] : '';
+    var when = n && n.createdAt ? U.fmtDateShort(String(n.createdAt).slice(0, 10)) : '';
+    var body = n ? String(n.body).replace(/\s+/g, ' ') : '';
+    if (body.length > 160) body = body.slice(0, 157) + '…';
+    var tip = (f.count === 1 ? '1 note' : f.count + ' notes') +
+      (n ? ' · latest' + (when ? ' ' + when : '') + (who ? ' by ' + who : '') + ': ' + body : '');
+    return '<span class="note-flag" data-noteflag="' + f.count + '" title="' + U.esc(tip) + '" aria-label="' + U.esc(tip) + '">' +
+      '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M5 3h10l4 4v14H5z"/><path d="M15 3v4h4"/>' +
+      '<path d="M8.5 12h7M8.5 15.5h7M8.5 8.5h3"/></svg>' +
+      (f.count > 1 ? '<span class="note-flag-count">' + f.count + '</span>' : '') +
+    '</span>';
+  }
+
+  /* ── quick status change from the list ────────────────────────────
+     One menu for the whole table, fixed to the viewport. The table sits in
+     a card that clips its overflow, so a menu inside the cell would be cut
+     off on the bottom rows - exactly the ones you reach after scrolling. */
+  var statusMenu = null, statusMenuFor = null, statusHideTimer = null;
+
+  function hideStatusMenu() {
+    clearTimeout(statusHideTimer);
+    if (statusMenu) statusMenu.hidden = true;
+    statusMenuFor = null;
+  }
+
+  function showStatusMenu(pick) {
+    clearTimeout(statusHideTimer);
+    var l = S.find('leads', pick.dataset.statuspick);
+    if (!l) return;
+    if (!statusMenu) {
+      statusMenu = document.createElement('div');
+      statusMenu.id = 'statusMenu';
+      statusMenu.className = 'status-menu';
+      statusMenu.hidden = true;
+      document.body.appendChild(statusMenu);
+      statusMenu.onmouseenter = function () { clearTimeout(statusHideTimer); };
+      statusMenu.onmouseleave = function () { statusHideTimer = setTimeout(hideStatusMenu, 180); };
+      statusMenu.onclick = function (e) {
+        var b = e.target.closest('[data-setstatus]');
+        if (!b) return;
+        e.stopPropagation();
+        var lead = S.find('leads', statusMenuFor);
+        var to = b.dataset.setstatus;
+        hideStatusMenu();
+        if (lead) quickSetStatus(lead, to);
+      };
+    }
+    statusMenuFor = l.id;
+    statusMenu.innerHTML = S.LEAD_STATUSES.filter(function (x) { return x.id !== 'converted'; })
+      .map(function (x) {
+        var cur = x.id === l.leadStatus;
+        return '<button type="button" class="status-opt' + (cur ? ' is-current' : '') + '" data-setstatus="' + x.id + '"' +
+          (cur ? ' disabled' : '') + '>' + U.badge(x.label, x.tone) +
+          (cur ? '<span class="muted">current</span>' : '') + '</button>';
+      }).join('');
+    var r = pick.getBoundingClientRect();
+    statusMenu.hidden = false;
+    var h = statusMenu.offsetHeight;
+    var top = r.bottom + 4;
+    /* Open upward near the bottom of the window rather than off-screen. */
+    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 4);
+    statusMenu.style.top = top + 'px';
+    statusMenu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - statusMenu.offsetWidth - 8)) + 'px';
+  }
+
+  function quickSetStatus(l, to) {
+    var target = S.leadStatus(to);
+    if (target.open) {
+      S.update('leads', l.id, { leadStatus: to }, l.name + ' → ' + target.label);
+      U.toast(l.name + ' moved to ' + target.label + '.', 'ok');
+      root.render();
+      return;
+    }
+    /* Closing a lead asks why, the same as Log contact does - the reason is
+       the only thing that tells you later whether it was worth a second try. */
+    U.modal({
+      title: 'Mark ' + l.name + ' as ' + target.label,
+      okText: 'Mark ' + target.label,
+      body: '<div class="form-grid"><div class="field span-2"><label>Why? (optional)</label>' +
+        '<input class="input" name="lostReason" value="' + U.esc(l.lostReason || '') + '" ' +
+          'placeholder="' + (to === 'dead' ? 'Stopped replying after three attempts' : 'Not a fit for what we do') + '">' +
+        '<div class="hint">' + U.esc(target.hint || '') + '</div></div></div>',
+      onOk: function (box) {
+        var v = U.values(box);
+        S.update('leads', l.id, { leadStatus: to, lostReason: v.lostReason || '' }, l.name + ' → ' + target.label);
+        U.toast(l.name + ' marked ' + target.label + '.', 'ok');
+        root.render();
+      }
+    });
+  }
+
+  function bindStatusPicks(el) {
+    el.querySelectorAll('[data-statuspick]').forEach(function (pick) {
+      pick.onmouseenter = function () { showStatusMenu(pick); };
+      pick.onmouseleave = function () {
+        statusHideTimer = setTimeout(hideStatusMenu, 180);
+      };
+      /* Tapping works too - there is no hover on a phone. */
+      pick.onclick = function (e) {
+        e.stopPropagation();
+        if (statusMenu && !statusMenu.hidden && statusMenuFor === pick.dataset.statuspick) hideStatusMenu();
+        else showStatusMenu(pick);
+      };
+      pick.onkeydown = function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showStatusMenu(pick); }
+        if (e.key === 'Escape') hideStatusMenu();
+      };
+    });
+  }
+
   function mockupLinkButtons(l) {
     return S.mockupLinksOf(l).map(function (m) {
       return '<a class="btn btn-ghost btn-sm" data-mockuplink="' + U.esc(m.kind) + '" href="' +
@@ -819,6 +938,8 @@
   }
 
   function cols(rows) {
+    /* Built once for the whole table, not asked per row. */
+    var noteFlags = S.leadNoteFlags();
     return [
       /* No sort on this column. Sorting by "is it ticked" is not a thing
          anyone wants, and a sortable header would swallow the click that
@@ -831,6 +952,7 @@
         } },
       { key: 'name', label: 'Lead', sort: function (l) { return l.name; },
         render: function (l) {
+          var flag = noteFlags[l.id];
           /* For a business the contact is a different person and worth a
              line. For a sole trader — every realtor on the list — the lead
              IS the contact, and printing the name twice just takes up the
@@ -842,7 +964,7 @@
           /* Email stays here because it is long and varies wildly in
              width; the phone gets its own column, where a fixed position
              is what makes a calling list scannable. */
-          return '<div><span class="link">' + U.esc(l.name) + '</span>' +
+          return '<div>' + (flag ? noteFlagIcon(flag) : '') + '<span class="link">' + U.esc(l.name) + '</span>' +
             (sub.length
               ? '<div class="muted" style="font-size:11.5px">' + sub.join(' · ') + '</div>' : '') +
             (l.email
@@ -867,7 +989,14 @@
       { key: 'status', label: 'Status', sort: function (l) { return S.leadStatus(l.leadStatus).order; },
         render: function (l) {
           var x = S.leadStatus(l.leadStatus);
-          return U.badge(x.label, x.tone) +
+          /* Open leads get a picker on the pill itself, so working down a
+             calling list does not mean opening every lead to move it along.
+             Closed and converted ones keep a plain pill: bringing a dead lead
+             back has its own step, which books the next touch. */
+          return (S.isLeadOpen(l)
+              ? '<span class="status-pick" tabindex="0" data-statuspick="' + U.esc(l.id) + '" ' +
+                  'title="Change status">' + U.badge(x.label, x.tone) + '<span class="status-caret">▾</span></span>'
+              : U.badge(x.label, x.tone)) +
             (l.convertedCustomerId
               ? '<div style="margin-top:3px"><a class="link" style="font-size:11px" href="#/accounts/' +
                 U.esc(l.convertedCustomerId) + '">view account →</a></div>'

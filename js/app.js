@@ -66,6 +66,9 @@
       try { typing.start = was.selectionStart; typing.end = was.selectionEnd; } catch (e) { /* no caret */ }
     }
 
+    var key = r.name + '/' + (r.params.id || '');
+    var changed = key !== lastRoute;
+
     try {
       view(viewEl, r.params);
       /* Only if the repaint is what took the focus away. If something else
@@ -95,14 +98,40 @@
        realtime. Scrolling on every call meant reading down a long list
        and being thrown back to the top a moment later by an edit that had
        nothing to do with where you were looking. */
-    var key = r.name + '/' + (r.params.id || '');
-    if (key !== lastRoute) {
+    if (changed) {
       lastRoute = key;
-      window.scrollTo(0, 0);
+      /* Back to where you were on this screen, or the top if it is new.
+         Going into a lead and coming back used to land at the top of a
+         two-thousand-row list, which is the worst place to be put when you
+         were working down it. */
+      window.scrollTo(0, scrolls[key] || 0);
     }
     paintUserChip();
   }
   var lastRoute = null;
+
+  /* ── where you were on each screen ───────────────────────────────
+     Kept per screen, and in sessionStorage so it also survives a reload -
+     the new-version banner reloads the page, and a phone browser throws a
+     backgrounded tab away and reloads it when you come back to it. It lives
+     only as long as the tab, so a fresh visit still starts at the top. */
+  var SCROLL_KEY = 'crm:scroll';
+  var scrolls = {};
+  try { scrolls = JSON.parse(sessionStorage.getItem(SCROLL_KEY) || '{}') || {}; } catch (e) { scrolls = {}; }
+  var scrollSaveTimer = null;
+  window.addEventListener('scroll', function () {
+    if (!lastRoute) return;
+    scrolls[lastRoute] = window.scrollY || window.pageYOffset || 0;
+    if (scrollSaveTimer) return;
+    scrollSaveTimer = setTimeout(function () {
+      scrollSaveTimer = null;
+      try { sessionStorage.setItem(SCROLL_KEY, JSON.stringify(scrolls)); } catch (e) { /* private mode */ }
+    }, 250);
+  }, { passive: true });
+  /* The last position, written before the page goes away, however it goes. */
+  window.addEventListener('pagehide', function () {
+    try { sessionStorage.setItem(SCROLL_KEY, JSON.stringify(scrolls)); } catch (e) { /* private mode */ }
+  });
   root.render = render;
 
   /* ── "you are running an old build" banner ───────────────────────

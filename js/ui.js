@@ -380,7 +380,7 @@
     if (opts.onRow) {
       container.querySelectorAll('tr.row-link').forEach(function (tr) {
         tr.onclick = function (e) {
-          if (e.target.closest('button,a,input,select')) return;
+          if (e.target.closest('button,a,input,select,[data-statuspick]')) return;
           opts.onRow(tr.dataset.id);
         };
       });
