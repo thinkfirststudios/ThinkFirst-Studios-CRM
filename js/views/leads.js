@@ -47,6 +47,8 @@
              mockupShown: PAGE, attentionShown: PAGE,
              /* Whether the on-hold mockups are expanded under the ready ones. */
              showHeld: false,
+             /* Whose mockups the ready card is showing: '' for everyone. */
+             mockupOwner: '',
              /* Ticked rows, keyed by lead id. Pruned on every render to
                 what the filters actually show — see below. */
              selected: {} };
@@ -365,10 +367,45 @@
   function mockupCard(list, held) {
     held = held || [];
     if (!list.length && !held.length) return '';
+
+    /* One button per person with mockups waiting, so a manager can work
+       Cassius's pile or Josh's without the other's in the way. Built from
+       whoever actually has some, ready or held, so there is never a button
+       that leads to an empty card. */
+    var owners = {}, order = [];
+    list.concat(held).forEach(function (l) {
+      if (!owners[l.ownerId]) { owners[l.ownerId] = { id: l.ownerId, ready: 0 }; order.push(owners[l.ownerId]); }
+    });
+    list.forEach(function (l) { owners[l.ownerId].ready++; });
+    order.sort(function (a, b) {
+      return b.ready - a.ready || S.user(a.id).name.localeCompare(S.user(b.id).name);
+    });
+    /* A filter left on somebody who no longer has any would show an empty
+       card with no obvious way back. */
+    if (st.mockupOwner && !owners[st.mockupOwner]) st.mockupOwner = '';
+    var total = list.length;
+    if (st.mockupOwner) {
+      list = list.filter(function (l) { return l.ownerId === st.mockupOwner; });
+      held = held.filter(function (l) { return l.ownerId === st.mockupOwner; });
+    }
+    var ownerNav = order.length > 1
+      ? '<div class="seg" id="mockupOwnerNav">' +
+          '<button data-mockupowner="" class="' + (st.mockupOwner ? '' : 'on') + '">All' +
+            '<span class="seg-count">' + total + '</span></button>' +
+          order.map(function (o) {
+            return '<button data-mockupowner="' + U.esc(o.id) + '" class="' +
+                (st.mockupOwner === o.id ? 'on' : '') + '">' +
+              U.esc(S.user(o.id).name.split(' ')[0]) +
+              '<span class="seg-count">' + o.ready + '</span></button>';
+          }).join('') +
+        '</div>'
+      : '';
+
     return '<div class="card" style="margin-bottom:14px;border-color:rgba(232,185,49,.4)">' +
       '<div class="card-head"><span class="card-title">Mockups Ready To Send</span>' +
         '<span class="kcol-count">' + list.length + '</span>' +
-        '<div class="page-actions"><span class="hint">Built already — not sent yet</span></div></div>' +
+        '<div class="page-actions">' + ownerNav +
+          (ownerNav ? '' : '<span class="hint">Built already — not sent yet</span>') + '</div></div>' +
       (!list.length
         ? '<div class="card-body"><span class="hint">Nothing waiting to go out.</span></div>'
         : '') +
@@ -478,6 +515,14 @@
   }
 
   function bindAttention(el) {
+    el.querySelectorAll('[data-mockupowner]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        st.mockupOwner = b.dataset.mockupowner;
+        st.mockupShown = PAGE;
+        root.render();
+      };
+    });
     el.querySelectorAll('[data-more]').forEach(function (b) {
       b.onclick = function (e) {
         e.stopPropagation();
