@@ -364,6 +364,24 @@
   /* Finished mockups nobody has sent. Placed ABOVE the follow-up queue
      because it is the more expensive failure: a follow-up you miss costs
      a phone call, a mockup you never send cost you an afternoon. */
+  /* A button per link the lead has. Labelled by kind, so a lead with both
+     a website and a design mockup shows which is which instead of two
+     identical "View" buttons. */
+  function mockupLinkButtons(l) {
+    return S.mockupLinksOf(l).map(function (m) {
+      return '<a class="btn btn-ghost btn-sm" data-mockuplink="' + U.esc(m.kind) + '" href="' +
+        U.esc(href(m.url)) + '" target="_blank" rel="noopener">' + U.esc(m.label) + '</a>';
+    }).join('');
+  }
+
+  function mockupLinkLines(l, size) {
+    return S.mockupLinksOf(l).map(function (m) {
+      return '<div style="margin-top:4px;font-size:' + size + ';word-break:break-all">' +
+        '<span class="muted">' + U.esc(m.label) + ':</span> ' +
+        '<a class="link" href="' + U.esc(href(m.url)) + '" target="_blank" rel="noopener">' + U.esc(m.url) + '</a></div>';
+    }).join('');
+  }
+
   function mockupCard(list, held) {
     held = held || [];
     if (!list.length && !held.length) return '';
@@ -427,9 +445,7 @@
             '</div>' +
           '</div>' +
           '<div class="wo-side">' +
-            (l.mockupUrl
-              ? '<a class="btn btn-ghost btn-sm" href="' + U.esc(href(l.mockupUrl)) + '" target="_blank" rel="noopener">View</a>'
-              : '') +
+            mockupLinkButtons(l) +
             '<button class="btn btn-ghost btn-sm" data-holdmockup="' + U.esc(l.id) + '" ' +
               'title="Keep it, but stop it asking to be sent">Hold</button>' +
             '<button class="btn btn-sm" data-marksent="' + U.esc(l.id) + '">Mark sent</button>' +
@@ -468,9 +484,7 @@
                 '</div>' +
               '</div>' +
               '<div class="wo-side">' +
-                (l.mockupUrl
-                  ? '<a class="btn btn-ghost btn-sm" href="' + U.esc(href(l.mockupUrl)) + '" target="_blank" rel="noopener">View</a>'
-                  : '') +
+                mockupLinkButtons(l) +
                 '<button class="btn btn-sm" data-unholdmockup="' + U.esc(l.id) + '">Back to ready</button>' +
               '</div></div>';
           }).join('')
@@ -1105,11 +1119,7 @@
     var types = S.mockupTypesOf(l);
     return U.badge(m.status.label, m.status.tone) +
       (types.length ? ' <span class="muted" style="font-size:11.5px">' + U.esc(types.join(', ')) + '</span>' : '') +
-      (l.mockupUrl
-        ? '<div style="margin-top:4px"><a class="link" href="' + U.esc(href(l.mockupUrl)) +
-          '" target="_blank" rel="noopener" style="font-size:12px;word-break:break-all">' +
-          U.esc(l.mockupUrl) + '</a></div>'
-        : '') +
+      mockupLinkLines(l, '12px') +
       (l.mockupSentAt
         ? '<div class="muted" style="font-size:11px;margin-top:3px">Sent ' + U.fmtDate(l.mockupSentAt) + '</div>'
         : l.mockupReadyAt
@@ -1165,9 +1175,8 @@
           (m.stale ? U.badge(m.waiting + ' days waiting', 'b-red') : '') + '</div>' +
         (types.length ? '<div class="chips" style="margin-bottom:10px">' +
           types.map(function (t) { return '<span class="chip">' + U.esc(t) + '</span>'; }).join('') + '</div>' : '') +
-        (l.mockupUrl
-          ? '<a class="link" href="' + U.esc(href(l.mockupUrl)) + '" target="_blank" rel="noopener" ' +
-            'style="font-size:12.5px;word-break:break-all">' + U.esc(l.mockupUrl) + '</a>'
+        (S.mockupLinksOf(l).length
+          ? mockupLinkLines(l, '12.5px')
           : '<div class="muted" style="font-size:12.5px">No link saved.</div>') +
         '<div class="muted" style="font-size:11.5px;margin-top:8px">' +
           (l.mockupReadyAt ? 'Finished ' + U.fmtDateShort(l.mockupReadyAt) : '') +
@@ -1211,9 +1220,13 @@
         U.field('Status',
           '<select class="input" name="mockupStatus">' + U.options(S.MOCKUP_STATUSES, to) + '</select>' +
           '<div class="hint" id="mockupHint">' + U.esc(S.mockupStatus(to).hint) + '</div>') +
-        U.field('Link to the mockup',
-          '<input class="input" name="mockupUrl" placeholder="figma.com/… or a Drive link" value="' +
-            U.esc(l.mockupUrl || '') + '">') +
+        S.MOCKUP_LINKS.map(function (m) {
+          var ready = S.columnReady('leads', m.key);
+          return U.field(m.field,
+            '<input class="input" name="' + m.key + '" placeholder="' + U.esc(m.placeholder) + '" value="' +
+              U.esc(l[m.key] || '') + '"' + (ready ? '' : ' disabled') + '>' +
+            (ready ? '' : '<div class="hint">Turns on once supabase/mockup-design-link.sql has been run.</div>'));
+        }).join('') +
         '<div class="field span-2"><label>What did you build?</label>' +
           '<div class="checks">' + S.MOCKUP_TYPES.map(function (t) {
             return '<label class="check"><input type="checkbox" name="mockupTypes" value="' + U.esc(t) + '"' +
@@ -1241,10 +1254,16 @@
         var v = U.values(box);
         var patch = {
           mockupStatus: v.mockupStatus,
-          mockupUrl: v.mockupUrl,
           mockupTypes: Array.isArray(v.mockupTypes) ? v.mockupTypes : [],
           note: v.note
         };
+        S.MOCKUP_LINKS.forEach(function (m) {
+          if (!S.columnReady('leads', m.key)) return;
+          patch[m.key] = v[m.key] || '';
+          /* A link for a kind of mockup means that kind was built, so the
+             tick follows the link instead of relying on someone to add it. */
+          if (patch[m.key] && patch.mockupTypes.indexOf(m.type) < 0) patch.mockupTypes.push(m.type);
+        });
         /* Only touch the follow-up when this is the send step; otherwise
            editing a link would quietly reschedule the lead. */
         if (v.mockupStatus === 'sent') patch.nextFollowUp = v.nextFollowUp;
@@ -1803,6 +1822,16 @@
           '/brazil-leads-mockups/<strong>casa-mare-floripa</strong>/</span> finds Casa Maré Floripa. ' +
           'You will see every pairing before anything is saved.</p>' +
         '<div class="form-grid">' +
+          U.field('These links are',
+            '<select class="input" name="kind">' +
+              S.MOCKUP_LINKS.map(function (m) {
+                var ready = S.columnReady('leads', m.key);
+                return '<option value="' + m.kind + '"' + (ready ? '' : ' disabled') + '>' +
+                  U.esc(m.type) + ' mockups' + (ready ? '' : ' (needs the database update)') + '</option>';
+              }).join('') +
+            '</select>' +
+            '<div class="hint">Each kind has its own link on the lead, so a batch of design mockups ' +
+              'never overwrites the website ones.</div>', true) +
           '<div class="field span-2"><label>Mockup links</label>' +
             '<textarea class="input" name="urls" rows="10" ' +
               'style="min-height:190px;font-family:var(--font-mono);font-size:12px" ' +
@@ -1810,19 +1839,22 @@
               'https://thinkfirststudios.github.io/brazil-leads-mockups/boni-restaurante/"></textarea></div>' +
         '</div>',
       onOk: function (box) {
-        var urls = U.values(box).urls.split(/\r?\n/).filter(function (l) { return l.trim(); });
+        var vals = U.values(box);
+        var urls = vals.urls.split(/\r?\n/).filter(function (l) { return l.trim(); });
         if (!urls.length) { U.toast('Paste at least one link.', 'err'); return false; }
-        setTimeout(function () { previewMockups(urls, done); }, 0);
+        var kind = vals.kind || 'website';
+        setTimeout(function () { previewMockups(urls, kind, done); }, 0);
       }
     });
   }
 
-  function previewMockups(urls, done) {
+  function previewMockups(urls, kind, done) {
+    var slot = S.mockupLink(kind);
     var r = S.matchMockupUrls(urls);
-    var replacing = r.matched.filter(function (m) { return m.lead.mockupUrl; }).length;
+    var replacing = r.matched.filter(function (m) { return m.lead[slot.key]; }).length;
 
     U.modal({
-      title: 'Check the matches',
+      title: 'Check the matches — ' + slot.type + ' mockups',
       wide: true,
       okText: r.matched.length ? 'Attach ' + r.matched.length + ' mockup' + (r.matched.length === 1 ? '' : 's') : 'Nothing to attach',
       body: '<div class="split" style="margin-bottom:10px;flex-wrap:wrap">' +
@@ -1836,7 +1868,8 @@
           ? U.table([
               { key: 'lead', label: 'Lead', render: function (m) {
                   return '<span class="strong">' + U.esc(m.lead.name) + '</span>' +
-                    (m.lead.mockupUrl ? '<div class="muted" style="font-size:11px">replacing an existing link</div>' : ''); } },
+                    (m.lead[slot.key] ? '<div class="muted" style="font-size:11px">replacing its ' +
+                      U.esc(slot.label.toLowerCase()) + ' link</div>' : ''); } },
               { key: 'slug', label: 'Folder', render: function (m) {
                   return '<span style="font-family:var(--font-mono);font-size:12px">' + U.esc(m.slug) + '</span>'; } },
               { key: 'how', label: 'Matched on', render: function (m) {
@@ -1866,9 +1899,9 @@
       onOk: function () {
         if (!r.matched.length) return false;
         S.setMockupsMany(r.matched.map(function (m) {
-          return { id: m.lead.id, url: m.url };
-        }), r.matched.length + ' mockups attached');
-        U.toast(r.matched.length + ' mockups attached and marked ready to send.', 'ok');
+          return { id: m.lead.id, url: m.url, kind: slot.kind };
+        }), r.matched.length + ' ' + slot.type.toLowerCase() + ' mockups attached');
+        U.toast(r.matched.length + ' ' + slot.type.toLowerCase() + ' mockups attached and marked ready to send.', 'ok');
         done();
       }
     });
@@ -2109,7 +2142,7 @@
     var head = ['Company', 'Contact', 'Title', 'Email', 'Phone', 'Status', 'Rating',
       'Next Follow-Up', 'Last Contacted', 'Est. Value', 'Source', 'Owner', 'Industry', 'Location',
       'Website', 'Instagram', 'TikTok', 'Facebook',
-      'Mockup', 'Mockup Types', 'Mockup Link', 'Mockup Ready', 'Mockup Sent', 'Tags',
+      'Mockup', 'Mockup Types', 'Website Mockup Link', 'Design Mockup Link', 'Mockup Ready', 'Mockup Sent', 'Tags',
       'Notes'];
     var lines = [head.join(',')].concat(rows.map(function (l) {
       return [l.name, l.contactName, l.contactTitle, l.email, l.phone,
@@ -2117,7 +2150,7 @@
         l.nextFollowUp, l.lastContactedAt, l.estValue, l.source,
         S.user(l.ownerId).name, l.industry, l.address, l.website,
         l.instagram, l.tiktok, l.facebook,
-        S.mockupStatus(l.mockupStatus).label, S.mockupTypesOf(l).join(' | '), l.mockupUrl,
+        S.mockupStatus(l.mockupStatus).label, S.mockupTypesOf(l).join(' | '), l.mockupUrl, l.mockupDesignUrl,
         l.mockupReadyAt, l.mockupSentAt, S.tagsOf(l).join(' | '),
         /* What was actually said. An export without it is a contact list,
            not a record of the conversation. */

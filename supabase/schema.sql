@@ -683,7 +683,9 @@ alter table public.leads
 alter table public.leads
   add column if not exists "mockupTypes"   jsonb not null default '[]'::jsonb;
 alter table public.leads
-  add column if not exists "mockupUrl"     text not null default '';
+  add column if not exists "mockupUrl"     text not null default '';        -- the website mockup
+alter table public.leads
+  add column if not exists "mockupDesignUrl" text not null default '';      -- the graphic design mockup
 alter table public.leads
   add column if not exists "mockupReadyAt" text not null default '';
 alter table public.leads

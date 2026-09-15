@@ -157,6 +157,7 @@
     instagram: 'Social handles', tiktok: 'Social handles', facebook: 'Social handles',
     mockupStatus: 'Mockup tracking', mockupTypes: 'Mockup tracking',
     mockupUrl: 'Mockup tracking', mockupReadyAt: 'Mockup tracking', mockupSentAt: 'Mockup tracking',
+    mockupDesignUrl: 'Graphic design mockup links',
     lostReason: 'Lead close reasons', outreachId: 'Outreach attribution',
     accountType: 'Account types', billingType: 'Billing types', tags: 'Tags',
     mrrGoalCents: 'The MRR goal', outreachDailyGoal: 'The outreach target',

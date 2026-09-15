@@ -172,6 +172,18 @@
 
   var MOCKUP_TYPES = ['Website', 'Graphic Design', 'Logo', 'Social Media', 'Print'];
 
+  /* Where each kind of mockup's link lives. A lead used to hold one link,
+     which was fine while every mockup was a website; once graphic design
+     work is being pitched too, the second link had nowhere to go and got
+     pasted over the first. mockupUrl keeps its name - it is the website
+     link, and renaming a column would strand every link already saved. */
+  var MOCKUP_LINKS = [
+    { key: 'mockupUrl',       type: 'Website',        label: 'Website', field: 'Website mockup link',
+      kind: 'website', placeholder: 'thinkfirststudios.github.io/… or a Figma link' },
+    { key: 'mockupDesignUrl', type: 'Graphic Design', label: 'Design',  field: 'Graphic design mockup link',
+      kind: 'design',  placeholder: 'Canva, Drive or a Figma link' }
+  ];
+
   var LEAD_SOURCES = ['Referral', 'Website Form', 'Google Ads', 'Cold Outreach',
     'Instagram', 'Facebook', 'LinkedIn', 'Networking', 'Walk-In', 'Repeat Client', 'List / Import'];
 
@@ -1070,14 +1082,20 @@
      rather than eighty-four. */
   function setMockupsMany(pairs, label) {
     if (!pairs || !pairs.length) return [];
-    var want = {};
-    pairs.forEach(function (p) { want[p.id] = p.url; });
+    var want = {}, kindOf = {};
+    pairs.forEach(function (p) { want[p.id] = p.url; kindOf[p.id] = p.kind || 'website'; });
 
     var touched = [];
     (db.leads || []).forEach(function (rec) {
       var url = want[rec.id];
       if (url === undefined) return;
-      rec.mockupUrl = url;
+      /* A batch is all one kind, so a design link lands in the design slot
+         and never overwrites the website mockup already on the lead. */
+      var slot = API.mockupLink(kindOf[rec.id]);
+      rec[slot.key] = url;
+      var types = (rec.mockupTypes || []).slice();
+      if (types.indexOf(slot.type) < 0) types.push(slot.type);
+      rec.mockupTypes = types;
       /* Built and not yet sent - which is what puts it on the "ready to
          send" card, the whole point of recording it. A mockup already
          marked sent is left alone; re-attaching a link is not un-sending. */
@@ -1909,6 +1927,23 @@
     /* ── mockups ────────────────────────────────────────────────── */
     MOCKUP_STATUSES: MOCKUP_STATUSES,
     MOCKUP_TYPES: MOCKUP_TYPES,
+    MOCKUP_LINKS: MOCKUP_LINKS,
+    mockupLink: function (kind) {
+      for (var i = 0; i < MOCKUP_LINKS.length; i++) if (MOCKUP_LINKS[i].kind === kind) return MOCKUP_LINKS[i];
+      return MOCKUP_LINKS[0];
+    },
+    /* The links a lead actually has, in a fixed order, ready to render. */
+    mockupLinksOf: function (l) {
+      return MOCKUP_LINKS.filter(function (m) { return l && l[m.key]; })
+        .map(function (m) { return { key: m.key, kind: m.kind, label: m.label, type: m.type, url: l[m.key] }; });
+    },
+    /* Whether the database can hold a column yet. A field it cannot hold is
+       dropped from every save, so offering it would let someone type a link
+       that silently never arrives. */
+    columnReady: function (table, column) {
+      var gone = (B.missingColumns || {})[table];
+      return !(gone && gone.indexOf(column) > -1);
+    },
     mockupStatus: function (id) {
       for (var i = 0; i < MOCKUP_STATUSES.length; i++) if (MOCKUP_STATUSES[i].id === id) return MOCKUP_STATUSES[i];
       return MOCKUP_STATUSES[0];                 // no value means none
@@ -1981,6 +2016,7 @@
       var next = {};
       if (patch.mockupStatus !== undefined) next.mockupStatus = patch.mockupStatus;
       if (patch.mockupUrl !== undefined) next.mockupUrl = patch.mockupUrl;
+      if (patch.mockupDesignUrl !== undefined) next.mockupDesignUrl = patch.mockupDesignUrl;
       if (patch.mockupTypes !== undefined) next.mockupTypes = patch.mockupTypes;
 
       var to = next.mockupStatus || l.mockupStatus || 'none';
@@ -2153,9 +2189,11 @@
 
       /* The mockup is what won the deal — it belongs on the account, not
          only on the lead record nobody opens again. */
-      if (lead.mockupUrl) {
+      var won = API.mockupLinksOf(lead);
+      if (won.length) {
         API.addNote('customer', account.id,
-          'Mockup that won this account: ' + lead.mockupUrl +
+          'Mockup' + (won.length > 1 ? 's' : '') + ' that won this account: ' +
+          won.map(function (m) { return m.label + ' ' + m.url; }).join(' · ') +
           (API.mockupTypesOf(lead).length ? ' (' + API.mockupTypesOf(lead).join(', ') + ')' : ''));
       }
 
