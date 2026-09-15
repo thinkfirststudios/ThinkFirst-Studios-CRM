@@ -159,7 +159,14 @@
       hint: 'Being built now.' },
     { id: 'ready',      label: 'Ready to send', tone: 'b-yellow', order: 3, made: true,  sent: false,
       hint: 'Built and waiting. Finished work that is not earning anything until it goes out.' },
-    { id: 'sent',       label: 'Sent',         tone: 'b-green',  order: 4, made: true,  sent: true,
+    /* Built, and deliberately not sent yet - the wrong week, waiting on a
+       decision, holding it for a walk-in. Kept apart from "ready" because
+       the ready card is a nag, and a nag about something you chose to wait
+       on is noise that trains people to ignore the card. Nothing is lost:
+       the link, the finish date and the types all stay. */
+    { id: 'hold',       label: 'On hold',      tone: 'b-grey',   order: 4, made: true,  sent: false,
+      hint: 'Built, but held back on purpose. Kept off the ready-to-send list until you take it off hold.' },
+    { id: 'sent',       label: 'Sent',         tone: 'b-green',  order: 5, made: true,  sent: true,
       hint: 'Delivered to them.' }
   ];
 
@@ -1074,7 +1081,7 @@
       /* Built and not yet sent - which is what puts it on the "ready to
          send" card, the whole point of recording it. A mockup already
          marked sent is left alone; re-attaching a link is not un-sending. */
-      if (rec.mockupStatus !== 'sent') rec.mockupStatus = 'ready';
+      if (rec.mockupStatus !== 'sent' && rec.mockupStatus !== 'hold') rec.mockupStatus = 'ready';
       if (!rec.mockupReadyAt) rec.mockupReadyAt = today();
       rec.updatedAt = now();
       touched.push(rec);
@@ -1940,13 +1947,23 @@
         return String(a.mockupReadyAt || '9999').localeCompare(String(b.mockupReadyAt || '9999'));
       });
     },
+    /* Held on purpose, the ones held longest first. */
+    mockupsOnHold: function (userId) {
+      return db.leads.filter(function (l) {
+        if (userId && l.ownerId !== userId) return false;
+        if (!API.isLeadOpen(l)) return false;
+        return l.mockupStatus === 'hold';
+      }).sort(function (a, b) {
+        return String(a.mockupReadyAt || '9999').localeCompare(String(b.mockupReadyAt || '9999'));
+      });
+    },
     mockupStats: function () {
       var open = API.openLeads();
-      var counts = { none: 0, inprogress: 0, ready: 0, sent: 0 };
+      var counts = { none: 0, inprogress: 0, ready: 0, hold: 0, sent: 0 };
       open.forEach(function (l) { counts[API.mockupStatus(l.mockupStatus).id]++; });
       return {
         none: counts.none, inprogress: counts.inprogress,
-        ready: counts.ready, sent: counts.sent,
+        ready: counts.ready, hold: counts.hold, sent: counts.sent,
         /* Of the mockups built, how many actually went out. Built-and-not-
            sent is the leak this measures. */
         sendRate: (counts.ready + counts.sent)

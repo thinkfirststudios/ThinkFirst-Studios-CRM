@@ -45,6 +45,8 @@
                 so expanding one and then acting on a row does not snap it
                 shut underneath you. */
              mockupShown: PAGE, attentionShown: PAGE,
+             /* Whether the on-hold mockups are expanded under the ready ones. */
+             showHeld: false,
              /* Ticked rows, keyed by lead id. Pruned on every render to
                 what the filters actually show — see below. */
              selected: {} };
@@ -194,7 +196,7 @@
               : 'nothing decided yet', 'ok') +
       '</div>' +
 
-      (seg.id === 'open' && !cbMode ? mockupCard(S.mockupsReadyToSend()) : '') +
+      (seg.id === 'open' && !cbMode ? mockupCard(S.mockupsReadyToSend(), S.mockupsOnHold()) : '') +
       (seg.id === 'open' && !cbMode ? attentionCard(attention) : '') +
 
       '<div class="card">' +
@@ -360,12 +362,16 @@
   /* Finished mockups nobody has sent. Placed ABOVE the follow-up queue
      because it is the more expensive failure: a follow-up you miss costs
      a phone call, a mockup you never send cost you an afternoon. */
-  function mockupCard(list) {
-    if (!list.length) return '';
+  function mockupCard(list, held) {
+    held = held || [];
+    if (!list.length && !held.length) return '';
     return '<div class="card" style="margin-bottom:14px;border-color:rgba(232,185,49,.4)">' +
       '<div class="card-head"><span class="card-title">Mockups Ready To Send</span>' +
         '<span class="kcol-count">' + list.length + '</span>' +
         '<div class="page-actions"><span class="hint">Built already — not sent yet</span></div></div>' +
+      (!list.length
+        ? '<div class="card-body"><span class="hint">Nothing waiting to go out.</span></div>'
+        : '') +
       list.slice(0, st.mockupShown).map(function (l) {
         var m = S.mockupState(l);
         return '<div class="wo-row">' +
@@ -387,11 +393,51 @@
             (l.mockupUrl
               ? '<a class="btn btn-ghost btn-sm" href="' + U.esc(href(l.mockupUrl)) + '" target="_blank" rel="noopener">View</a>'
               : '') +
+            '<button class="btn btn-ghost btn-sm" data-holdmockup="' + U.esc(l.id) + '" ' +
+              'title="Keep it, but stop it asking to be sent">Hold</button>' +
             '<button class="btn btn-sm" data-marksent="' + U.esc(l.id) + '">Mark sent</button>' +
           '</div></div>';
       }).join('') +
       moreBar(list.length, st.mockupShown, 'mockup') +
+      heldSection(held) +
       '</div>';
+  }
+
+  /* The archive the ready card needed: mockups built and deliberately held
+     back. Folded away by default, because the point of holding one is to
+     stop looking at it - but a count stays on screen, so a held mockup is
+     never forgotten outright. */
+  function heldSection(held) {
+    if (!held.length) return '';
+    return '<div class="wo-row" style="cursor:pointer" data-toggleheld="1">' +
+        '<div class="wo-main"><div class="wo-sub">' +
+          '<span>' + (st.showHeld ? '▾' : '▸') + ' On hold</span>' +
+          '<span class="kcol-count">' + held.length + '</span>' +
+          '<span class="hint">Built, and held back on purpose</span>' +
+        '</div></div>' +
+      '</div>' +
+      (st.showHeld
+        ? held.map(function (l) {
+            return '<div class="wo-row" data-heldrow="' + U.esc(l.id) + '" style="opacity:.85">' +
+              '<span class="prio-flag" style="background:#8A8F98"></span>' +
+              '<div class="wo-main">' +
+                '<div class="wo-title"><a class="link" href="#/leads/' + U.esc(l.id) + '">' + U.esc(l.name) + '</a></div>' +
+                '<div class="wo-sub">' +
+                  (S.mockupTypesOf(l).length
+                    ? S.mockupTypesOf(l).map(function (t) { return '<span class="chip">' + U.esc(t) + '</span>'; }).join('')
+                    : '<span class="chip">Mockup</span>') +
+                  (l.mockupReadyAt ? '<span>finished ' + U.esc(U.fmtDateShort(l.mockupReadyAt)) + '</span>' : '') +
+                  '<span>' + U.esc(S.user(l.ownerId).name.split(' ')[0]) + '</span>' +
+                '</div>' +
+              '</div>' +
+              '<div class="wo-side">' +
+                (l.mockupUrl
+                  ? '<a class="btn btn-ghost btn-sm" href="' + U.esc(href(l.mockupUrl)) + '" target="_blank" rel="noopener">View</a>'
+                  : '') +
+                '<button class="btn btn-sm" data-unholdmockup="' + U.esc(l.id) + '">Back to ready</button>' +
+              '</div></div>';
+          }).join('')
+        : '');
   }
 
   function attentionCard(list) {
@@ -445,6 +491,25 @@
         st[b.dataset.less + 'Shown'] = PAGE;
         root.render();
       };
+    });
+    el.querySelectorAll('[data-holdmockup]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        var l = S.setMockup(b.dataset.holdmockup, { mockupStatus: 'hold' });
+        U.toast((l ? l.name + '’s mockup' : 'Mockup') + ' put on hold. Find it under “On hold”.', 'ok');
+        root.render();
+      };
+    });
+    el.querySelectorAll('[data-unholdmockup]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        var l = S.setMockup(b.dataset.unholdmockup, { mockupStatus: 'ready' });
+        U.toast((l ? l.name + '’s mockup' : 'Mockup') + ' is back on the ready-to-send list.', 'ok');
+        root.render();
+      };
+    });
+    el.querySelectorAll('[data-toggleheld]').forEach(function (b) {
+      b.onclick = function () { st.showHeld = !st.showHeld; root.render(); };
     });
     el.querySelectorAll('[data-marksent]').forEach(function (b) {
       b.onclick = function (e) {
@@ -1068,14 +1133,17 @@
             'That is how a mockup goes unanswered.</div>'
           : '') +
         '<button class="btn ' + (m.status.id === 'ready' ? 'btn-primary ' : '') + 'btn-sm" id="mockupBtn"' +
-          ' data-to="' + (m.status.id === 'inprogress' ? 'ready' : m.status.id === 'ready' ? 'sent' : '') + '"' +
+          ' data-to="' + (m.status.id === 'inprogress' ? 'ready' : m.status.id === 'ready' ? 'sent'
+                          : m.status.id === 'hold' ? 'ready' : '') + '"' +
           ' style="width:100%;margin-top:12px">' +
-          (m.status.id === 'inprogress' ? 'Mark ready' : m.status.id === 'ready' ? 'Mark sent' : 'Update mockup') +
+          (m.status.id === 'inprogress' ? 'Mark ready' : m.status.id === 'ready' ? 'Mark sent'
+            : m.status.id === 'hold' ? 'Take off hold' : 'Update mockup') +
         '</button>';
     }
 
     return '<div class="card"><div class="card-head"><span class="card-title">Mockup</span>' +
-      (m.status.id === 'ready' ? U.badge('Not sent', 'b-yellow') : '') + '</div>' +
+      (m.status.id === 'ready' ? U.badge('Not sent', 'b-yellow')
+        : m.status.id === 'hold' ? U.badge('On hold', 'b-grey') : '') + '</div>' +
       '<div class="card-body">' + body + '</div></div>';
   }
 
@@ -1086,7 +1154,8 @@
   function openMockup(l, done, presetTo) {
     var m = S.mockupState(l);
     var to = presetTo || (m.status.id === 'inprogress' ? 'ready'
-      : m.status.id === 'ready' ? 'sent' : m.status.id === 'none' ? 'inprogress' : 'sent');
+      : m.status.id === 'ready' ? 'sent' : m.status.id === 'hold' ? 'ready'
+      : m.status.id === 'none' ? 'inprogress' : 'sent');
     var willSend = to === 'sent';
 
     U.modal({
