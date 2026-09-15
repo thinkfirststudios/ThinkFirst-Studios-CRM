@@ -216,6 +216,7 @@
     mockupStatus: 'Mockup tracking', mockupTypes: 'Mockup tracking',
     mockupUrl: 'Mockup tracking', mockupReadyAt: 'Mockup tracking', mockupSentAt: 'Mockup tracking',
     mockupDesignUrl: 'Graphic design mockup links',
+    mockupRequestedAt: 'How long mockup requests have been waiting',
     lostReason: 'Lead close reasons', outreachId: 'Outreach attribution',
     accountType: 'Account types', billingType: 'Billing types', tags: 'Tags',
     mrrGoalCents: 'The MRR goal', outreachDailyGoal: 'The outreach target',

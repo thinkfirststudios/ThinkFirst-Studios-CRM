@@ -1296,8 +1296,10 @@
 
     var body;
     if (m.status.id === 'none') {
+      /* A rep asks; the design side picks it up. Starting one directly is
+         still possible from the dialog, for when you are building it now. */
       body = '<div class="hint" style="margin-bottom:12px">Nothing built for this lead yet.</div>' +
-        '<button class="btn btn-sm" id="mockupBtn" data-to="inprogress" style="width:100%">Start a mockup</button>';
+        '<button class="btn btn-primary btn-sm" id="mockupBtn" data-to="requested" style="width:100%">Request a mockup</button>';
     } else {
       body =
         '<div class="split" style="margin-bottom:10px">' + U.badge(m.status.label, m.status.tone) +
@@ -1316,10 +1318,12 @@
             'That is how a mockup goes unanswered.</div>'
           : '') +
         '<button class="btn ' + (m.status.id === 'ready' ? 'btn-primary ' : '') + 'btn-sm" id="mockupBtn"' +
-          ' data-to="' + (m.status.id === 'inprogress' ? 'ready' : m.status.id === 'ready' ? 'sent'
+          ' data-to="' + (m.status.id === 'requested' ? 'inprogress'
+                          : m.status.id === 'inprogress' ? 'ready' : m.status.id === 'ready' ? 'sent'
                           : m.status.id === 'hold' ? 'ready' : '') + '"' +
           ' style="width:100%;margin-top:12px">' +
-          (m.status.id === 'inprogress' ? 'Mark ready' : m.status.id === 'ready' ? 'Mark sent'
+          (m.status.id === 'requested' ? 'Start building'
+            : m.status.id === 'inprogress' ? 'Mark ready' : m.status.id === 'ready' ? 'Mark sent'
             : m.status.id === 'hold' ? 'Take off hold' : 'Update mockup') +
         '</button>';
     }
@@ -1336,9 +1340,10 @@
      wasted. */
   function openMockup(l, done, presetTo) {
     var m = S.mockupState(l);
-    var to = presetTo || (m.status.id === 'inprogress' ? 'ready'
+    var to = presetTo || (m.status.id === 'requested' ? 'inprogress'
+      : m.status.id === 'inprogress' ? 'ready'
       : m.status.id === 'ready' ? 'sent' : m.status.id === 'hold' ? 'ready'
-      : m.status.id === 'none' ? 'inprogress' : 'sent');
+      : m.status.id === 'none' ? 'requested' : 'sent');
     var willSend = to === 'sent';
 
     U.modal({
@@ -1367,8 +1372,17 @@
           '<div class="hint">A mockup sent with nothing booked behind it is the commonest way this ' +
             'work goes to waste. Clear the date only if you mean to.</div>' +
         '</div>' +
-        '<div class="field span-2"><label>Note (optional)</label>' +
-          '<textarea class="input" name="note" placeholder="Sent the homepage concept over Instagram DM."></textarea></div>' +
+        '<div class="field span-2"><label>' + (to === 'requested' ? 'What do they want?' : 'Note (optional)') + '</label>' +
+          '<textarea class="input" name="note" placeholder="' +
+            (to === 'requested'
+              ? 'Wants a one-page site and a logo. Runs a surf school in Campeche - photos on their Instagram.'
+              : 'Sent the homepage concept over Instagram DM.') +
+          '"></textarea>' +
+          (to === 'requested'
+            ? '<div class="hint">This is the brief. It shows on the Work To Build list, so whoever picks it up ' +
+              'knows what was asked for without ringing you.</div>'
+            : '') +
+        '</div>' +
       '</div>',
       onMount: function (box) {
         var sel = box.querySelector('[name=mockupStatus]');

@@ -80,7 +80,8 @@
     contacts:  ['instagram', 'tiktok', 'facebook'],
     profiles:  ['branch'],
     leads:     ['lostReason', 'outreachId', 'instagram', 'tiktok', 'facebook',
-                'mockupStatus', 'mockupTypes', 'mockupUrl', 'mockupDesignUrl', 'mockupReadyAt', 'mockupSentAt',
+                'mockupStatus', 'mockupTypes', 'mockupUrl', 'mockupDesignUrl', 'mockupRequestedAt',
+                'mockupReadyAt', 'mockupSentAt',
                 'convertedContactId', 'convertedOpportunityId', 'branch'],
     vendors:   ['tags'],
     settings:  ['mrrGoalCents', 'outreachDailyGoal']

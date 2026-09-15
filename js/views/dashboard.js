@@ -4,6 +4,75 @@
   var S = root.Store, U = root.UI;
   root.Views = root.Views || {};
 
+  /* ── what the reps have asked for ─────────────────────────────────
+     One place answering "what work is waiting on us", built from what the
+     reps put in: the brief they wrote, what the client asked for, and how
+     long it has sat. Requests first, oldest first - a request nobody has
+     picked up is the one that quietly ages into a lost deal. */
+  function workCard(queue) {
+    var waiting = queue.filter(function (l) { return l.mockupStatus === 'requested'; }).length;
+    var head = '<div class="card-head"><span class="card-title">Work To Build</span>' +
+      '<span class="kcol-count">' + queue.length + '</span>' +
+      '<div class="page-actions">' +
+        '<span class="hint">' + (waiting ? waiting + ' not started yet' : 'all picked up') + '</span>' +
+        '<a class="btn btn-sm" href="#/leads">Leads</a></div></div>';
+
+    if (!queue.length) {
+      return '<div class="card">' + head +
+        '<div class="empty" style="padding:30px"><div>Nothing requested. ' +
+        'Reps ask for work with “Request a mockup” on a lead.</div></div></div>';
+    }
+
+    var noteIdx = S.noteIndex('lead');
+    return '<div class="card">' + head + queue.slice(0, 12).map(function (l) {
+      var st = S.mockupStatus(l.mockupStatus);
+      var days = l.mockupRequestedAt === undefined || !l.mockupRequestedAt
+        ? null : -S.daysUntil(l.mockupRequestedAt);
+      var types = S.mockupTypesOf(l);
+      var brief = (noteIdx[l.id] || '').replace(/\s+/g, ' ');
+      if (brief.length > 130) brief = brief.slice(0, 127) + '…';
+      var late = days !== null && days >= 3 && l.mockupStatus === 'requested';
+      return '<div class="wo-row" data-workrow="' + U.esc(l.id) + '">' +
+        '<span class="prio-flag" style="background:' +
+          (late ? '#D71F24' : l.mockupStatus === 'requested' ? '#AF5300' : '#3B6FD4') + '"></span>' +
+        '<div class="wo-main">' +
+          '<div class="wo-title"><a class="link" href="#/leads/' + U.esc(l.id) + '">' + U.esc(l.name) + '</a></div>' +
+          (brief ? '<div style="margin:3px 0 4px;font-size:12px">' + U.esc(brief) + '</div>' : '') +
+          '<div class="wo-sub">' +
+            U.badge(st.label, st.tone) +
+            (types.length
+              ? types.map(function (t) { return '<span class="chip">' + U.esc(t) + '</span>'; }).join('')
+              : '<span class="chip">Mockup</span>') +
+            '<span>asked by ' + U.esc(S.user(l.ownerId).name.split(' ')[0]) + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="wo-side">' +
+          (days === null ? '' : U.badge(days === 0 ? 'today' : days + 'd waiting', late ? 'b-red' : 'b-grey')) +
+          '<button class="btn btn-sm" data-startwork="' + U.esc(l.id) + '">' +
+            (l.mockupStatus === 'requested' ? 'Start' : 'Mark ready') + '</button>' +
+        '</div></div>';
+    }).join('') +
+    (queue.length > 12
+      ? '<div class="wo-row"><div class="wo-main"><div class="wo-sub">' +
+        '<span class="hint">and ' + (queue.length - 12) + ' more</span></div></div></div>'
+      : '') +
+    '</div>';
+  }
+
+  function bindWork(el) {
+    el.querySelectorAll('[data-startwork]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        var l = S.find('leads', b.dataset.startwork);
+        if (!l) return;
+        var to = l.mockupStatus === 'requested' ? 'inprogress' : 'ready';
+        S.setMockup(l.id, { mockupStatus: to });
+        U.toast(l.name + ' → ' + S.mockupStatus(to).label + '.', 'ok');
+        root.render();
+      };
+    });
+  }
+
   root.Views.dashboard = function (el) {
     var me = S.me();
     var accounts = S.accounts();
@@ -88,6 +157,11 @@
       '<div class="grid" style="grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);align-items:start">' +
 
         '<div class="stack">' +
+          /* Admins and managers only: this is the production queue, and a
+             rep's own asks are already on their leads. First card on the
+             screen, because it is the list that decides the day for whoever
+             builds the work. */
+          (S.canManage() ? workCard(S.mockupQueue()) : '') +
           myActivityCard(myTasks) +
           closingCard(closingSoon, opp) +
           '<div class="card">' +
@@ -133,6 +207,7 @@
         '</div>' +
       '</div>';
 
+    bindWork(el);
     el.querySelectorAll('[data-wo]').forEach(function (n) {
       n.onclick = function () { location.hash = '#/workorders/' + n.dataset.wo; };
     });

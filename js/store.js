@@ -155,18 +155,24 @@
   var MOCKUP_STATUSES = [
     { id: 'none',       label: 'No mockup',    tone: 'b-grey',   order: 1, made: false, sent: false,
       hint: 'Nothing built for this lead yet.' },
-    { id: 'inprogress', label: 'In progress',  tone: 'b-orange', order: 2, made: false, sent: false,
+    /* A rep asking for work, which is a different thing from work that has
+       been picked up. Without it there is no queue: "in progress" said
+       somebody was building it, so a request nobody had started yet looked
+       identical to one half done. */
+    { id: 'requested',  label: 'Requested',    tone: 'b-yellow', order: 2, made: false, sent: false,
+      hint: 'A rep has asked for this. Waiting on us to build it.' },
+    { id: 'inprogress', label: 'In progress',  tone: 'b-orange', order: 3, made: false, sent: false,
       hint: 'Being built now.' },
-    { id: 'ready',      label: 'Ready to send', tone: 'b-yellow', order: 3, made: true,  sent: false,
+    { id: 'ready',      label: 'Ready to send', tone: 'b-yellow', order: 4, made: true,  sent: false,
       hint: 'Built and waiting. Finished work that is not earning anything until it goes out.' },
     /* Built, and deliberately not sent yet - the wrong week, waiting on a
        decision, holding it for a walk-in. Kept apart from "ready" because
        the ready card is a nag, and a nag about something you chose to wait
        on is noise that trains people to ignore the card. Nothing is lost:
        the link, the finish date and the types all stay. */
-    { id: 'hold',       label: 'On hold',      tone: 'b-grey',   order: 4, made: true,  sent: false,
+    { id: 'hold',       label: 'On hold',      tone: 'b-grey',   order: 5, made: true,  sent: false,
       hint: 'Built, but held back on purpose. Kept off the ready-to-send list until you take it off hold.' },
-    { id: 'sent',       label: 'Sent',         tone: 'b-green',  order: 5, made: true,  sent: true,
+    { id: 'sent',       label: 'Sent',         tone: 'b-green',  order: 6, made: true,  sent: true,
       hint: 'Delivered to them.' }
   ];
 
@@ -1992,12 +1998,27 @@
         return String(a.mockupReadyAt || '9999').localeCompare(String(b.mockupReadyAt || '9999'));
       });
     },
+    /* What the design side owes the sales side: everything a rep has asked
+       for and everything being built, oldest ask first. Requests come before
+       work already under way, because a request nobody has picked up is the
+       one that quietly ages. Scoped by who may see the lead, so a branch
+       manager gets their branch's queue and nobody else's. */
+    mockupQueue: function () {
+      var rank = { requested: 0, inprogress: 1 };
+      return API.visibleLeads().filter(function (l) {
+        return API.isLeadOpen(l) && (l.mockupStatus === 'requested' || l.mockupStatus === 'inprogress');
+      }).sort(function (a, b) {
+        return (rank[a.mockupStatus] - rank[b.mockupStatus]) ||
+          String(a.mockupRequestedAt || '9999').localeCompare(String(b.mockupRequestedAt || '9999'));
+      });
+    },
+
     mockupStats: function () {
       var open = API.openLeads();
-      var counts = { none: 0, inprogress: 0, ready: 0, hold: 0, sent: 0 };
+      var counts = { none: 0, requested: 0, inprogress: 0, ready: 0, hold: 0, sent: 0 };
       open.forEach(function (l) { counts[API.mockupStatus(l.mockupStatus).id]++; });
       return {
-        none: counts.none, inprogress: counts.inprogress,
+        none: counts.none, requested: counts.requested, inprogress: counts.inprogress,
         ready: counts.ready, hold: counts.hold, sent: counts.sent,
         /* Of the mockups built, how many actually went out. Built-and-not-
            sent is the leak this measures. */
@@ -2021,6 +2042,12 @@
 
       var to = next.mockupStatus || l.mockupStatus || 'none';
       var toSt = API.mockupStatus(to);
+
+      /* When it was asked for, so the queue can say how long somebody has
+         been waiting. Stamped once and kept: the wait is measured from the
+         ask, not from the moment work started. */
+      if (to === 'requested' && !l.mockupRequestedAt) next.mockupRequestedAt = today();
+      if (to === 'none') next.mockupRequestedAt = '';
 
       /* First time it is finished, record when. Kept on later edits so
          the wait is measured from when the work was actually done. */
