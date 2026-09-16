@@ -1856,7 +1856,15 @@
       if (d <= 7) return fuState(FOLLOW_UP.soon, d);
       return fuState(FOLLOW_UP.scheduled, d);
     },
-    openLeads: function () { return db.leads.filter(API.isLeadOpen); },
+    /* Everything below answers "what is on my plate", so it reads the leads
+       this person may see rather than the whole table.
+
+       In the hosted CRM the two are already the same - the database only
+       ever hands a rep their own leads - so this changes nothing today. It
+       is here because relying on that alone means the dashboard would start
+       leaking the moment a policy was loosened, and because the leads screen
+       has always filtered in the app as well. Two locks on the same door. */
+    openLeads: function () { return API.visibleLeads().filter(API.isLeadOpen); },
     /* Overdue or due today — a commitment you made and have not kept yet,
        sorted most urgent first.
 
@@ -1868,7 +1876,7 @@
        Nothing is hidden — "Unscheduled" is still one of the follow-up
        filters on the leads list, and still its own badge on the row. */
     leadsNeedingAttention: function (userId) {
-      return db.leads.filter(function (l) {
+      return API.visibleLeads().filter(function (l) {
         if (userId && l.ownerId !== userId) return false;
         var k = API.followUpState(l).key;
         return k === 'overdue' || k === 'today';
@@ -1878,8 +1886,9 @@
       });
     },
     leadStats: function () {
+      var mine = API.visibleLeads();
       var byStatus = function (id) {
-        return db.leads.filter(function (l) { return l.leadStatus === id; });
+        return mine.filter(function (l) { return l.leadStatus === id; });
       };
       var converted = byStatus('converted');
       var unqualified = byStatus('unqualified');
@@ -1980,7 +1989,7 @@
 
     /* Finished mockups nobody has sent, longest wait first. */
     mockupsReadyToSend: function (userId) {
-      return db.leads.filter(function (l) {
+      return API.visibleLeads().filter(function (l) {
         if (userId && l.ownerId !== userId) return false;
         if (!API.isLeadOpen(l)) return false;
         return l.mockupStatus === 'ready';
@@ -1990,7 +1999,7 @@
     },
     /* Held on purpose, the ones held longest first. */
     mockupsOnHold: function (userId) {
-      return db.leads.filter(function (l) {
+      return API.visibleLeads().filter(function (l) {
         if (userId && l.ownerId !== userId) return false;
         if (!API.isLeadOpen(l)) return false;
         return l.mockupStatus === 'hold';
