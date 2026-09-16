@@ -51,8 +51,37 @@
        lead contact details, so it needs the route that just drew. */
     if (root.ScreenShield) root.ScreenShield.apply(ROUTES[r.name] || 'dashboard');
 
+    /* Typing survives the repaint.
+
+       A repaint rebuilds the whole screen, and the search box you are typing
+       in goes with it: the text came back, because it is kept in the filter
+       state, but the cursor did not. The box searches 220ms after a
+       keystroke, so it was one letter, click back in, one letter, click back
+       in - on every filter box in the CRM. */
+    var was = document.activeElement;
+    var typing = null;
+    if (was && was.id && viewEl.contains(was) && /^(INPUT|TEXTAREA|SELECT)$/.test(was.tagName)) {
+      typing = { id: was.id, start: null, end: null };
+      /* Not every input has a caret - a date or a number box throws. */
+      try { typing.start = was.selectionStart; typing.end = was.selectionEnd; } catch (e) { /* no caret */ }
+    }
+
     try {
       view(viewEl, r.params);
+      /* Only if the repaint is what took the focus away. If something else
+         now has it - a dialog that just opened - leave it alone. */
+      if (typing && (document.activeElement === document.body || !document.activeElement ||
+                     !viewEl.contains(document.activeElement))) {
+        var again = document.getElementById(typing.id);
+        if (again) {
+          again.focus();
+          try {
+            if (typing.start !== null && again.setSelectionRange) {
+              again.setSelectionRange(typing.start, typing.end);
+            }
+          } catch (e) { /* no caret to restore */ }
+        }
+      }
       paintUpdateBanner();
     } catch (err) {
       console.error(err);
