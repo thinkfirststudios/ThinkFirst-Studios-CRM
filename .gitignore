@@ -29,6 +29,14 @@ token.json
 *contact*list*
 *Contact*List*
 
+# ...but not the code that reads them. This repo is on Windows, where git
+# matches ignore rules without regard to case, so "*contact*list*" quietly
+# swallowed tools/prep-contact-list.py: it was written, used, and described
+# in a commit message that did not contain it. The tools hold no contact
+# details, only the rules for handling them.
+!tools/*.py
+!tools/*.mjs
+
 # Local database backups taken with tools/backup.mjs. Kept OUT of .tmp/
 # because .tmp/ is disposable by convention and these are not.
 backups/
