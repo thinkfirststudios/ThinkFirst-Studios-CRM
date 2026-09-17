@@ -124,9 +124,13 @@ for path in a.exclude:
     if not os.path.exists(p):
         print('exclude file not found: ' + p)
         sys.exit(1)
-    for r in csv.DictReader(io.open(p, encoding='utf-8')):
-        if r.get('email'):
-            seen.add(r['email'].strip().lower())
+    for r in csv.DictReader(io.open(p, encoding='utf-8-sig')):
+        # Lists prepared for the importer use "Email"; the ones dealt from
+        # the source file use "email". A file whose header did not match
+        # excluded nobody, silently.
+        e = r.get('email') or r.get('Email') or ''
+        if e.strip():
+            seen.add(e.strip().lower())
 if seen:
     before = len(sel)
     sel = [r for r in sel if r['email'].strip().lower() not in seen]
