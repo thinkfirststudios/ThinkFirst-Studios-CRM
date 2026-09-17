@@ -876,13 +876,20 @@
   }
 
   /* ── activity log ────────────────────────────────────────────── */
+  var ACTIVITY_KEPT = 4000;
+
   function log(action, entityType, entityId, detail) {
     var entry = {
       id: uid('a'), ts: now(), userId: meId || '',
       action: action, entityType: entityType, entityId: entityId, detail: detail || ''
     };
     db.activity.unshift(entry);
-    if (db.activity.length > 500) db.activity.length = 500;
+    /* The database keeps everything; this is only what the browser holds.
+       500 was fine when the log was something you glanced at, but four reps
+       working a book of leads generate that in a couple of days, and a
+       per-person view built on a window that short would quietly report a
+       week as if it were the whole story. These are small flat objects. */
+    if (db.activity.length > ACTIVITY_KEPT) db.activity.length = ACTIVITY_KEPT;
     if (B.mode === 'supabase') B.write('activity', 'insert', entry);
   }
 
@@ -2424,6 +2431,80 @@
       }
       return db.leads.filter(function (l) { return l.ownerId === me.id; });
     },
+    /* What each person actually did, over a window of days.
+
+       Two kinds of number here, and they are not equally trustworthy, so
+       the screen has to say which is which.
+
+       The durable ones are counted off the records themselves - who owns a
+       lead, when it was last contacted, what is overdue. Those are exact
+       however long ago it happened.
+
+       The feed ones are counted off the activity log, which is capped, so
+       they only reach back as far as the log still goes. `covers` says how
+       far that is; when the oldest entry is newer than the window asked
+       for, the feed numbers are a floor rather than a total. */
+    teamActivity: function (days) {
+      var since = days ? shift(-days) : '';
+      var acts = db.activity;
+      var oldest = acts.length ? String(acts[acts.length - 1].ts).slice(0, 10) : today();
+      var inWindow = acts.filter(function (a) {
+        return !since || String(a.ts).slice(0, 10) >= since;
+      });
+
+      var rows = db.users.filter(function (u) { return u.active; }).map(function (u) {
+        var mine = db.leads.filter(function (l) { return l.ownerId === u.id; });
+        var acted = inWindow.filter(function (a) { return a.userId === u.id; });
+        var isCall = function (a) {
+          return a.action === 'updated' && a.detail.indexOf('contacted ') === 0;
+        };
+        var count = function (fn) { return acted.filter(fn).length; };
+        return {
+          user: u,
+          /* durable - straight off the leads */
+          leads: mine.length,
+          contacted: mine.filter(function (l) {
+            return l.lastContactedAt && (!since || l.lastContactedAt >= since);
+          }).length,
+          overdue: mine.filter(function (l) {
+            return l.leadStatus !== 'converted' && API.leadStatus(l.leadStatus).open &&
+                   l.nextFollowUp && l.nextFollowUp < today();
+          }).length,
+          neverContacted: mine.filter(function (l) { return !l.lastContactedAt; }).length,
+          /* from the feed - a floor, not a total, once the log has rolled */
+          calls: count(isCall),
+          notes: count(function (a) { return a.action === 'noted'; }),
+          mockups: count(function (a) { return a.action === 'mockup'; }),
+          created: count(function (a) { return a.action === 'created'; }),
+          edits: count(function (a) { return a.action === 'updated' && !isCall(a); }),
+          actions: acted.length,
+          lastSeen: acted.length ? acted[0].ts : ''
+        };
+      });
+
+      rows.sort(function (a, b) {
+        return b.contacted - a.contacted || b.actions - a.actions ||
+               a.user.name.localeCompare(b.user.name);
+      });
+      return {
+        rows: rows,
+        since: since,
+        covers: oldest,
+        /* true when the log still reaches past the window, so the feed
+           numbers are whole rather than clipped */
+        complete: !since || oldest <= since,
+        logged: acts.length
+      };
+    },
+
+    /* One person's entries, newest first, for the drill-down. */
+    activityBy: function (userId, days) {
+      var since = days ? shift(-days) : '';
+      return db.activity.filter(function (a) {
+        return a.userId === userId && (!since || String(a.ts).slice(0, 10) >= since);
+      });
+    },
+
     canManage: function () { var r = API.me().role; return r === 'admin' || r === 'manager'; },
     user: function (id) { return find('users', id) || { id: '', name: 'Unassigned', role: '', email: '' }; },
     activeUsers: function () { return db.users.filter(function (u) { return u.active; }); },

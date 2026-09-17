@@ -32,7 +32,7 @@
       '</div>' +
 
       '<div class="tabs" id="adminTabs">' +
-        ['users', 'services', 'statuses', 'vendorTypes', 'stripe', 'settings', 'health', 'data', 'audit'].map(function (t) {
+        ['users', 'team', 'services', 'statuses', 'vendorTypes', 'stripe', 'settings', 'health', 'data', 'audit'].map(function (t) {
           return '<button data-t="' + t + '"' + (tab === t ? ' class="on"' : '') + '>' + U.esc(LABELS[t]) + '</button>';
         }).join('') +
       '</div><div id="adminBody"></div>';
@@ -45,7 +45,7 @@
   };
 
   var LABELS = {
-    users: 'Users & Roles', services: 'Service Catalog', statuses: 'Pipeline Statuses',
+    users: 'Users & Roles', team: 'Team Activity', services: 'Service Catalog', statuses: 'Pipeline Statuses',
     vendorTypes: 'Vendor Types', stripe: 'Stripe', settings: 'Organization',
     health: 'Data Health', data: 'Data & Backup', audit: 'Audit Log'
   };
@@ -612,13 +612,94 @@
     };
   };
 
+  /* ── team ────────────────────────────────────────────────────── */
+  /* Who is doing what. The audit log next door answers "what happened";
+     this answers "how is each person doing", which is a different question
+     and was previously only answerable by reading the firehose. */
+  var teamDays = 7, teamWho = '';
+
+  PANELS.team = function (body) {
+    var data = S.teamActivity(teamDays);
+    var periods = [[1, 'Today'], [7, '7 days'], [30, '30 days'], [0, 'All time']];
+
+    var head =
+      '<div class="card"><div class="card-head">' +
+        '<span class="card-title">Team Activity</span>' +
+        '<div class="page-actions">' +
+          '<div class="tabs" id="teamPeriod" style="border:0;margin:0">' +
+            periods.map(function (p) {
+              return '<button data-d="' + p[0] + '"' + (teamDays === p[0] ? ' class="on"' : '') + '>' +
+                     U.esc(p[1]) + '</button>';
+            }).join('') +
+          '</div></div></div>' +
+      '<div class="card-body" style="padding-top:0">' +
+        '<div class="hint" style="margin-bottom:10px">' +
+          'Leads, contacted, overdue and never called are counted off the records, so they are exact. ' +
+          'Calls, notes, mockups and edits are counted off the activity log' +
+          (data.complete ? '.' :
+            ', which only reaches back to ' + U.esc(U.fmtDate(data.covers)) +
+            ' - for this period those four are a minimum, not a total.') +
+        '</div>';
+
+    var cols = [
+      { key: 'who', label: 'Team member', render: function (r) {
+          return '<a href="#" data-team="' + U.esc(r.user.id) + '" class="split">' +
+                 U.userCell(r.user.id) + '</a>' +
+                 '<div class="hint">' + U.esc(r.user.role) +
+                 (r.user.branch ? ' · ' + U.esc(r.user.branch) : '') + '</div>';
+        } },
+      { key: 'leads', label: 'Leads', render: function (r) { return num(r.leads); } },
+      { key: 'contacted', label: 'Contacted', render: function (r) {
+          return '<strong>' + num(r.contacted) + '</strong>'; } },
+      { key: 'calls', label: 'Calls logged', render: function (r) { return num(r.calls); } },
+      { key: 'notes', label: 'Notes', render: function (r) { return num(r.notes); } },
+      { key: 'mockups', label: 'Mockups', render: function (r) { return num(r.mockups); } },
+      { key: 'overdue', label: 'Overdue', render: function (r) {
+          return r.overdue ? U.badge(r.overdue, 'b-red') : num(0); } },
+      { key: 'never', label: 'Never called', render: function (r) { return num(r.neverContacted); } },
+      { key: 'last', label: 'Last action', render: function (r) {
+          return '<span class="muted">' + U.esc(r.lastSeen ? U.fmtWhen(r.lastSeen) : 'nothing yet') + '</span>'; } }
+    ];
+
+    body.innerHTML = head +
+      U.table(cols, data.rows, {
+        emptyHTML: U.empty('Nobody to report on', 'Active users show up here once they exist.')
+      }) + '</div></div>' + (teamWho ? drill(teamWho) : '');
+
+    body.querySelectorAll('#teamPeriod button').forEach(function (b) {
+      b.onclick = function () { teamDays = +b.dataset.d; root.render(); };
+    });
+    body.querySelectorAll('[data-team]').forEach(function (a) {
+      a.onclick = function (e) {
+        e.preventDefault();
+        teamWho = teamWho === a.dataset.team ? '' : a.dataset.team;
+        root.render();
+      };
+    });
+    var close = body.querySelector('#teamClose');
+    if (close) close.onclick = function () { teamWho = ''; root.render(); };
+  };
+
+  function num(n) { return n ? String(n) : '<span class="muted">0</span>'; }
+
+  function drill(userId) {
+    var u = S.user(userId);
+    var acts = S.activityBy(userId, teamDays);
+    return '<div class="card" style="margin-top:14px"><div class="card-head">' +
+      '<span class="card-title">' + U.esc(u.name) + ' — every action</span>' +
+      '<span class="kcol-count">' + acts.length + '</span>' +
+      '<div class="page-actions"><button class="btn btn-sm" id="teamClose">Close</button></div></div>' +
+      '<div class="card-body">' + U.timeline(acts, 100) + '</div></div>';
+  }
+
   /* ── audit ───────────────────────────────────────────────────── */
   PANELS.audit = function (body) {
     var acts = S.all('activity');
     body.innerHTML =
       '<div class="card"><div class="card-head"><span class="card-title">Audit Log</span>' +
         '<span class="kcol-count">' + acts.length + '</span>' +
-        '<div class="page-actions"><span class="hint">Last 500 actions across the whole CRM</span></div></div>' +
+        '<div class="page-actions"><span class="hint">Everything the team has done, newest first. ' +
+          'For one person at a time, use Team Activity.</span></div></div>' +
       U.table([
         { key: 'ts', label: 'When', render: function (a) { return '<span class="muted">' + U.esc(U.fmtWhen(a.ts)) + '</span>'; } },
         { key: 'user', label: 'User', render: function (a) { return U.userCell(a.userId); } },
