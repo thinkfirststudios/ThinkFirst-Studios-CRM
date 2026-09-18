@@ -39,8 +39,15 @@
       '</div>';
   }
 
+  /* Newest first. A batch of leads is imported and then worked, so the
+     question on opening the list is almost always "where is the lot I just
+     added" - and answering it by scrolling 1,700 rows is no answer. The
+     follow-up order is one click away on its own column, and the Call backs
+     tab and the dashboard both still lead with what is due. */
+  var SORT_KEY = 'crm:leadsort';
+
   var st = { q: '', status: 'open', rating: '', owner: '', source: '', tag: '', due: '',
-             mockup: '', reach: '', sortKey: 'follow', sortDir: 1,
+             mockup: '', reach: '', sortKey: 'added', sortDir: -1,
              /* How many rows each queue is showing. Survives re-renders,
                 so expanding one and then acting on a row does not snap it
                 shut underneath you. */
@@ -325,7 +332,12 @@
     bindCallbacks(el);
 
     U.bindTable(el, {
-      onSort: function (k) { st.sortDir = st.sortKey === k ? -st.sortDir : 1; st.sortKey = k; root.render(); },
+      onSort: function (k) {
+        st.sortDir = st.sortKey === k ? -st.sortDir : 1;
+        st.sortKey = k;
+        rememberSort();
+        root.render();
+      },
       onRow: function (id) { location.hash = '#/leads/' + id; }
     });
     bindBulk(el, rows);
@@ -940,6 +952,24 @@
   function cols(rows) {
     /* Built once for the whole table, not asked per row. */
     var noteFlags = S.leadNoteFlags();
+
+    /* The same, for when a lead arrived. A comparator runs O(n log n)
+       times, so parsing the timestamp inside it means tens of thousands of
+       Date objects to sort a full book - enough to make the list visibly
+       slower to draw. Parsed once per lead here instead, and the wording
+       worked out once per distinct day rather than once per row. */
+    var addedAt = {}, addedText = {}, wording = {};
+    rows.forEach(function (l) {
+      var raw = l.createdAt || '';
+      addedAt[l.id] = raw ? (Date.parse(raw) || 0) : 0;
+      if (!raw) { addedText[l.id] = ''; return; }
+      var day = String(raw).slice(0, 10);
+      if (!(day in wording)) {
+        var ahead = S.daysUntil(day);
+        wording[day] = addedLabel(day, ahead === null ? null : -ahead);
+      }
+      addedText[l.id] = wording[day];
+    });
     return [
       /* No sort on this column. Sorting by "is it ticked" is not a thing
          anyone wants, and a sortable header would swallow the click that
@@ -1040,8 +1070,49 @@
       { key: 'source', label: 'Source', sort: function (l) { return l.source || ''; },
         render: function (l) { return l.source ? '<span class="chip">' + U.esc(l.source) + '</span>' : '<span class="muted">—</span>'; } },
       { key: 'owner', label: 'Owner', sort: function (l) { return S.user(l.ownerId).name; },
-        render: function (l) { return U.userCell(l.ownerId); } }
+        render: function (l) { return U.userCell(l.ownerId); } },
+      /* When it arrived. An import stamps every row within a second or two
+         of the others, so sorting on this keeps a batch together and puts
+         the batch you just loaded at the top - which is the whole point of
+         asking for newest first. */
+      { key: 'added', label: 'Added', sort: function (l) { return addedAt[l.id] || 0; },
+        render: function (l) {
+          var text = addedText[l.id];
+          if (!text) return '<span class="muted">—</span>';
+          var fresh = text === 'Today' || text === 'Yesterday';
+          return '<span class="' + (fresh ? 'chip' : 'muted') +
+                 '" style="font-size:11px">' + U.esc(text) + '</span>';
+        } }
     ];
+  }
+
+  /* Whoever preferred the old follow-up order sets it once and keeps it.
+     Wrapped because storage throws in a private window rather than simply
+     being empty, and a sort preference is not worth a blank screen. */
+  function rememberSort() {
+    try {
+      localStorage.setItem(SORT_KEY, st.sortKey + ':' + st.sortDir);
+    } catch (e) {}
+  }
+
+  function restoreSort() {
+    var raw;
+    try { raw = localStorage.getItem(SORT_KEY); } catch (e) { return; }
+    if (!raw) return;
+    var bits = String(raw).split(':');
+    if (bits.length !== 2) return;
+    st.sortKey = bits[0];
+    st.sortDir = bits[1] === '-1' ? -1 : 1;
+  }
+  restoreSort();
+
+  /* "Today" and "Yesterday" earn their words; past that a date is easier to
+     scan than a count of days. */
+  function addedLabel(iso, days) {
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days !== null && days < 7) return days + ' days ago';
+    return U.fmtDateShort(String(iso).slice(0, 10));
   }
 
   function kpi(label, value, foot, mod) {
