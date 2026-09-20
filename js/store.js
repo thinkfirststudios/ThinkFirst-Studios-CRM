@@ -2431,6 +2431,51 @@
       }
       return db.leads.filter(function (l) { return l.ownerId === me.id; });
     },
+    /* The lists a person can work, and how far through each one they are.
+
+       A list is the source a batch was imported under. That is not a new
+       idea bolted on - every import already stamps one, so the lists exist
+       already and were simply never shown as lists. This turns a dropdown
+       nobody opened into the thing you pick before you start calling.
+
+       Scoped to whoever is asking, so a rep sees their own lists with their
+       own progress, not the company's. `mine` is what they personally own,
+       which is what the count on the chip has to mean for a manager looking
+       at a branch.
+
+       Worked out in one pass. A rep with 1,700 leads across a dozen lists
+       would otherwise pay for a filter per list per repaint. */
+    leadLists: function () {
+      var me = API.me();
+      var today = API.today();
+      var by = {};
+      API.visibleLeads().forEach(function (l) {
+        var key = (l.source || '').trim() || 'No list';
+        var row = by[key];
+        if (!row) {
+          row = by[key] = { source: key, total: 0, mine: 0, called: 0,
+                            uncalled: 0, overdue: 0, open: 0, newest: '' };
+        }
+        row.total++;
+        if (l.ownerId === me.id) row.mine++;
+        if (l.lastContactedAt) row.called++; else row.uncalled++;
+        if (API.leadStatus(l.leadStatus).open) {
+          row.open++;
+          if (l.nextFollowUp && l.nextFollowUp < today) row.overdue++;
+        }
+        if (l.createdAt && String(l.createdAt) > String(row.newest)) row.newest = l.createdAt;
+      });
+
+      var rows = Object.keys(by).map(function (k) { return by[k]; });
+      /* Newest list first, for the same reason the leads list leads with
+         what just arrived: the batch you were handed is the one you came
+         here to work. */
+      rows.sort(function (a, b) {
+        return String(b.newest).localeCompare(String(a.newest)) || b.total - a.total;
+      });
+      return rows;
+    },
+
     /* What each person actually did, over a window of days.
 
        Two kinds of number here, and they are not equally trustworthy, so

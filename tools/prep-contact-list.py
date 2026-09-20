@@ -195,6 +195,143 @@ def convert_brokerage(r, source):
     return out
 
 
+ROLE_WORDS = re.compile(r'\b(manager|mr|mrs|ms|jr|sr|ii|iii|iv)\b\.?', re.I)
+
+
+def bare_name(s):
+    """A name with the job word and the punctuation taken out, for deciding
+    whether two rows on one office line are one person or two colleagues.
+    'Danielle Wendeburg Manager' and 'Danielle Wendeburg' are one."""
+    return re.sub(r'[^a-z]', '', ROLE_WORDS.sub('', (s or '').lower()))
+
+
+def name_parts(s):
+    """First and last, with job words and punctuation gone. 'Rob LaTour' and
+    'Robert La Tour' both come back as ('rob', 'latour') / ('robert','latour')
+    because the surname is joined up before comparing."""
+    words = [w for w in re.split(r'[^A-Za-z]+', ROLE_WORDS.sub('', s or '')) if w]
+    if not words:
+        return '', ''
+    first = words[0].lower()
+    last = ''.join(words[1:]).lower()
+    return first, last
+
+
+# Short forms that a prefix test cannot see, because they are not prefixes.
+# Only used once the surname already matches, so the risk is small and the
+# payoff is the difference between one lead and two for the same person.
+NICKNAMES = {
+    'robert': ['rob', 'bob', 'bobby', 'bert'],
+    'joseph': ['joe', 'joey'],
+    'william': ['will', 'bill', 'billy'],
+    'richard': ['rick', 'dick', 'richie', 'rich'],
+    'michael': ['mike', 'mick'],
+    'james': ['jim', 'jimmy'],
+    'john': ['jack', 'johnny'],
+    'charles': ['charlie', 'chuck'],
+    'thomas': ['tom', 'tommy'],
+    'anthony': ['tony'],
+    'edward': ['ed', 'eddie', 'ted', 'teddy'],
+    'margaret': ['peggy', 'maggie'],
+    'elizabeth': ['liz', 'beth', 'betty'],
+    'katherine': ['kate', 'kathy', 'katie'],
+    'patricia': ['pat', 'patty', 'trish', 'trisha'],
+    'lawrence': ['larry'],
+    'francis': ['frank'],
+    'eleazar': ['eli'],
+    'susan': ['sue', 'suzy'],
+    'theodore': ['ted'],
+    'kenneth': ['ken', 'kenny'],
+    'ronald': ['ron', 'ronnie'],
+    'donald': ['don', 'donnie'],
+    'gerald': ['jerry'],
+    'raymond': ['ray'],
+    'stephen': ['steve'],
+    'daniel': ['dan', 'danny'],
+    'david': ['dave'],
+}
+CANON = {}
+for _full, _shorts in NICKNAMES.items():
+    CANON[_full] = _full
+    for _s in _shorts:
+        CANON[_s] = _full
+
+
+def surnames_match(a, b):
+    """Felicia Rhodes and Felicia Kimbrough-Rhodes share a surname; Amie
+    Mccarver and Abraham Mendez do not. This is the first gate, and it is
+    what keeps two colleagues on one switchboard apart."""
+    la, lb = name_parts(a)[1], name_parts(b)[1]
+    if not la or not lb:
+        return False
+    return la == lb or la.endswith(lb) or lb.endswith(la)
+
+
+def same_person(a, b):
+    """Strong evidence only, because the cost is asymmetric: a wrong merge
+    deletes a lead silently, a missed merge leaves a duplicate somebody can
+    see and fix.
+
+    Surname first, then the given name has to be the same, a shortening, or
+    a known nickname. A shortening is not enough on its own - Joe is not a
+    prefix of Joseph, which is exactly the sort of thing a prefix rule looks
+    like it handles and does not."""
+    if bare_name(a) and bare_name(a) == bare_name(b):
+        return True
+    if not surnames_match(a, b):
+        return False
+    fa, fb = name_parts(a)[0], name_parts(b)[0]
+    if fa == fb:
+        return True
+    if CANON.get(fa, fa) == CANON.get(fb, fb):
+        return True
+    short, long_ = (fa, fb) if len(fa) < len(fb) else (fb, fa)
+    return len(short) >= 3 and long_.startswith(short)
+
+
+def convert_roster(r, source):
+    """A calling roster: a name, a phone, a city, and sometimes an employer.
+    No email at all, which makes the phone the only way to reach anybody -
+    and therefore the only thing dedupe can key on, which is exactly why the
+    shared-office-line flag below matters so much."""
+    name = (r.get('Full Name') or '').strip()
+    company = (r.get('Brokerage / Company') or '').strip()
+    city = (r.get('City / Service Area') or '').strip()
+    state = (r.get('State') or '').strip()
+    title = (r.get('Job Title (source)') or 'Loan Officer').strip()
+    reach = (r.get('Contactability') or '').strip()
+
+    out = dict((c, '') for c in COLUMNS)
+    out['Company'] = name
+    out['Contact'] = name
+    out['Title'] = (title + ', ' + company) if company else title
+    out['Phone'] = (r.get('Phone Number') or '').strip()
+    out['Location'] = (city + ', ' + state) if city else state
+    out['Industry'] = INDUSTRY.get((r.get('Likely Vertical') or '').strip().lower(), 'Mortgage')
+    out['Source'] = source
+    tags = [state, 'mortgage']
+    if city:
+        tags.append(city.lower())
+    out['Tags'] = ' | '.join([t for t in tags if t])
+
+    note = []
+    if company:
+        note.append('Works at ' + company)
+    if (r.get('Alt Phone') or '').strip():
+        note.append('Second number: ' + r['Alt Phone'].strip())
+    if (r.get('Notes') or '').strip():
+        note.append(r['Notes'].strip())
+    if reach == 'Toll-free line':
+        note.append('CHECK: the number is a toll-free company line, not a direct one')
+    if (r.get('Review Flag') or '').strip():
+        note.append('CHECK: ' + r['Review Flag'].strip())
+    src = (r.get('Source Type') or '').strip()
+    if src:
+        note.append('From ' + src)
+    out['Note'] = '. '.join(n.rstrip('.') for n in note) + ('.' if note else '')
+    return out
+
+
 def convert(r, source, extra_note):
     name = (r.get('Full Name') or '').strip()
     vertical = (r.get('Likely Vertical') or '').strip()
@@ -238,18 +375,40 @@ def main():
 
     rows = read_rows(a.source_file)
     brokerage_shape = bool(rows) and 'Brokerage' in rows[0]
+    roster_shape = bool(rows) and 'Brokerage / Company' in rows[0]
     taken_e, taken_p, who, taken_n = known_from(a.against)
     plan_e, plan_p, plan_who, plan_n = known_from(a.planned)
 
     out, seen_e, seen_p, seen_n = [], {}, {}, {}
     already, internal, planned_hits, namesakes = [], [], [], []
+    colleagues, unreachable, shared_lines = [], [], set()
+    maybe_same = []
 
     for r in rows:
         name = (r.get('Full Name') or '').strip()
         if not name:
             continue
         e, ph = key_email(r), digits(r.get('Phone Number'))
+
+        # No phone and no address is not a lead, it is a name. Importing it
+        # puts a row in front of a rep that they can do nothing with, and it
+        # counts towards "never called" for ever. Kept in a file of its own
+        # so the research is not thrown away.
+        if not e and not ph:
+            unreachable.append(r)
+            continue
         nk, st = key_name(name), state_of(r)
+
+        # A switchboard is not an identity. On a roster with no email at all
+        # the phone is the only key there is, and four people answering one
+        # company line would collapse into one lead - the same way a shared
+        # website host once ate 45 of 100 Brazil leads. The list says which
+        # numbers those are, so on a flagged number the name has to agree
+        # too before two rows are treated as one person.
+        office_line = 'shared phone' in (r.get('Review Flag') or '').lower() \
+            or (r.get('Contactability') or '').strip() == 'Toll-free line'
+        if office_line:
+            shared_lines.add(ph)
 
         if (e and e in taken_e) or (ph and ph in taken_p):
             hit = who.get(e) or who.get(ph)
@@ -273,6 +432,16 @@ def main():
             first = seen_e[e]
         elif ph and ph in seen_p:
             first = seen_p[ph]
+            if office_line and not same_person(name, out[first]['Contact']):
+                other = out[first]['Contact']
+                phone = (r.get('Phone Number') or '').strip()
+                # A shared surname on a shared line is the one case worth a
+                # person's attention: probably one lead, possibly a family
+                # firm. Kept apart either way, because a duplicate can be
+                # seen and a deletion cannot.
+                (maybe_same if surnames_match(name, other) else colleagues).append(
+                    (name, other, phone))
+                first = None
         elif nk in seen_n and st and seen_n[nk][1] == st:
             first = seen_n[nk][0]
         if first is not None:
@@ -292,7 +461,9 @@ def main():
             hit = plan_who.get(e) or plan_who.get(ph) or (None, plan_name[0][2])
             planned_hits.append((name, hit[1] if hit else '?'))
 
-        rec = convert_brokerage(r, a.source) if brokerage_shape else convert(r, a.source, [])
+        rec = (convert_roster(r, a.source) if roster_shape
+               else convert_brokerage(r, a.source) if brokerage_shape
+               else convert(r, a.source, []))
         idx = len(out)
         out.append(rec)
         if e:
@@ -310,6 +481,13 @@ def main():
         w.writeheader()
         w.writerows(out)
 
+    if unreachable:
+        side = re.sub(r'\.csv$', '', a.out) + '-unreachable.csv'
+        with io.open(side, 'w', encoding='utf-8-sig', newline='') as fh:
+            w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+            w.writeheader()
+            w.writerows(unreachable)
+
     from collections import Counter
     print('read           %d rows' % len(rows))
     print('already in CRM %d  (dropped)' % len(already))
@@ -318,6 +496,22 @@ def main():
     print('same person twice in the file %d  (merged)' % len(internal))
     for n, how in internal:
         print('    %-28s %s' % (n, how))
+    if maybe_same:
+        print('SAME SURNAME on one office line %d  (kept apart - check these)' % len(maybe_same))
+        for n, other, phone in maybe_same:
+            print('    %-26s and %-24s both on %s' % (n, other, phone))
+    if colleagues:
+        print('different people sharing an office line, kept apart %d' % len(colleagues))
+        for n, other, phone in colleagues[:12]:
+            print('    %-26s and %-24s both on %s' % (n, other, phone))
+        if len(colleagues) > 12:
+            print('    ... and %d more' % (len(colleagues) - 12))
+    if unreachable:
+        print('no phone and no email %d  (left out)' % len(unreachable))
+        for r in unreachable[:8]:
+            print('    %s' % (r.get('Full Name') or '?'))
+        if len(unreachable) > 8:
+            print('    ... and %d more' % (len(unreachable) - 8))
     print('written        %d' % len(out))
     print('  with a phone    %d' % len([r for r in out if r['Phone']]))
     print('  with an email   %d' % len([r for r in out if r['Email']]))

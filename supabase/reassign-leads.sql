@@ -23,6 +23,53 @@ select id, name, email, role, branch, active
 
 
 -- ---------------------------------------------------------------------
+-- STEP 0b - where did the leads actually go? Run this when somebody is
+--           missing from step 0, or missing from Authentication -> Users.
+--
+--           Those are two different lists. Authentication -> Users is who
+--           can sign in. public.profiles is who the CRM knows about, and
+--           leads."ownerId" points at THAT. Deleting the login does not
+--           move a single lead, and a profile can outlive its login.
+--
+--           Every row here is an owner holding leads. "no profile" means
+--           the leads are held by somebody the CRM can no longer name -
+--           they are invisible in the UI's owner filter but still in the
+--           database, and still hidden from every rep by RLS.
+-- ---------------------------------------------------------------------
+select
+  l."ownerId",
+  coalesce(p.name, '** no profile - orphaned **') as owner,
+  coalesce(p.email, '') as email,
+  coalesce(p.role, '') as role,
+  case when p.id is null then 'ORPHANED' when p.active then 'active' else 'closed' end as state,
+  count(*) as leads
+from public.leads l
+left join public.profiles p on p.id = l."ownerId"
+group by l."ownerId", p.name, p.email, p.role, p.active, p.id
+order by leads desc;
+
+-- If Frank shows as ORPHANED, his profile is gone and there is no email to
+-- match on. Move his leads by the id in that first column instead - paste it
+-- in place of ORPHANED-OWNER-ID and run this INSTEAD of steps 2 and 3:
+--
+--   insert into public.lead_owner_history ("leadId", "wasOwnedBy", "movedTo", reason)
+--   select l.id, l."ownerId",
+--          (select id from public.profiles where lower(email) = lower('JOSH@EXAMPLE.COM')),
+--          'rep left - profile already gone'
+--     from public.leads l where l."ownerId" = 'ORPHANED-OWNER-ID';
+--
+--   update public.leads
+--      set "ownerId" = (select id from public.profiles where lower(email) = lower('JOSH@EXAMPLE.COM')),
+--          "updatedAt" = now()
+--    where "ownerId" = 'ORPHANED-OWNER-ID';
+--
+--   update public.tasks
+--      set "assigneeId" = (select id from public.profiles where lower(email) = lower('JOSH@EXAMPLE.COM')),
+--          "updatedAt" = now()
+--    where "assigneeId" = 'ORPHANED-OWNER-ID' and status = 'open';
+
+
+-- ---------------------------------------------------------------------
 -- STEP 1 - look before you leap. Run this and read the numbers. If
 --          "leaving" or "taking over" is 0, an email is wrong - fix it
 --          before going on. Nothing is changed by this step.

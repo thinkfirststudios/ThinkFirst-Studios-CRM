@@ -105,6 +105,7 @@
     hideStatusMenu();
     if (params.id) return detail(el, params.id);
 
+    dropStaleSource();
     var stats = S.leadStats();
     var seg = segment();
 
@@ -284,6 +285,7 @@
         '<button class="btn btn-ghost btn-sm" id="clear">Clear</button>' +
         '<button class="btn btn-sm" id="exportCsv" style="margin-left:auto">Export CSV</button>' +
       '</div>' +
+      listBar() +
       U.table(cols(rows), rows, {
         rowLink: true, sortKey: st.sortKey, sortDir: st.sortDir,
         emptyHTML: U.empty(
@@ -328,6 +330,15 @@
     var exportBtn = el.querySelector('#exportCsv');
     if (exportBtn) exportBtn.onclick = function () { exportCsv(rows); };
 
+    /* Picking a list is the same filter the dropdown drives, so the two can
+       never disagree about what is on screen. */
+    el.querySelectorAll('#listBar [data-list]').forEach(function (b) {
+      b.onclick = function () {
+        st.source = b.dataset.list;
+        root.render();
+      };
+    });
+
     bindAttention(el);
     bindCallbacks(el);
 
@@ -367,10 +378,21 @@
     return !!(st.q || st.rating || st.owner || st.source || st.tag || st.due || st.mockup || st.reach);
   }
 
+  /* visibleLeads, not every lead there is. A rep offered "Brazil walk-ins"
+     in their own filter learns the shape of a book they cannot open, and
+     picking it would return nothing with no explanation. */
   function sourcesInUse() {
     var seen = {};
-    S.all('leads').forEach(function (l) { if (l.source) seen[l.source] = 1; });
+    S.visibleLeads().forEach(function (l) { if (l.source) seen[l.source] = 1; });
     return Object.keys(seen).sort();
+  }
+
+  /* A filter you cannot see is a bug report waiting to happen: the list is
+     empty, nothing on screen says why, and Clear is the only way out. So a
+     source that no longer matches anything visible - the leads moved owner,
+     or the list was renamed - stops being a filter. */
+  function dropStaleSource() {
+    if (st.source && sourcesInUse().indexOf(st.source) < 0) st.source = '';
   }
 
   /* ── the follow-up queue ─────────────────────────────────────────
@@ -1105,6 +1127,43 @@
     st.sortDir = bits[1] === '-1' ? -1 : 1;
   }
   restoreSort();
+
+  /* ── the lists a rep can work ──────────────────────────────────────
+     A batch of leads arrives, gets imported under a name, and then has to
+     be found again. The source dropdown could always do it, but a dropdown
+     hides what it holds: you cannot see that you have four lists, or that
+     one of them is 90% called and another has not been started.
+
+     One chip per list, with how many are left to call, so picking what to
+     work is a glance rather than a query. Hidden entirely when there is
+     only one list, because then it is not a choice. */
+  function listBar() {
+    var lists = S.leadLists();
+    if (lists.length < 2) return '';
+
+    var chip = function (l) {
+      var on = st.source === l.source;
+      var left = l.uncalled;
+      return '<button class="btn btn-sm' + (on ? ' btn-primary' : '') + '"' +
+        ' data-list="' + U.esc(l.source) + '"' +
+        ' title="' + U.esc(l.total + ' leads, ' + l.called + ' already called' +
+                           (l.overdue ? ', ' + l.overdue + ' overdue' : '')) + '">' +
+        U.esc(l.source) +
+        '<span class="seg-count">' + (left ? left + ' left' : 'all called') + '</span>' +
+        (l.overdue ? '<span class="seg-count" style="color:var(--danger)">' +
+                     l.overdue + ' due</span>' : '') +
+        '</button>';
+    };
+
+    return '<div class="toolbar" id="listBar" style="gap:6px;flex-wrap:wrap;' +
+             'border-top:1px solid var(--line);padding-top:10px">' +
+      '<span class="hint" style="margin-right:2px">Lists</span>' +
+      '<button class="btn btn-sm' + (st.source ? '' : ' btn-primary') + '" data-list="">' +
+        'All<span class="seg-count">' +
+        lists.reduce(function (n, l) { return n + l.total; }, 0) + '</span></button>' +
+      lists.map(chip).join('') +
+      '</div>';
+  }
 
   /* "Today" and "Yesterday" earn their words; past that a date is easier to
      scan than a count of days. */
