@@ -116,7 +116,38 @@ def main():
     a = ap.parse_args()
 
     rows = list(csv.DictReader(io.open(a.source, encoding='utf-8-sig')))
-    out = [clean(r, a.location, a.source_label, a.tags) for r in rows if (r.get('Business Name') or '').strip()]
+
+    # These sheets are organised into sections, and a section heading is a
+    # row like any other: a name in the first column and nothing else on it.
+    # Imported as written they become leads called "PRIORITY" and
+    # "REAL ESTATE AGENCIES - SOUTH FLORIANOPOLIS ISLAND", which a rep then
+    # has to work out how to delete.
+    def is_heading(r):
+        name = (r.get('Business Name') or '').strip()
+        if not name:
+            return False
+        rest = [(r.get(k) or '').strip() for k in r if k != 'Business Name']
+        return not any(rest)
+
+    # A business listed under two sections is one business. The sheet says
+    # so itself - "(See also PRIORITY section.)" - and importing both makes
+    # two leads that two people can call.
+    kept, seen, headings, repeats = [], {}, [], []
+    for r in rows:
+        name = (r.get('Business Name') or '').strip()
+        if not name:
+            continue
+        if is_heading(r):
+            headings.append(name)
+            continue
+        key = re.sub(r'[^a-z0-9]+', '', name.lower())
+        if key in seen:
+            repeats.append(name)
+            continue
+        seen[key] = 1
+        kept.append(r)
+
+    out = [clean(r, a.location, a.source_label, a.tags) for r in kept]
 
     d = os.path.dirname(a.out)
     if d and not os.path.isdir(d):
@@ -128,6 +159,10 @@ def main():
 
     from collections import Counter
     print('read      %d rows' % len(rows))
+    if headings:
+        print('headings  %d  (dropped) %s' % (len(headings), ' | '.join(headings)))
+    if repeats:
+        print('repeated  %d  (dropped) %s' % (len(repeats), ' | '.join(repeats)))
     print('written   %d' % len(out))
     print('website   %d' % len([r for r in out if r['Website']]))
     print('instagram %d' % len([r for r in out if r['Instagram']]))
