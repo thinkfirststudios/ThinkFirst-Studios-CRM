@@ -257,6 +257,34 @@ for _full, _shorts in NICKNAMES.items():
         CANON[_s] = _full
 
 
+# A job title run onto the end of the name, with no separator:
+#   "Danielle Wendeburg Manager", "Constantino Fernandez Manager"
+# 50 rows of one list arrive this way. Left alone the title becomes part of
+# the name, so the lead is filed as a company called "Danielle Wendeburg
+# Manager" - and, worse, stops looking like the same person as the
+# "Danielle Wendeburg" on the other list, because the surname now reads as
+# "Manager". Two leads, one person, one of them addressed wrongly.
+TITLE_TAIL = re.compile(
+    r'\s+(sr\.?|senior|jr\.?|junior)?\s*'
+    r'(branch\s+manager|loan\s+officer|loan\s+originator|vice\s+president|'
+    r'president|manager|owner|broker|partner|vp)\s*$', re.I)
+
+
+def split_title(name):
+    """The name, and the title that was stuck to the end of it.
+
+    Only strips when two words are left over, so a one-word row is never
+    reduced to nothing, and only matches at the end, so a "Manager" in the
+    middle of something is left where it is."""
+    m = TITLE_TAIL.search(name or '')
+    if not m:
+        return name, ''
+    rest = name[:m.start()].strip()
+    if len(rest.split()) < 2:
+        return name, ''
+    return rest, ' '.join(m.group(0).split()).title()
+
+
 def surnames_match(a, b):
     """Felicia Rhodes and Felicia Kimbrough-Rhodes share a surname; Amie
     Mccarver and Abraham Mendez do not. This is the first gate, and it is
@@ -367,6 +395,11 @@ def main():
     ap.add_argument('source_file')
     ap.add_argument('--out', required=True)
     ap.add_argument('--source', default='Contact List')
+    ap.add_argument('--source-from', default='',
+                    help='column naming each row\'s list, instead of one --source '
+                         'for the file. Lets a list be split into several CRM lists '
+                         'without splitting the file first, which would break dedupe '
+                         'across the split.')
     ap.add_argument('--against', action='append', default=[],
                     help='CSV whose leads are already in the CRM; repeatable')
     ap.add_argument('--planned', action='append', default=[],
@@ -384,10 +417,20 @@ def main():
     colleagues, unreachable, shared_lines = [], [], set()
     maybe_same = []
 
+    titled = []
     for r in rows:
         name = (r.get('Full Name') or '').strip()
         if not name:
             continue
+        # Done here rather than in the converter so that dedupe sees the
+        # cleaned name too - the whole point is that "Danielle Wendeburg
+        # Manager" and "Danielle Wendeburg" reach same_person as one person.
+        name, tail = split_title(name)
+        if tail:
+            titled.append((r['Full Name'].strip(), name, tail))
+            r['Full Name'] = name
+            if tail.lower() not in (r.get('Job Title (source)') or '').lower():
+                r['Job Title (source)'] = tail
         e, ph = key_email(r), digits(r.get('Phone Number'))
 
         # No phone and no address is not a lead, it is a name. Importing it
@@ -461,9 +504,11 @@ def main():
             hit = plan_who.get(e) or plan_who.get(ph) or (None, plan_name[0][2])
             planned_hits.append((name, hit[1] if hit else '?'))
 
-        rec = (convert_roster(r, a.source) if roster_shape
-               else convert_brokerage(r, a.source) if brokerage_shape
-               else convert(r, a.source, []))
+        src = (r.get(a.source_from) or '').strip() if a.source_from else ''
+        src = src or a.source
+        rec = (convert_roster(r, src) if roster_shape
+               else convert_brokerage(r, src) if brokerage_shape
+               else convert(r, src, []))
         idx = len(out)
         out.append(rec)
         if e:
@@ -517,6 +562,9 @@ def main():
     print('  with an email   %d' % len([r for r in out if r['Email']]))
     print('  with neither    %d' % len([r for r in out if not r['Phone'] and not r['Email']]))
     print('  flagged to check %d' % len([r for r in out if 'CHECK:' in r['Note']]))
+    if titled:
+        print('  job title taken out of the name: %d  e.g. %s'
+              % (len(titled), '; '.join('%s -> %s + %s' % t for t in titled[:3])))
     if namesakes:
         print()
         print('same name as a lead in another state - kept, probably not the same person: %d'
