@@ -52,6 +52,10 @@ SOCIAL = {
 # read as "@p" and, worse, collide with every other post link.
 POST = re.compile(r'(?:^|\.)(?:instagram|facebook)\.com/(p|reel|share|posts)/', re.I)
 
+# Ways these sheets write "there isn't one". Any of them taken literally
+# becomes a website, and a website is an identity.
+NOTHING = re.compile(r'^\s*(not found|none|n/?a|unknown|tbd|-+)\b', re.I)
+
 
 def bare(url):
     return re.sub(r'^https?://(www\.)?', '', (url or '').strip(), flags=re.I)
@@ -65,6 +69,34 @@ def industry_of(text):
     return ''
 
 
+def contact_bits(row):
+    """A phone and an email, where the sheet has them.
+
+    The first of these lists had neither - you do not ring a pousada, you
+    walk in - so this used to take neither, and a later sheet with 68
+    WhatsApp numbers on it had every one of them dropped on the floor.
+
+    "Not found" is the sheet's way of writing nothing, but it is sometimes
+    "Not found (booking by email only: mussel@numerologo.com.br)", so the
+    address is taken out before the rest is discarded. The same goes for an
+    email written into the description."""
+    raw = (row.get('WhatsApp / Phone') or '').strip()
+    email = ''
+    hunt = ' '.join([raw, (row.get('Description / Niche') or ''),
+                     (row.get('Website / Link') or '')])
+    m = re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', hunt)
+    if m:
+        email = m.group(0).rstrip('.')
+
+    phone = ''
+    if raw and not raw.lower().startswith('not found'):
+        # One row carries two numbers: "48 99114-5800 / 48 99619-2923".
+        first = re.split(r'\s*/\s*', raw)[0].strip()
+        if sum(c.isdigit() for c in first) >= 8:
+            phone = first
+    return phone, email
+
+
 def clean(row, location, source, tags):
     out = dict((c, '') for c in COLUMNS)
     out['Company'] = (row.get('Business Name') or '').strip()
@@ -73,11 +105,17 @@ def clean(row, location, source, tags):
     out['Location'] = location
     out['Source'] = source
     out['Tags'] = tags
+    out['Phone'], out['Email'] = contact_bits(row)
 
     links = [row.get('Website / Link'), row.get('Social Media')]
     for raw in links:
         url = (raw or '').strip()
-        if not url:
+        if not url or NOTHING.match(url):
+            # "Not found" is how this sheet writes an empty cell. Taken as a
+            # URL it becomes the website, and the CRM keys a lead with no
+            # email on its website host - so all 45 businesses with no site
+            # got the identical key "d:not found" and 44 of them would have
+            # been skipped on import as duplicates of the first.
             continue
         host_path = bare(url)
         if POST.search(host_path):
