@@ -153,7 +153,68 @@ def city_of(r):
     return (bare + ', ' + state) if bare else state
 
 
-def convert_brokerage(r, source):
+# A brokerage that publishes a number which does not ring the agent.
+# Redfin gives every agent their own tracking number - distinct from every
+# other, with the right local area code - that routes to the tour-and-booking
+# queue. Nothing about the number gives it away, so no amount of looking for
+# repeated numbers finds it. What gives it away is the brokerage: every agent
+# has a phone, not one has an email, and the research never once calls the
+# number a cell. William Raveis looks identical on the first two counts and is
+# the opposite case - fourteen agents, no emails, and every single write-up
+# says "publishes her cell number" - so the third test is the one that matters.
+CELL_SAID = re.compile(r'\b(cell|mobile)\b', re.I)
+
+
+def routed_brokerages(rows):
+    """Brokerages whose published number reaches the company, not the person."""
+    by = {}
+    for r in rows:
+        b = (r.get('Brokerage') or '').strip()
+        if b:
+            by.setdefault(b, []).append(r)
+    out = {}
+    for b, group in by.items():
+        # Under five people it is a coincidence, not a policy.
+        if len(group) < 5:
+            continue
+        if any((r.get('Email') or '').strip() for r in group):
+            continue
+        if any(CELL_SAID.search((r.get('Evidence Summary') or '') + ' ' +
+                                (r.get('Active Status') or '')) for r in group):
+            continue
+        if all((r.get('Phone Number') or '').strip() for r in group):
+            out[b] = len(group)
+    return out
+
+
+def reach_of(r, routed):
+    """How a rep can actually get hold of this person, best route first.
+
+    This is the tag worth filtering a call list on. A lead is not dead
+    because its phone is a switchboard; it is dead because the phone is a
+    switchboard and there is no email behind it."""
+    email = (r.get('Email') or '').strip()
+    phone = (r.get('Phone Number') or '').strip()
+    said = (r.get('Evidence Summary') or '') + ' ' + (r.get('Active Status') or '')
+    brokerage = (r.get('Brokerage') or '').strip()
+    if phone and CELL_SAID.search(said):
+        return 'reach: cell', ''
+    if email:
+        if brokerage in routed:
+            return 'reach: email', ('CHECK: the number is ' + brokerage +
+                                    "'s booking line, not theirs - use the email")
+        return 'reach: email', ''
+    if phone and brokerage in routed:
+        return 'reach: switchboard', (
+            'CHECK: ' + brokerage + ' gives each agent their own number that routes to '
+            'its booking line, and publishes no email - calling this reaches the '
+            'company, not them')
+    if phone:
+        return 'reach: phone', ''
+    return 'reach: none', ''
+
+
+def convert_brokerage(r, source, routed=None):
     """The researched shape: found on a brokerage's own site, with a profile
     URL and a paragraph saying why we believe they are working."""
     name = (r.get('Full Name') or '').strip()
@@ -170,7 +231,8 @@ def convert_brokerage(r, source):
     out['Location'] = city_of(r)
     out['Industry'] = 'Real Estate'
     out['Source'] = source
-    out['Tags'] = ' | '.join([t for t in [state, 'realtor', tier.lower()] if t])
+    reach, warn = reach_of(r, routed or {})
+    out['Tags'] = ' | '.join([t for t in [state, 'realtor', tier.lower(), reach] if t])
 
     note = []
     if brokerage:
@@ -187,6 +249,8 @@ def convert_brokerage(r, source):
     if out['Website']:
         note.append('Link above is their ' + ('brokerage' if brokerage else 'public')
                     + ' profile page, not a site of their own')
+    if warn:
+        note.append(warn)
     if not out['Phone'] and not out['Email']:
         note.append('CHECK: no phone and no email on the list - contact through the profile page')
     elif not out['Phone']:
@@ -409,6 +473,10 @@ def main():
     rows = read_rows(a.source_file)
     brokerage_shape = bool(rows) and 'Brokerage' in rows[0]
     roster_shape = bool(rows) and 'Brokerage / Company' in rows[0]
+    # Worked out over the whole file, not per row: a single agent with a
+    # phone and no email says nothing, a brokerage where that is true of
+    # everyone is a policy.
+    routed = routed_brokerages(rows) if brokerage_shape else {}
     taken_e, taken_p, who, taken_n = known_from(a.against)
     plan_e, plan_p, plan_who, plan_n = known_from(a.planned)
 
@@ -507,7 +575,7 @@ def main():
         src = (r.get(a.source_from) or '').strip() if a.source_from else ''
         src = src or a.source
         rec = (convert_roster(r, src) if roster_shape
-               else convert_brokerage(r, src) if brokerage_shape
+               else convert_brokerage(r, src, routed) if brokerage_shape
                else convert(r, src, []))
         idx = len(out)
         out.append(rec)
@@ -562,6 +630,9 @@ def main():
     print('  with an email   %d' % len([r for r in out if r['Email']]))
     print('  with neither    %d' % len([r for r in out if not r['Phone'] and not r['Email']]))
     print('  flagged to check %d' % len([r for r in out if 'CHECK:' in r['Note']]))
+    for b, n in sorted(routed.items(), key=lambda kv: -kv[1]):
+        print('  %s publishes a routed number and no email for all %d of its agents'
+              % (b, n))
     if titled:
         print('  job title taken out of the name: %d  e.g. %s'
               % (len(titled), '; '.join('%s -> %s + %s' % t for t in titled[:3])))
