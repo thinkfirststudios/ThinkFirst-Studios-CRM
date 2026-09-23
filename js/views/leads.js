@@ -132,6 +132,8 @@
     }).length;
     /* One pass over the notes, not one per row. */
     var noteIdx = S.noteIndex('lead');
+    /* Same, for the numbers that only reach a switchboard. */
+    var lineIdx = S.companyLineIndex();
     var rows = S.visibleLeads().filter(function (l) {
       if (!seg.match(l)) return false;
       if (st.rating && (l.rating || 'warm') !== st.rating) return false;
@@ -144,6 +146,11 @@
          anything about them. */
       if (st.reach === 'phone' && !l.phone) return false;
       if (st.reach === 'nophone' && l.phone) return false;
+      /* A number that reaches the person, as against one that reaches a
+         booking desk. "Company lines" is the pile to work through when
+         somebody goes looking for direct numbers. */
+      if (st.reach === 'direct' && (!l.phone || lineIdx[l.id])) return false;
+      if (st.reach === 'company' && !lineIdx[l.id]) return false;
       if (st.reach === 'email' && !l.email) return false;
       if (st.reach === 'noneither' && (l.phone || l.email)) return false;
       if (st.due) {
@@ -260,6 +267,7 @@
         '<select class="input" id="frating"><option value="">Any rating</option>' + U.options(S.LEAD_RATINGS, st.rating) + '</select>' +
         '<select class="input" id="freach"><option value="">Any contact</option>' +
           reachOpt('phone', 'Has a phone') + reachOpt('nophone', 'No phone') +
+          reachOpt('direct', 'Direct number') + reachOpt('company', 'Company line') +
           reachOpt('email', 'Has an email') + reachOpt('noneither', 'No phone or email') +
         '</select>' +
         '<select class="input" id="fmockup"><option value="">Any mockup</option>' +
@@ -644,6 +652,27 @@
         : '');
   }
 
+  /* The button a rep presses the moment a tour-booking desk answers. It
+     sits beside "Log call" because that is the hand movement it replaces:
+     the call happened, it just cannot happen again. */
+  function companyLineBtn(id) {
+    return '<button class="btn btn-ghost btn-sm" data-companyline="' + U.esc(id) + '" ' +
+      'title="This number reaches a company switchboard, not the contact. ' +
+      'Takes the lead off the call list and keeps it off everybody else’s.">Company line</button>';
+  }
+
+  function bindCompanyLine(el) {
+    el.querySelectorAll('[data-companyline]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        var l = S.markCompanyLine(b.dataset.companyline, true);
+        U.toast((l ? l.name : 'Lead') + ' marked as a company line — off the call list. ' +
+          'Find these under Any contact → Company line.', 'ok');
+        root.render();
+      };
+    });
+  }
+
   function attentionCard(list) {
     if (!list.length) {
       return S.openLeads().length
@@ -674,6 +703,7 @@
           '<div class="wo-side">' +
             U.badge(followLabel(f), f.tone) +
             '<button class="btn btn-sm" data-logcontact="' + U.esc(l.id) + '">Log contact</button>' +
+            (l.phone ? companyLineBtn(l.id) : '') +
             '<button class="btn btn-ghost btn-sm" data-snooze="' + U.esc(l.id) + '" title="Push the next touch out one week">+1w</button>' +
           '</div></div>';
       }).join('') +
@@ -682,6 +712,7 @@
   }
 
   function bindAttention(el) {
+    bindCompanyLine(el);
     el.querySelectorAll('[data-mockupowner]').forEach(function (b) {
       b.onclick = function (e) {
         e.stopPropagation();
@@ -974,6 +1005,7 @@
   function cols(rows) {
     /* Built once for the whole table, not asked per row. */
     var noteFlags = S.leadNoteFlags();
+    var lines = S.companyLineIndex();
 
     /* The same, for when a lead arrived. A comparator runs O(n log n)
        times, so parsing the timestamp inside it means tens of thousands of
@@ -1035,8 +1067,17 @@
         sort: function (l) { return l.phone ? String(l.phone).replace(/\D/g, '') : 'zzz'; },
         render: function (l) {
           if (!l.phone) return '<span class="muted">—</span>';
-          return '<a class="link mono" style="font-size:12px;white-space:nowrap" href="tel:' +
-            U.esc(String(l.phone).replace(/[^0-9+]/g, '')) + '">' + U.esc(l.phone) + '</a>';
+          var why = lines[l.id];
+          /* Still dialable — somebody chasing a direct number may want to
+             ring the desk and ask for the agent. It is the calling list it
+             has been taken off, not the record. */
+          return '<a class="link mono" style="font-size:12px;white-space:nowrap' +
+              (why ? ';opacity:.6' : '') + '" href="tel:' +
+            U.esc(String(l.phone).replace(/[^0-9+]/g, '')) + '">' + U.esc(l.phone) + '</a>' +
+            (why
+              ? '<div class="muted" style="font-size:11px;margin-top:2px" title="' + U.esc(why) + '">' +
+                  'company line</div>'
+              : '');
         } },
       { key: 'status', label: 'Status', sort: function (l) { return S.leadStatus(l.leadStatus).order; },
         render: function (l) {
@@ -1194,6 +1235,7 @@
     var f = S.followUpState(l);
     var status = S.leadStatus(l.leadStatus);
     var rating = S.leadRating(l.rating);
+    var lineWhy = S.companyLineIndex()[l.id] || '';
     var tab = ['details', 'notes', 'activity'].indexOf(root.__leadTab) > -1 ? root.__leadTab : 'details';
 
     el.innerHTML =
@@ -1233,7 +1275,20 @@
         '<div class="highlights">' +
           hl('Primary Contact', U.esc(l.contactName || '—') +
              (l.contactTitle ? '<div class="muted" style="font-size:11.5px;font-weight:400">' + U.esc(l.contactTitle) + '</div>' : '')) +
-          hl('Phone', l.phone ? '<a href="tel:' + U.esc(l.phone) + '">' + U.esc(l.phone) + '</a>' : '—') +
+          hl('Phone', l.phone
+            ? '<a href="tel:' + U.esc(l.phone) + '">' + U.esc(l.phone) + '</a>' +
+              /* Why this lead is not on anybody's call list, said on the
+                 record itself - otherwise its absence from the queue looks
+                 like the CRM losing leads. */
+              (lineWhy
+                ? '<div class="muted" style="font-size:11.5px;font-weight:400;margin-top:3px">' +
+                    U.esc(lineWhy) +
+                    ' <button class="btn btn-ghost btn-sm" id="lineOff" ' +
+                      'title="Put it back on the call list">Direct number</button></div>'
+                : '<div style="margin-top:3px"><button class="btn btn-ghost btn-sm" id="lineOn" ' +
+                    'title="This number reaches a company switchboard, not the contact">' +
+                    'Company line</button></div>')
+            : '—') +
           hl('Email', l.email ? '<a href="mailto:' + U.esc(l.email) + '" style="color:var(--orange)">' + U.esc(l.email) + '</a>' : '—') +
           hl('Next Follow-Up', f.key === 'closed'
             ? '<span class="muted">—</span>'
@@ -1276,6 +1331,26 @@
     if (logBtn) logBtn.onclick = function () { openLogContact(l.id, rerender); };
     var cbBtn = el.querySelector('#cbBtn');
     if (cbBtn) cbBtn.onclick = function () { openCallback(l, rerender); };
+    var lineOn = el.querySelector('#lineOn');
+    if (lineOn) lineOn.onclick = function () {
+      S.markCompanyLine(l.id, true);
+      U.toast(l.name + ' marked as a company line — off the call list.', 'ok');
+      rerender();
+    };
+    var lineOff = el.querySelector('#lineOff');
+    if (lineOff) lineOff.onclick = function () {
+      /* Only a rep's own mark can be lifted here. A Redfin profile or a
+         number shared with another lead is worked out from the record, so
+         the way back is to correct the record - change the number, and the
+         lead is on the call list again by itself. */
+      if (!S.hasTag(l, S.COMPANY_LINE_TAG)) {
+        U.toast('This one is worked out from the record itself. Edit the number or the website to change it.', '');
+        return;
+      }
+      S.markCompanyLine(l.id, false);
+      U.toast(l.name + ' back on the call list.', 'ok');
+      rerender();
+    };
     var convBtn = el.querySelector('#convBtn');
     if (convBtn) convBtn.onclick = function () { openConvert(l, rerender); };
     var delBtn = el.querySelector('#delBtn');
@@ -1733,6 +1808,7 @@
         '<div class="wo-side">' +
           U.badge(whenLabel(t), whenTone(t)) +
           '<button class="btn btn-sm" data-logcontact="' + U.esc(l.id) + '">Log call</button>' +
+          (l.phone ? companyLineBtn(l.id) : '') +
           '<button class="btn btn-ghost btn-sm" data-cbmove="' + U.esc(t.id) + '">Reschedule</button>' +
           '<button class="btn btn-ghost btn-sm" data-cbdone="' + U.esc(t.id) + '">Done</button>' +
         '</div></div>';
@@ -1740,6 +1816,7 @@
   }
 
   function bindCallbacks(el) {
+    bindCompanyLine(el);
     el.querySelectorAll('[data-cbdone]').forEach(function (b) {
       b.onclick = function (e) {
         e.stopPropagation();
@@ -2062,12 +2139,18 @@
         if (used[i]) continue;
         if (aliases.indexOf(norm(headers[i])) > -1) { map[field] = i; used[i] = 1; return; }
       }
-      /* fall back to a contains match — "Business Email", "Company URL" */
+      /* Fall back to a whole-word match — "Business Email", "Company URL".
+         Whole words, not any substring. "ig" is an alias for instagram and
+         the word "ne-ig-hborhood" contains it, so a Neighborhood column was
+         read as an Instagram handle — and because a social handle outranks
+         the website in leadKey, every realtor in South Tampa keyed as the
+         same lead. 61 of 68 were skipped as duplicates and the dialog said
+         "7 new". "tt" did the same to Attempts, and to Plastic bottles. */
       for (var j = 0; j < headers.length; j++) {
         if (used[j]) continue;
-        var h = norm(headers[j]);
+        var h = ' ' + norm(headers[j]) + ' ';
         for (var k = 0; k < aliases.length; k++) {
-          if (h.indexOf(aliases[k]) > -1) { map[field] = j; used[j] = 1; return; }
+          if (h.indexOf(' ' + aliases[k] + ' ') > -1) { map[field] = j; used[j] = 1; return; }
         }
       }
     });

@@ -315,6 +315,41 @@
     'wordpress\\.com', 'blogspot\\.com', 'myshopify\\.com', 'github\\.io'
   ].join('|') + ')$', 'i');
 
+  /* ── numbers that do not reach a person ────────────────────────────
+     A scraped phone number is not always somebody's phone. A Redfin agent
+     profile lists Redfin's tour-and-booking line rather than the agent, so
+     a rep working down that stretch of a list rings the same switchboard
+     twenty times and logs a morning of voicemails against twenty different
+     names. The number is not wrong, it just does not reach the person
+     whose name is on the lead.
+
+     A portal is named here only once somebody has rung it and found out.
+     Guessing from the domain would be easy and wrong: a Keller Williams
+     agent on kw.com usually does list their own cell. Both of these were
+     rung by Josh on 22 Sep 2026 - Redfin answers with a tour-and-booking
+     desk, Compass with a directory you work through by name. */
+  var PORTAL_LINES = {
+    'redfin.com': 'Redfin answers this on the agent’s behalf — a tour-and-booking desk, not the agent',
+    'compass.com': 'Compass routes this through a company directory — you have to ask for the agent by name'
+  };
+
+  /* What a rep marks when they reach a switchboard. A tag rather than a
+     column: it needs no migration, it already syncs, and the filters and
+     search already understand it. */
+  var COMPANY_LINE_TAG = 'company-line';
+
+  function hostOf(url) {
+    return String(url || '').trim().toLowerCase()
+      .replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/[/?#].*$/, '');
+  }
+
+  /* The last ten digits, so the same line written three ways still
+     compares equal. Anything shorter is not a number worth comparing. */
+  function phoneDigits(p) {
+    var d = String(p || '').replace(/\D/g, '');
+    return d.length >= 10 ? d.slice(-10) : '';
+  }
+
   var SOCIALS = [
     { id: 'instagram', label: 'Instagram', short: 'IG', tone: 'b-violet',
       placeholder: '@hollywoodgleam',
@@ -1601,9 +1636,12 @@
     callbacks: function () {
       var byId = {};
       API.visibleLeads().forEach(function (l) { byId[l.id] = l; });
+      /* Same rule as the follow-up queue: a call back is an appointment to
+         ring a number, and a switchboard is not worth keeping one for. */
+      var lines = API.companyLineIndex();
       return db.tasks.filter(function (t) {
         return t.kind === 'callback' && t.entityType === 'lead' && byId[t.entityId] &&
-          !API.isTaskDone(t);
+          !lines[t.entityId] && !API.isTaskDone(t);
       }).map(function (t) {
         return { task: t, lead: byId[t.entityId] };
       }).sort(function (a, b) {
@@ -1883,8 +1921,13 @@
        Nothing is hidden — "Unscheduled" is still one of the follow-up
        filters on the leads list, and still its own badge on the row. */
     leadsNeedingAttention: function (userId) {
+      /* A number that rings a switchboard is not a call worth making, so
+         it is not "due" either. Left out here rather than at the screen,
+         because the count beside the queue has to agree with it. */
+      var lines = API.companyLineIndex();
       return API.visibleLeads().filter(function (l) {
         if (userId && l.ownerId !== userId) return false;
+        if (lines[l.id]) return false;
         var k = API.followUpState(l).key;
         return k === 'overdue' || k === 'today';
       }).sort(function (a, b) {
@@ -2353,6 +2396,83 @@
     },
     hasTag: function (rec, tag) {
       return (rec.tags || []).some(function (t) { return t.toLowerCase() === String(tag).toLowerCase(); });
+    },
+
+    /* ── which leads ring a switchboard ──────────────────────────────
+       Every lead judged in one pass, keyed by id, because the table and
+       both call queues ask this on every repaint and a scan per row over a
+       1,700-lead book would be paid for on every keystroke.
+
+       Three signals, each of them evidence rather than a hunch:
+         · a rep rang it and marked it — the last word, always
+         · the lead came off a portal that publishes its own line
+         · the same number sits on more than one lead
+
+       The value is the reason, not a flag, so every screen can say why a
+       lead was set aside instead of leaving somebody to wonder. */
+    COMPANY_LINE_TAG: COMPANY_LINE_TAG,
+    companyLineIndex: function () {
+      var count = {};
+      db.leads.forEach(function (l) {
+        var d = phoneDigits(l.phone);
+        if (d) count[d] = (count[d] || 0) + 1;
+      });
+
+      var out = {};
+      db.leads.forEach(function (l) {
+        if (API.hasTag(l, COMPANY_LINE_TAG)) {
+          out[l.id] = 'Marked as a company line by a rep who rang it';
+          return;
+        }
+        var d = phoneDigits(l.phone);
+        if (!d) return;
+        var portal = PORTAL_LINES[hostOf(l.website)];
+        if (portal) { out[l.id] = portal; return; }
+        if (count[d] > 1) {
+          out[l.id] = 'Same number as ' + (count[d] - 1) + ' other ' +
+            (count[d] === 2 ? 'lead' : 'leads');
+        }
+      });
+      return out;
+    },
+
+    /* Mark a number as a switchboard, or take the mark off again.
+
+       Marking it is the end of the call, so it does what the rep would
+       otherwise do by hand: the lead leaves the call queue and the call
+       back goes with it. The lead itself is left open and keeps its
+       number - the business is still worth reaching, and somebody may yet
+       find a direct line for it. That is why this is not "dead". */
+    markCompanyLine: function (id, on, note) {
+      var l = find('leads', id);
+      if (!l) return null;
+      var marked = API.hasTag(l, COMPANY_LINE_TAG);
+      if (marked === (on !== false)) return l;
+
+      var tags = (l.tags || []).filter(function (t) {
+        return t.toLowerCase() !== COMPANY_LINE_TAG;
+      });
+      if (on !== false) tags.push(COMPANY_LINE_TAG);
+
+      var patch = { tags: tags };
+      if (on !== false) patch.nextFollowUp = '';
+      update('leads', id, patch,
+        on !== false ? l.name + ' rings a company line' : l.name + ' has a direct number again');
+
+      if (on !== false) {
+        /* The call back was to ring this number. There is no point
+           putting it back on somebody's list for Thursday. */
+        db.tasks.slice().forEach(function (t) {
+          if (t.kind === 'callback' && t.entityType === 'lead' && t.entityId === id &&
+              !API.isTaskDone(t)) {
+            API.completeTask(t.id, true);
+          }
+        });
+      }
+      API.addNote('lead', id, note || (on !== false
+        ? 'Rang this number and reached a company line, not the contact. Taken off the call list until somebody finds a direct number.'
+        : 'Marked as reaching the contact directly again.'));
+      return find('leads', id);
     },
 
     /* session */
