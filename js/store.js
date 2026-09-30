@@ -306,6 +306,130 @@
   /* Hosts that thousands of businesses share. A page on one of these
      identifies its owner only by the path, never by the domain. Listed
      as whole hostnames — some already carry their own dot. */
+  /* ── which side of the country ──────────────────────────────────
+     Josh rang a morning of east-coast agents from the west coast and got
+     voicemail: "getting a lot of voicemails esp the east coast zone". A
+     lead's zone is not stored anywhere, but it is already implied twice
+     over - by the state in its Location, and by the area code of its
+     phone - so it is worked out rather than typed.
+
+     The state is asked first, because a business is where it says it is.
+     The area code is the fallback for the 7% whose Location is a bare
+     city: "Fontana", "Corona", "Chino" with a 909 number on the row.
+     Checked against the CRM's own book, the two agree on 1602 of 1612
+     leads that carry both. The ten that disagree are all a business in
+     one place holding a mobile from another - a Los Angeles agent with a
+     202 Washington number - and there the Location is the true answer,
+     which is why it is asked first.
+
+     A state that straddles a zone line is the exception and defers to the
+     area code, because "Texas" cannot tell El Paso from Houston, and
+     "Tennessee" cannot tell Knoxville from Memphis. */
+  var ZONE_SPLIT_STATES = {
+    texas: 1, kansas: 1, nebraska: 1, 'north dakota': 1, 'south dakota': 1,
+    kentucky: 1, tennessee: 1, florida: 1, indiana: 1, michigan: 1,
+    oregon: 1, idaho: 1
+  };
+
+  /* Each state listed whole. An earlier cut of this split the groups on
+     spaces, which turned "north carolina" into the key "north" - and then
+     "North Hollywood, CA" resolved as East Coast. */
+  var ZONE_BY_STATE = {};
+  (function () {
+    var groups = [
+      ['pacific',  ['california', 'washington', 'oregon', 'nevada']],
+      ['mountain', ['arizona', 'colorado', 'utah', 'idaho', 'montana', 'wyoming',
+                    'new mexico']],
+      ['central',  ['texas', 'illinois', 'minnesota', 'missouri', 'louisiana',
+                    'alabama', 'arkansas', 'iowa', 'kansas', 'nebraska', 'oklahoma',
+                    'wisconsin', 'mississippi', 'tennessee', 'north dakota',
+                    'south dakota']],
+      ['eastern',  ['florida', 'georgia', 'virginia', 'maryland', 'pennsylvania',
+                    'massachusetts', 'connecticut', 'ohio', 'michigan', 'indiana',
+                    'kentucky', 'maine', 'vermont', 'delaware', 'new york',
+                    'north carolina', 'south carolina', 'new jersey',
+                    'new hampshire', 'rhode island', 'west virginia',
+                    'district of columbia']],
+      ['akhi',     ['hawaii', 'alaska']]
+    ];
+    groups.forEach(function (g) {
+      g[1].forEach(function (name) { ZONE_BY_STATE[name] = g[0]; });
+    });
+  })();
+
+  /* Longest first: otherwise "virginia" matches inside "west virginia"
+     and files a Charleston lead on the wrong side of the country. */
+  var ZONE_STATE_ORDER = Object.keys(ZONE_BY_STATE).sort(function (a, b) {
+    return b.length - a.length;
+  });
+
+  var ZONE_STATE_ABBR = {
+    ca: 'california', wa: 'washington', or: 'oregon', nv: 'nevada', az: 'arizona',
+    co: 'colorado', ut: 'utah', nm: 'new mexico', id: 'idaho', mt: 'montana',
+    wy: 'wyoming', tx: 'texas', il: 'illinois', mn: 'minnesota', mo: 'missouri',
+    la: 'louisiana', al: 'alabama', ar: 'arkansas', ia: 'iowa', ks: 'kansas',
+    ne: 'nebraska', ok: 'oklahoma', wi: 'wisconsin', ms: 'mississippi',
+    tn: 'tennessee', nd: 'north dakota', sd: 'south dakota', fl: 'florida',
+    ga: 'georgia', ny: 'new york', nc: 'north carolina', va: 'virginia',
+    md: 'maryland', pa: 'pennsylvania', ma: 'massachusetts', nj: 'new jersey',
+    ct: 'connecticut', oh: 'ohio', mi: 'michigan', 'in': 'indiana',
+    ky: 'kentucky', me: 'maine', vt: 'vermont', ri: 'rhode island',
+    de: 'delaware', wv: 'west virginia', dc: 'district of columbia',
+    hi: 'hawaii', ak: 'alaska'
+    /* "SC" is deliberately absent. Every Brazilian lead reads
+       "Florianopolis, SC" - Santa Catarina - and taking that for South
+       Carolina would file Cassius's whole book on the US east coast. A
+       South Carolina lead resolves on the spelled-out name instead. */
+  };
+
+  var ZONE_BY_CODE = {};
+  (function () {
+    var groups = [
+      ['pacific', '209 213 279 310 323 341 350 369 408 415 424 442 510 530 559 562 619 626 ' +
+                  '628 650 657 661 669 707 714 747 760 805 818 820 831 837 840 858 909 916 ' +
+                  '925 949 951 206 253 360 425 509 564 458 503 541 971 702 725 775'],
+      ['mountain', '480 520 602 623 928 303 719 720 970 983 385 435 801 505 575 406 307 208 986 915'],
+      ['central', '210 214 254 281 325 346 361 409 430 432 469 512 682 713 726 737 806 817 ' +
+                  '830 832 903 936 940 945 956 972 979 217 224 309 312 331 447 464 618 630 ' +
+                  '708 730 773 779 815 847 861 872 218 320 507 612 651 763 952 314 417 557 ' +
+                  '573 636 660 816 975 225 318 337 504 985 205 251 256 334 659 938 327 479 ' +
+                  '501 870 319 515 563 641 712 316 620 785 913 308 402 531 405 539 572 580 ' +
+                  '918 262 274 414 534 608 715 920 228 601 662 769 615 629 731 901 931 270 ' +
+                  '364 701 605'],
+      ['eastern', '239 305 321 324 352 386 407 448 561 656 689 727 754 772 786 813 850 863 ' +
+                  '904 941 954 229 404 470 478 678 706 762 770 912 943 212 315 329 332 347 ' +
+                  '363 516 518 585 607 631 646 680 716 718 838 845 914 917 929 934 252 336 ' +
+                  '704 743 828 910 919 980 984 803 839 843 854 864 276 434 540 571 686 703 ' +
+                  '757 804 826 948 227 240 301 410 443 667 215 223 267 272 412 445 484 570 ' +
+                  '582 610 717 724 814 835 878 339 351 413 508 617 774 781 857 978 201 551 ' +
+                  '609 640 732 848 856 862 908 973 203 475 860 959 216 220 234 283 326 330 ' +
+                  '380 419 436 440 513 567 614 740 937 231 248 269 313 517 586 616 679 734 ' +
+                  '810 906 947 989 219 260 317 463 574 765 812 930 502 606 859 207 603 802 ' +
+                  '401 302 304 681 202 423 865'],
+      ['akhi', '808 907']
+    ];
+    groups.forEach(function (g) {
+      g[1].split(' ').forEach(function (c) { if (c) ZONE_BY_CODE[c] = g[0]; });
+    });
+  })();
+
+  /* A number that reaches a switchboard says nothing about where anyone is. */
+  var ZONE_TOLL_FREE = { '800': 1, '833': 1, '844': 1, '855': 1, '866': 1, '877': 1, '888': 1 };
+
+  /* Somewhere that is plainly not the United States. Cassius's whole book
+     is Florianopolis, and a dialling code that is not +1 settles it. */
+  var NOT_US = /brazil|brasil|florian|campeche|botswana|canada|quebec|ontario/i;
+
+  var LEAD_ZONES = [
+    { id: 'pacific',  label: 'West Coast' },
+    { id: 'mountain', label: 'Mountain' },
+    { id: 'central',  label: 'Central' },
+    { id: 'eastern',  label: 'East Coast' },
+    { id: 'akhi',     label: 'Alaska & Hawaii' },
+    { id: 'outside',  label: 'Outside the US' },
+    { id: 'unknown',  label: 'Zone unknown' }
+  ];
+
   var SHARED_HOSTS = new RegExp('^(m\\.)?(' + [
     'facebook\\.com', 'fb\\.com', 'fb\\.me', 'instagram\\.com', 'tiktok\\.com',
     'linkedin\\.com', 'twitter\\.com', 'x\\.com', 'youtube\\.com',
@@ -2410,6 +2534,80 @@
 
        The value is the reason, not a flag, so every screen can say why a
        lead was set aside instead of leaving somebody to wonder. */
+    LEAD_ZONES: LEAD_ZONES,
+    /* The words for a zone, in one place. The filter menu, the saved-view
+       summary and the CSV export all read it here, so a lead exported as
+       "East Coast" is the same lead the East Coast filter finds. */
+    zoneLabel: function (id) {
+      for (var i = 0; i < LEAD_ZONES.length; i++) {
+        if (LEAD_ZONES[i].id === id) return LEAD_ZONES[i].label;
+      }
+      return '';
+    },
+    /* Which part of the country a lead sits in, so a rep can work the
+       coast that is awake. Never stored, always derived - see the tables
+       above for why the Location is asked before the area code. */
+    zoneOf: function (lead) {
+      if (!lead) return 'unknown';
+      var loc = String(lead.address || '');
+      var phone = String(lead.phone || '');
+      if (NOT_US.test(loc)) return 'outside';
+      if (/^\+(?!1\b)\d/.test(phone.trim())) return 'outside';
+
+      /* "D.C." kept as the two letters it is, before the line below turns
+         every punctuation mark into a space. It used to become "d c",
+         which no longer looks like a state abbreviation, so the only word
+         left standing was "Washington" - and two realtors working three
+         miles from the Capitol were filed on the west coast, where a rep
+         reading the board would have rung them at 6am their time. The
+         printed "Washington, DC" was already handled; the same address
+         typed with full stops was not. */
+      var tidy = loc.replace(/\b([a-z])\.\s*([a-z])\.(?![a-z])/gi, '$1$2');
+
+      var flat = ' ' + tidy.toLowerCase().replace(/[^a-z ]+/g, ' ')
+                          .replace(/\s+/g, ' ').trim() + ' ';
+      var words = flat.trim().split(' ');
+      var state = '';
+
+      /* A US address ends "City, ST ZIP", so the last couple of words are
+         where the state actually is. Asked any earlier, a street name wins
+         it: "Avenida Vista Montana, San Clemente, CA" is in California, and
+         "Washington, DC" is not in Washington. */
+      for (var i = words.length - 1; i >= 0 && i >= words.length - 3; i--) {
+        if (words[i].length === 2 && ZONE_STATE_ABBR[words[i]]) {
+          state = ZONE_STATE_ABBR[words[i]];
+          break;
+        }
+      }
+      /* Spelled out, which no postal abbreviation can be confused with.
+         Longest first so "west virginia" is not read as "virginia". */
+      if (!state) {
+        var names = ZONE_STATE_ORDER;
+        for (var n = 0; n < names.length; n++) {
+          if (flat.indexOf(' ' + names[n] + ' ') > -1) { state = names[n]; break; }
+        }
+      }
+      /* An abbreviation further back than the tail, for the rows that put
+         the state before a suite or a country. */
+      if (!state) {
+        for (var j = words.length - 1; j >= 0; j--) {
+          if (words[j].length === 2 && ZONE_STATE_ABBR[words[j]]) {
+            state = ZONE_STATE_ABBR[words[j]];
+            break;
+          }
+        }
+      }
+
+      var digits = phone.replace(/\D/g, '');
+      if (digits.length === 11 && digits.charAt(0) === '1') digits = digits.slice(1);
+      var code = digits.length === 10 ? digits.slice(0, 3) : '';
+      var byCode = (code && !ZONE_TOLL_FREE[code]) ? ZONE_BY_CODE[code] : null;
+
+      if (state && ZONE_SPLIT_STATES[state] && byCode) return byCode;
+      if (state) return ZONE_BY_STATE[state];
+      return byCode || 'unknown';
+    },
+
     COMPANY_LINE_TAG: COMPANY_LINE_TAG,
     companyLineIndex: function () {
       var count = {};

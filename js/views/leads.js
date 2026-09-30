@@ -47,7 +47,7 @@
   var SORT_KEY = 'crm:leadsort';
 
   var st = { q: '', status: 'open', rating: '', owner: '', source: '', tag: '', due: '',
-             mockup: '', reach: '', sortKey: 'added', sortDir: -1,
+             mockup: '', reach: '', zone: '', sortKey: 'added', sortDir: -1,
              /* How many rows each queue is showing. Survives re-renders,
                 so expanding one and then acting on a row does not snap it
                 shut underneath you. */
@@ -152,6 +152,9 @@
       if (st.reach === 'direct' && (!l.phone || lineIdx[l.id])) return false;
       if (st.reach === 'company' && !lineIdx[l.id]) return false;
       if (st.reach === 'email' && !l.email) return false;
+      /* Which coast, so a rep works the side of the country that is awake
+         rather than leaving voicemail three hours early. */
+      if (st.zone && S.zoneOf(l) !== st.zone) return false;
       if (st.reach === 'noneither' && (l.phone || l.email)) return false;
       if (st.due) {
         var k = S.followUpState(l).key;
@@ -270,6 +273,12 @@
           reachOpt('direct', 'Direct number') + reachOpt('company', 'Company line') +
           reachOpt('email', 'Has an email') + reachOpt('noneither', 'No phone or email') +
         '</select>' +
+        '<select class="input" id="fzone"><option value="">Any zone</option>' +
+          S.LEAD_ZONES.map(function (z) {
+            return '<option value="' + z.id + '"' + (st.zone === z.id ? ' selected' : '') +
+              '>' + U.esc(z.label) + '</option>';
+          }).join('') +
+        '</select>' +
         '<select class="input" id="fmockup"><option value="">Any mockup</option>' +
           U.options(S.MOCKUP_STATUSES, st.mockup) + '</select>' +
         /* The owner dropdown is the same control as the switcher, so a rep
@@ -294,6 +303,7 @@
         '<button class="btn btn-sm" id="exportCsv" style="margin-left:auto">Export CSV</button>' +
       '</div>' +
       listBar() +
+      viewBar() +
       U.table(cols(rows), rows, {
         rowLink: true, sortKey: st.sortKey, sortDir: st.sortDir,
         emptyHTML: U.empty(
@@ -321,6 +331,7 @@
       };
     });
     [['#fdue', 'due'], ['#frating', 'rating'], ['#fmockup', 'mockup'], ['#freach', 'reach'],
+     ['#fzone', 'zone'],
      ['#fowner', 'owner'], ['#fsource', 'source'], ['#ftag', 'tag']].forEach(function (pair) {
       if (el.querySelector(pair[0])) bindFilter(el, pair[0], pair[1]);
     });
@@ -332,7 +343,7 @@
          My leads / Everyone view, and clearing the filters should not
          quietly move a rep from their own book to the whole team's. */
       st.q = ''; st.rating = ''; st.source = ''; st.tag = ''; st.due = ''; st.mockup = '';
-      st.reach = '';
+      st.reach = ''; st.zone = '';
       root.render();
     };
     var exportBtn = el.querySelector('#exportCsv');
@@ -347,6 +358,7 @@
       };
     });
 
+    bindViews(el);
     bindAttention(el);
     bindCallbacks(el);
 
@@ -1169,6 +1181,157 @@
   }
   restoreSort();
 
+  /* ── saved views ───────────────────────────────────────────────────
+     A filter set worth returning to, kept under a name.
+
+     Johnathan asked for "all of Josh's follow ups and mockups sent as a
+     new list just for me, keep them in his". A lead has one owner and it
+     has to stay Josh's, so this is not a list of leads at all - it is the
+     question saved, and asked again fresh every time it is opened. Nothing
+     is copied, nothing changes hands, and what he sees is what Josh sees
+     because it is the same records.
+
+     Per person and per browser, in localStorage beside the sort
+     preference: "just for me" is the whole point, and a view naming
+     somebody's book has no business on anybody else's screen. The cost is
+     that they do not follow him to another machine - worth saying out loud
+     when two clicks rebuild one. */
+  var VIEW_KEY = 'crm:leadviews';
+  /* The filters a view carries. Sort order is deliberately not one: it is
+     already remembered on its own and per person, and a view that quietly
+     reordered the table would undo that. */
+  var VIEW_FIELDS = ['status', 'owner', 'source', 'tag', 'due', 'mockup', 'reach', 'zone', 'rating', 'q'];
+
+  function viewStore() {
+    var all;
+    try { all = JSON.parse(localStorage.getItem(VIEW_KEY) || '{}') || {}; } catch (e) { all = {}; }
+    return typeof all === 'object' ? all : {};
+  }
+  function myViews() {
+    var mine = viewStore()[S.me().id];
+    return Object.prototype.toString.call(mine) === '[object Array]' ? mine : [];
+  }
+  function putViews(list) {
+    var all = viewStore();
+    all[S.me().id] = list;
+    try { localStorage.setItem(VIEW_KEY, JSON.stringify(all)); } catch (e) { /* private mode */ }
+  }
+  function currentFilters() {
+    var f = {};
+    VIEW_FIELDS.forEach(function (k) { if (st[k]) f[k] = st[k]; });
+    return f;
+  }
+  function sameFilters(a, b) {
+    return VIEW_FIELDS.every(function (k) { return (a[k] || '') === (b[k] || ''); });
+  }
+  /* Everything a view does not name is cleared. A view that only narrowed
+     what was already on screen would show something different depending on
+     what you were looking at when you clicked it. */
+  function applyView(v) {
+    VIEW_FIELDS.forEach(function (k) { st[k] = (v.filters && v.filters[k]) || ''; });
+    if (!st.status) st.status = 'open';
+    st.selected = {};
+    st.attentionShown = PAGE;
+    st.mockupShown = PAGE;
+  }
+
+  /* What the view is actually asking, in words, so a name like "Josh
+     chase" still says what it shows. */
+  function viewSummary(f) {
+    var bits = [];
+    var seg = SEGMENTS.filter(function (s) { return s.id === (f.status || 'open'); })[0];
+    if (seg && seg.id !== 'open') bits.push(seg.label);
+    if (f.owner) bits.push(S.user(f.owner).name.split(' ')[0] + '’s');
+    if (f.due) bits.push(DUE_WORDS[f.due] || f.due);
+    if (f.mockup) bits.push('mockup ' + S.mockupStatus(f.mockup).label.toLowerCase());
+    if (f.reach) bits.push(REACH_WORDS[f.reach] || f.reach);
+    if (f.source) bits.push(f.source);
+    if (f.tag) bits.push('#' + f.tag);
+    if (f.rating) bits.push(f.rating);
+    if (f.zone) bits.push(S.zoneLabel(f.zone) || f.zone);
+    if (f.q) bits.push('“' + f.q + '”');
+    return bits.join(' · ') || 'everything open';
+  }
+  var DUE_WORDS = { attention: 'needs a follow-up', overdue: 'overdue', today: 'due today',
+                    unscheduled: 'no follow-up booked', soon: 'due this week', scheduled: 'due later' };
+  var REACH_WORDS = { phone: 'has a phone', nophone: 'no phone', direct: 'direct number',
+                      company: 'company line', email: 'has an email', noneither: 'no phone or email' };
+
+  function viewBar() {
+    var views = myViews();
+    var now = currentFilters();
+    var filtered = Object.keys(now).some(function (k) { return k !== 'status' || now[k] !== 'open'; });
+    if (!views.length && !filtered) return '';
+
+    return '<div class="toolbar" id="viewBar" style="gap:6px;flex-wrap:wrap;' +
+             'border-top:1px solid var(--line);padding-top:10px">' +
+      '<span class="hint" style="margin-right:2px">My views</span>' +
+      views.map(function (v, i) {
+        var on = sameFilters(v.filters || {}, now);
+        return '<span class="btn btn-sm' + (on ? ' btn-primary' : '') + '" data-view="' + i + '" ' +
+            'style="cursor:pointer" title="' + U.esc(viewSummary(v.filters || {})) + '">' +
+            U.esc(v.name) +
+            '<span class="seg-count" data-viewdel="' + i + '" title="Forget this view" ' +
+              'style="cursor:pointer">×</span>' +
+          '</span>';
+      }).join('') +
+      (filtered
+        ? '<button class="btn btn-ghost btn-sm" id="viewSave" style="margin-left:auto">' +
+            'Save these filters as a view</button>'
+        : '') +
+      '</div>';
+  }
+
+  function bindViews(el) {
+    el.querySelectorAll('#viewBar [data-view]').forEach(function (chip) {
+      chip.onclick = function (e) {
+        if (e.target.hasAttribute('data-viewdel')) return;   // the × has its own job
+        var v = myViews()[+chip.dataset.view];
+        if (!v) return;
+        applyView(v);
+        root.render();
+      };
+    });
+    el.querySelectorAll('#viewBar [data-viewdel]').forEach(function (x) {
+      x.onclick = function (e) {
+        e.stopPropagation();
+        var list = myViews();
+        var gone = list.splice(+x.dataset.viewdel, 1)[0];
+        putViews(list);
+        U.toast((gone ? '“' + gone.name + '”' : 'View') + ' forgotten. The leads are untouched.', 'ok');
+        root.render();
+      };
+    });
+    var save = el.querySelector('#viewSave');
+    if (save) save.onclick = function () {
+      var f = currentFilters();
+      U.modal({
+        title: 'Save this view',
+        okText: 'Save',
+        body: '<div class="form-grid">' +
+          U.field('Name', '<input class="input" name="name" placeholder="Josh — follow ups">' +
+            '<div class="hint">Shows: ' + U.esc(viewSummary(f)) + '</div>', true) +
+          '<div class="field span-2"><div class="hint">' +
+            'Saved for you on this browser. It is the filters that are saved, not the leads — ' +
+            'they stay with whoever owns them, and the view is worked out fresh each time.' +
+          '</div></div>' +
+        '</div>',
+        onOk: function (box) {
+          var name = (U.values(box).name || '').trim();
+          if (!name) { U.toast('Give the view a name.', 'err'); return false; }
+          var list = myViews();
+          var at = -1;
+          list.forEach(function (v, i) { if (v.name.toLowerCase() === name.toLowerCase()) at = i; });
+          if (at > -1) list[at] = { name: name, filters: f };
+          else list.push({ name: name, filters: f });
+          putViews(list);
+          U.toast('“' + name + '” saved to My views.', 'ok');
+          root.render();
+        }
+      });
+    };
+  }
+
   /* ── the lists a rep can work ──────────────────────────────────────
      A batch of leads arrives, gets imported under a name, and then has to
      be found again. The source dropdown could always do it, but a dropdown
@@ -1421,6 +1584,7 @@
               '<div class="card"><div class="card-head"><span class="card-title">Next Step</span></div>' +
                 '<div class="card-body">' + nextStep(l, f) + '</div></div>' +
               mockupPanel(l) +
+              (root.Pitch ? root.Pitch.panel(l) : '') +
               '<div class="card"><div class="card-head"><span class="card-title">Pinned Notes</span></div><div class="card-body">' +
                 (notes.filter(function (n) { return n.pinned; }).length
                   ? notes.filter(function (n) { return n.pinned; }).map(function (n) {
@@ -2131,14 +2295,35 @@
     });
   }
 
+  /* A counter, not a field. Normalising "Lead #" to "lead" throws away the
+     one character that said it was a row number, and "lead" is an alias for
+     the company name - so a spreadsheet numbered 1..20 down its first column
+     imported twenty leads called 1 to 20. Judged on the raw header, before
+     norm() has a chance to lose the evidence. */
+  function isRowNumber(h) {
+    var raw = String(h || '').trim();
+    if (raw.indexOf('#') > -1) return true;
+    var n = norm(raw);
+    return n === 'id' || n === 'no' || n === 'num' || n === 'row' ||
+           n === 'index' || n === 'rank' || /( id| no)$/.test(n);
+  }
+
   function guessMap(headers) {
     var map = {}, used = {};
     Object.keys(ALIASES).forEach(function (field) {
       var aliases = ALIASES[field];
+      /* Where more than one header matches, the most specific one wins:
+         "Business Name" matches the alias "business name" and beats a
+         column matching the shorter "lead", whatever order they sit in. */
+      var best = -1, bestLen = -1;
       for (var i = 0; i < headers.length; i++) {
-        if (used[i]) continue;
-        if (aliases.indexOf(norm(headers[i])) > -1) { map[field] = i; used[i] = 1; return; }
+        if (used[i] || isRowNumber(headers[i])) continue;
+        var hit = aliases.indexOf(norm(headers[i]));
+        if (hit > -1 && aliases[hit].length > bestLen) {
+          best = i; bestLen = aliases[hit].length;
+        }
       }
+      if (best > -1) { map[field] = best; used[best] = 1; return; }
       /* Fall back to a whole-word match — "Business Email", "Company URL".
          Whole words, not any substring. "ig" is an alias for instagram and
          the word "ne-ig-hborhood" contains it, so a Neighborhood column was
@@ -2147,7 +2332,7 @@
          same lead. 61 of 68 were skipped as duplicates and the dialog said
          "7 new". "tt" did the same to Attempts, and to Plastic bottles. */
       for (var j = 0; j < headers.length; j++) {
-        if (used[j]) continue;
+        if (used[j] || isRowNumber(headers[j])) continue;
         var h = ' ' + norm(headers[j]) + ' ';
         for (var k = 0; k < aliases.length; k++) {
           if (h.indexOf(' ' + aliases[k] + ' ') > -1) { map[field] = j; used[j] = 1; return; }
@@ -2497,6 +2682,10 @@
   function exportCsv(rows) {
     var head = ['Company', 'Contact', 'Title', 'Email', 'Phone', 'Status', 'Rating',
       'Next Follow-Up', 'Last Contacted', 'Est. Value', 'Source', 'Owner', 'Industry', 'Location',
+      /* Next to the Location it is worked out from, so anyone reading the
+         sheet can see why a lead is in the zone it is in - and spot the
+         ones where the Location says nothing and the area code decided. */
+      'Time Zone',
       'Website', 'Instagram', 'TikTok', 'Facebook',
       'Mockup', 'Mockup Types', 'Website Mockup Link', 'Design Mockup Link', 'Mockup Ready', 'Mockup Sent', 'Tags',
       'Notes'];
@@ -2504,7 +2693,7 @@
       return [l.name, l.contactName, l.contactTitle, l.email, l.phone,
         S.leadStatus(l.leadStatus).label, S.leadRating(l.rating).label,
         l.nextFollowUp, l.lastContactedAt, l.estValue, l.source,
-        S.user(l.ownerId).name, l.industry, l.address, l.website,
+        S.user(l.ownerId).name, l.industry, l.address, S.zoneLabel(S.zoneOf(l)), l.website,
         l.instagram, l.tiktok, l.facebook,
         S.mockupStatus(l.mockupStatus).label, S.mockupTypesOf(l).join(' | '), l.mockupUrl, l.mockupDesignUrl,
         l.mockupReadyAt, l.mockupSentAt, S.tagsOf(l).join(' | '),
@@ -2523,4 +2712,5 @@
   root.Views.leads._parse = parseDelimited;
   root.Views.leads._detectDelim = detectDelim;
   root.Views.leads._guessMap = guessMap;
+  root.Views.leads._exportCsv = exportCsv;
 })(window);

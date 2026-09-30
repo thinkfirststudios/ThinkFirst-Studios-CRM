@@ -12,6 +12,7 @@ No framework and no install step — plain Node and headless Edge.
     powershell -File tests/import-real.ps1    # import the actual realtor CSV
     powershell -File tests/scroll-check.ps1   # scroll survives a repaint
     powershell -File tests/my-leads.ps1       # a rep lands on their own leads
+    powershell -File tests/zone-filter.ps1    # filter the list to one coast
 
 Each `.js` suite boots the real `js/store.js` and `js/backend.js` against a
 stubbed Supabase client, so it exercises the shipping code rather than a

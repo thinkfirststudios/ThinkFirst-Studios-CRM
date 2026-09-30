@@ -104,11 +104,56 @@
          Going into a lead and coming back used to land at the top of a
          two-thousand-row list, which is the worst place to be put when you
          were working down it. */
-      window.scrollTo(0, scrolls[key] || 0);
+      restoreScroll(scrolls[key] || 0);
     }
     paintUserChip();
   }
   var lastRoute = null;
+
+  /* The browser keeps its own scroll position per history entry and puts
+     it back on Back - on some phones after the app has already restored
+     its own, over the top of it. One of them has to be in charge, and only
+     the app knows the screen underneath the hash changed. */
+  try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch (e) { /* old browser */ }
+
+  /* ── putting you back where you were ──────────────────────────────
+     A position at the bottom of a list is only reachable once the page is
+     that tall again. If it is not yet - a slow phone still laying out two
+     thousand rows, fonts arriving - the browser clamps the scroll short,
+     and the scroll listener used to save that clamped number over the real
+     one, so the place was lost for good. So the target is held and tried
+     again for a couple of seconds, and nothing overwrites it until it is
+     reached or you scroll yourself. */
+  var restoring = null;
+  function restoreScroll(y) {
+    restoring = { y: y, until: Date.now() + 2500 };
+    window.scrollTo(0, y);
+    if (atTarget()) { restoring = null; return; }
+
+    /* Tried on frames and on timers both. A frame is the right moment -
+       it is exactly when the page has just been laid out - but frames are
+       throttled or withheld altogether in a tab that is not being drawn,
+       and this has to work when somebody returns to a backgrounded one. */
+    function attempt() {
+      if (!restoring) return false;
+      if (Date.now() > restoring.until) { restoring = null; return false; }
+      window.scrollTo(0, restoring.y);
+      if (atTarget()) { restoring = null; return false; }
+      return true;
+    }
+    (function frame() { if (attempt()) requestAnimationFrame(frame); })();
+    [16, 50, 120, 300, 600, 1000, 1600, 2400].forEach(function (ms) {
+      setTimeout(attempt, ms);
+    });
+  }
+  function atTarget() {
+    return Math.abs((window.scrollY || window.pageYOffset || 0) - restoring.y) < 2;
+  }
+  /* You taking hold of the page ends the restore - it must never drag
+     you back down a list you have just started scrolling up. */
+  ['wheel', 'touchstart', 'keydown', 'mousedown'].forEach(function (ev) {
+    window.addEventListener(ev, function () { restoring = null; }, { passive: true, capture: true });
+  });
 
   /* ── where you were on each screen ───────────────────────────────
      Kept per screen, and in sessionStorage so it also survives a reload -
@@ -120,7 +165,7 @@
   try { scrolls = JSON.parse(sessionStorage.getItem(SCROLL_KEY) || '{}') || {}; } catch (e) { scrolls = {}; }
   var scrollSaveTimer = null;
   window.addEventListener('scroll', function () {
-    if (!lastRoute) return;
+    if (!lastRoute || restoring) return;
     scrolls[lastRoute] = window.scrollY || window.pageYOffset || 0;
     if (scrollSaveTimer) return;
     scrollSaveTimer = setTimeout(function () {

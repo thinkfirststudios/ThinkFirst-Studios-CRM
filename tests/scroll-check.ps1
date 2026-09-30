@@ -103,9 +103,54 @@ $driver = @'
       setTimeout(function () {
         say('coming back returns to where you were', Math.abs(y() - parked) < 5,
             'was ' + parked + ', now ' + y());
-        finish();
+        bottomAndBack();
       }, 60);
     }, 60);
+  }
+
+  // The very bottom of the list, open the last lead, then go back to the
+  // list. Back is done by setting the hash, not history.back(): headless
+  // Edge under a virtual time budget hangs on a history traversal often
+  // enough to make the test useless, and to the app the two are the same
+  // hashchange.
+  function bottomAndBack() {
+    var bottom = document.documentElement.scrollHeight - window.innerHeight;
+    window.scrollTo(0, bottom);
+    var parked = y();
+    setTimeout(function () {
+      var rows = document.querySelectorAll('tbody tr');
+      rows[rows.length - 1].click();
+      setTimeout(function () {
+        say('opening a lead starts at its top', y() === 0, y());
+        location.hash = '#/leads';
+        setTimeout(function () {
+          say('Back from the bottom of the list lands at the bottom', Math.abs(y() - parked) < 5,
+              'was ' + parked + ', now ' + y());
+          shortOnReturn(parked);
+        }, 300);
+      }, 200);
+    }, 100);
+  }
+
+  // Coming back to a page that is not yet as tall as where you were - a
+  // slow phone still laying out the rows. The browser clamps the scroll
+  // short, and that clamped number used to be saved over the real one.
+  function shortOnReturn(parked) {
+    location.hash = '#/accounts';
+    setTimeout(function () {
+      var squash = document.createElement('style');
+      squash.textContent = 'tbody tr:nth-child(n+20){display:none}';
+      document.head.appendChild(squash);
+      location.hash = '#/leads';
+      setTimeout(function () {
+        squash.remove();
+        setTimeout(function () {
+          say('a page that grows after coming back still lands where you were',
+              Math.abs(y() - parked) < 5, 'was ' + parked + ', now ' + y());
+          finish();
+        }, 300);
+      }, 400);
+    }, 100);
   }
 })();
 </script>
