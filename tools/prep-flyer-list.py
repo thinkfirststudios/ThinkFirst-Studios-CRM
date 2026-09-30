@@ -72,7 +72,12 @@ for _codes, _st in [
     ('303 719 720 970', 'CO'),
     ('406', 'MT'), ('307', 'WY'), ('505 575', 'NM'),
     ('314 417 573 636 660 816', 'MO'),
-    ('239 305 321 352 386 407 561 727 754 772 786 813 850 863 904 941 954', 'FL'),
+    # Includes the newer overlays - 689 over Orlando, 656 over Tampa, 448
+    # over the panhandle, 324 over Ocala, 645 over Miami, 728 over Palm
+    # Beach. Leaving 689 out put a lead's Location at "Orlando" with no
+    # state on it, which no state-matching in the CRM can read.
+    ('239 305 321 324 352 386 407 448 561 645 656 689 727 728 754 772 786 '
+     '813 850 863 904 941 954', 'FL'),
     ('808', 'HI'), ('907', 'AK'),
 ]:
     for _c in _codes.split():
@@ -80,6 +85,37 @@ for _codes, _st in [
 
 WEST = ('CA', 'OR', 'WA', 'NV')
 TOLL_FREE = set('800 833 844 855 866 877 888'.split())
+
+# The part of the state a number dials into, for the two thirds of these
+# flyers that print a phone and no address at all. "FL" on its own is not a
+# Location - a rep opening the record learns nothing from it and cannot tell
+# a Jacksonville lead from a Naples one, three hundred miles apart. The area
+# code does tell them, and it is on every single flyer.
+#
+# Written as the region rather than one city, because that is what the code
+# actually evidences: 352 is Ocala AND Gainesville, and claiming either one
+# specifically would be inventing detail the flyer never carried. Where this
+# is used the Note says so, so nobody mistakes it for a printed address.
+AREA_METRO = {}
+for _codes, _metro in [
+    ('305 786 645', 'Miami-Dade'),
+    ('954 754', 'Fort Lauderdale / Broward'),
+    ('561 728', 'Palm Beach County'),
+    ('772', 'Treasure Coast (Port St Lucie / Stuart / Vero Beach)'),
+    ('321', 'Space Coast / Orlando'),
+    ('407 689', 'Orlando'),
+    ('352 324', 'Ocala / Gainesville'),
+    ('386', 'Daytona Beach / Palatka'),
+    ('904', 'Jacksonville / St Augustine'),
+    ('813 656', 'Tampa'),
+    ('727', 'St Petersburg / Clearwater'),
+    ('941', 'Sarasota / Bradenton / Port Charlotte'),
+    ('239', 'Fort Myers / Naples / Cape Coral'),
+    ('863', 'Lakeland / Winter Haven / Sebring'),
+    ('850 448', 'Florida Panhandle'),
+]:
+    for _c in _codes.split():
+        AREA_METRO[_c] = _metro
 
 
 def pick(row, *names):
@@ -317,14 +353,30 @@ def location(m):
         # state, falls back to the area code and places the lead correctly.
         return m['city'] + (', ' + m['state'].upper() if m['state'] else '')
     if m['area']:
-        return m['area']
-    # Nothing printed an address, so say which state the number dials into -
-    # otherwise no coast filter in the CRM can place this lead at all.
+        a = m['area']
+        if m['state'] and (' ' + m['state'].upper()) not in a.upper():
+            a += ', ' + m['state'].upper()
+        return a
+    # Nothing printed a location at all, which is two flyers in three. The
+    # area code is the only evidence there is, and it is better evidence
+    # than it looks: these are local trades advertising to a local group.
+    # A toll-free number evidences nothing, so it is skipped rather than
+    # guessed at.
     for d in m['phones']:
+        if d[:3] in TOLL_FREE:
+            continue
+        metro = AREA_METRO.get(d[:3])
         st = AREA_STATE.get(d[:3])
+        if metro:
+            return metro + (', ' + st if st else '')
         if st:
             return st
     return ''
+
+
+def location_printed(m):
+    """Did the flyer actually say where they are, or did we work it out?"""
+    return bool(m['address'] or m['city'] or m['area'])
 
 
 def main():
@@ -421,6 +473,12 @@ def main():
         if m['industry']:
             tags.append(m['industry'].lower())
         loc = location(m)
+        if loc and not location_printed(m):
+            # Said out loud, so nobody reads a worked-out region as an
+            # address the business actually printed.
+            note.append('Location worked out from the ' + m['phones'][0][:3]
+                        + ' area code - the flyer gave no address')
+            tags.append('location from area code')
         st = state_of(m, loc)
         if st and st not in WEST:
             tags.append('not west coast')
