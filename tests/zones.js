@@ -95,6 +95,26 @@ const S = win.Store;
      z('St. Louis, Missouri', '(314) 781-2944'));
 
   console.log('\n-- outside the lower 48');
+  /* A street can be named after anywhere. An Orange County realtor on
+     Brazil Drive was being filed as outside the country, because the word
+     Brazil appeared in his address - the same shape as Avenida Vista
+     Montana being read as Montana. A printed zip is what settles it. */
+  console.log('\n-- a street named after a country is still on that street');
+  ok('Brazil Dr, Buena Park CA is Orange County, not Brazil',
+     z('5826 Brazil Dr, Buena Park, CA 90620', '(714) 356-2369') === 'pacific',
+     z('5826 Brazil Dr, Buena Park, CA 90620', '(714) 356-2369'));
+  ok('Toronto St, Denver CO is Colorado, not Canada',
+     z('1234 Toronto St, Denver, CO 80220', '') === 'mountain',
+     z('1234 Toronto St, Denver, CO 80220', ''));
+  ok('Naples FL is Florida, and still east coast',
+     z('850 5th Ave S, Naples, FL 34102', '') === 'eastern');
+  ok('but a Brazilian address with no zip is still Brazil',
+     z('Rua das Rendeiras, Florianopolis, SC', '') === 'outside',
+     z('Rua das Rendeiras, Florianopolis, SC', ''));
+  ok('and a foreign dialling code still wins where no US zip is printed',
+     z('Campeche', '+55 48 99219-7961') === 'outside');
+
+  console.log('');
   ok('Florianopolis is Brazil, not South Carolina',
      z('Florianópolis, SC', '+55 48 99219-7961') === 'outside',
      z('Florianópolis, SC', '+55 48 99219-7961'));

@@ -436,7 +436,27 @@
     'linktr\\.ee', 'yelp\\.com', 'nextdoor\\.com', 'carrd\\.co',
     'beacons\\.ai', 'milkshake\\.app', 'business\\.site', 'sites\\.google\\.com',
     'wixsite\\.com', 'squarespace\\.com', 'godaddysites\\.com', 'weebly\\.com',
-    'wordpress\\.com', 'blogspot\\.com', 'myshopify\\.com', 'github\\.io'
+    'wordpress\\.com', 'blogspot\\.com', 'myshopify\\.com', 'github\\.io',
+    /* Brokerage and portal platforms. An agent's "website" is very often a
+       profile page on one of these, and the domain is shared by every agent
+       on it - so keying on the domain makes them all the same lead and the
+       second one onwards is skipped as a duplicate on import.
+
+       This is the shape that lost fourteen Brazilian realtors behind one
+       imobiliaria domain. It bit again on an Orange County list where "Mr.
+       Los Alamitos Real Estate" and "Mr. Irvine Real Estate" are two pages
+       on designatedlocalexpert.com: one of them was silently dropped.
+
+       A contact name on the record hides it, because the name is appended
+       to the key - which is why the redfin.com and coldwellbanker.com
+       agents already in the book survived. A scraped list with no contact
+       name has nothing to save it. */
+    'redfin\\.com', 'coldwellbanker\\.com', 'compass\\.com', 'har\\.com',
+    'zillow\\.com', 'realtor\\.com', 'trulia\\.com', 'century21\\.com',
+    'remax\\.com', 'bhhs\\.com', 'bhhscalifornia\\.com', 'serhant\\.com',
+    'exprealty\\.com', 'kw\\.com', 'sothebysrealty\\.com', 'corcoran\\.com',
+    'weichert\\.com', 'era\\.com', 'firstteam\\.com', 'cbmoxi\\.com',
+    'sevengables\\.com', 'designatedlocalexpert\\.com', 'lifetimerealtygroup\\.com'
   ].join('|') + ')$', 'i');
 
   /* ── numbers that do not reach a person ────────────────────────────
@@ -2551,8 +2571,21 @@
       if (!lead) return 'unknown';
       var loc = String(lead.address || '');
       var phone = String(lead.phone || '');
-      if (NOT_US.test(loc)) return 'outside';
-      if (/^\+(?!1\b)\d/.test(phone.trim())) return 'outside';
+
+      /* A printed US address ends "City, ST ZIP", and that is stronger
+         evidence than any word earlier in the line - because a street can
+         be named after anywhere. "5826 Brazil Dr, Buena Park, CA 90620" is
+         in Orange County, and reading "Brazil" out of the street name filed
+         an Orange County realtor as being outside the country. Same lesson
+         as Avenida Vista Montana not being in Montana.
+
+         The zip is what makes this safe to trust: "Florianopolis, SC" has
+         no five digit code after it, so Brazil is still read as Brazil. */
+      var usTail = loc.match(/,\s*([A-Za-z]{2})\s+\d{5}(-\d{4})?\s*$/);
+      var inUS = !!(usTail && ZONE_STATE_ABBR[usTail[1].toLowerCase()]);
+
+      if (!inUS && NOT_US.test(loc)) return 'outside';
+      if (!inUS && /^\+(?!1\b)\d/.test(phone.trim())) return 'outside';
 
       /* "D.C." kept as the two letters it is, before the line below turns
          every punctuation mark into a space. It used to become "d c",

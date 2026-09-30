@@ -509,7 +509,12 @@ def main():
             'Industry': m['industry'], 'Source': a.source, 'Est. Value': '',
             'Instagram': handle(m['social']) if re.search(r'(?i)insta|^ig\b', m['social']) else '',
             'TikTok': '', 'Facebook': '',
-            'Rating': '', 'Tags': ' | '.join(tags),
+            'Rating': '',
+            # Commas, because S.parseTags splits on commas and nothing else.
+            # A pipe-joined cell arrives as one long tag rather than several,
+            # which is how 1,500 leads ended up carrying a single tag reading
+            # "realtor | no-site-found".
+            'Tags': ', '.join(t.replace(',', ' ').strip() for t in tags),
             'Note': '. '.join(x.rstrip('.') for x in note if x) + '.',
         }
         if hit:

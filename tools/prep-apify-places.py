@@ -196,7 +196,13 @@ def convert(path_in, path_out, source):
             'Source': source, 'Est. Value': '',
             'Instagram': social['Instagram'], 'TikTok': social['TikTok'],
             'Facebook': social['Facebook'], 'Rating': '',
-            'Tags': '|'.join(tags), 'Note': ' '.join(bits),
+            # Commas, because S.parseTags splits a tags cell on commas and
+            # nothing else. Joining with a pipe put the whole lot in as ONE
+            # tag - 1,500 leads in the book carry a literal
+            # "realtor | no-site-found" instead of two tags, which makes the
+            # 687 realtors with no website impossible to filter to.
+            'Tags': ', '.join(t.replace(',', ' ').strip() for t in tags),
+            'Note': ' '.join(bits),
         })
         stats['no website' if not website else 'has a website'] += 1
 

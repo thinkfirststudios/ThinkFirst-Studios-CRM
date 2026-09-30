@@ -85,6 +85,38 @@ const S = win.Store;
   ok('and the firm is still visible in the key',
      rk.every(x => x.indexOf('d:imobiliariainvista.com.br|') === 0), rk[0]);
 
+  /* The same shape, but on a platform rather than a firm's own site - and
+     with no contact name to save it. A scraped Orange County list had "Mr.
+     Los Alamitos Real Estate" and "Mr. Irvine Real Estate", two pages on
+     designatedlocalexpert.com, and one of them was silently dropped on
+     import. Google Maps gives a business title and no person, so the
+     contact-name suffix that rescued the Brazil roster was not there. */
+  console.log('\n-- a platform roster, with nobody named on it');
+  const platform = [
+    { name: 'Mr. Los Alamitos Real Estate',
+      website: 'https://designatedlocalexpert.com/losalamitos/' },
+    { name: 'Mr. Irvine Real Estate',
+      website: 'https://designatedlocalexpert.com/mrirvine/' }
+  ];
+  const pk = platform.map(k);
+  ok('two pages on one platform are two leads', pk[0] !== pk[1], pk.join(' '));
+  ok('and the platform is read as the shared host it is',
+     pk.every(x => x.indexOf('s:designatedlocalexpert.com/') === 0), pk[0]);
+
+  [['redfin.com/agent/jane-doe', 'redfin.com/agent/john-smith'],
+   ['coldwellbanker.com/agent/a-lopez', 'coldwellbanker.com/agent/b-chen'],
+   ['century21.com/real-estate-agent/profile/russell-chapman-jr-P25282589',
+    'century21.com/real-estate-agent/profile/maria-vega-P99999999'],
+   ['jane.firstteam.com', 'john.firstteam.com']].forEach(function (pair) {
+    const a = k({ name: 'Agent A', website: pair[0] });
+    const b = k({ name: 'Agent B', website: pair[1] });
+    ok(pair[0].split('/')[0] + ' keeps its agents apart', a !== b, a + ' vs ' + b);
+  });
+
+  ok('an agent with no path still falls through to the name',
+     k({ name: 'Some Realty', website: 'https://redfin.com' }) === 'n:somerealty',
+     k({ name: 'Some Realty', website: 'https://redfin.com' }));
+
   console.log('\n-- but the same person is still the same lead');
   ok('re-imported unchanged', k(roster[0]) === k(roster[0]));
   ok('a second page on the same site does not split one person',
