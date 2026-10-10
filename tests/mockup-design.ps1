@@ -75,10 +75,10 @@ $driver = @'
   function run() {
     S = window.Store;
     S.removeMany('leads', S.all('leads').map(function (l) { return l.id; }));
-    laura = S.insert('leads', { name: 'Laura Zafonte', leadStatus: 'contacted', rating: 'warm', ownerId: S.me().id,
+    laura = S.insert('leads', { name: 'Teresa Bramwell', leadStatus: 'contacted', rating: 'warm', ownerId: S.me().id,
       branch: '', tags: [], nextFollowUp: S.shift(3), mockupStatus: 'none', mockupUrl: '', mockupDesignUrl: '',
       mockupTypes: [] }, 'l', 'Laura');
-    derek = S.insert('leads', { name: 'Derek Quarles', leadStatus: 'contacted', rating: 'warm', ownerId: S.me().id,
+    derek = S.insert('leads', { name: 'Howard Linley', leadStatus: 'contacted', rating: 'warm', ownerId: S.me().id,
       branch: '', tags: [], nextFollowUp: S.shift(3), mockupStatus: 'ready', mockupUrl: DEREK_SITE,
       mockupDesignUrl: '', mockupTypes: ['Website'], mockupReadyAt: S.shift(-1) }, 'l', 'Derek');
 

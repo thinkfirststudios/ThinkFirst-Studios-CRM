@@ -14,7 +14,7 @@ const ABSENT = { 'leads.instagram': 1, 'leads.tiktok': 1, 'leads.facebook': 1 };
 const rows = {
   profiles: [{ id: 'u', name: 'Alex', role: 'admin', active: true }],
   leads: [{
-    id: 'l1', name: 'Handi Conkrete', leadStatus: 'working', rating: 'warm', ownerId: 'u',
+    id: 'l1', name: 'Hardset Concrete', leadStatus: 'working', rating: 'warm', ownerId: 'u',
     estValue: 0, nextFollowUp: '', lastContactedAt: '', tags: [],
     mockupStatus: 'none', mockupTypes: [], mockupUrl: '', mockupReadyAt: '', mockupSentAt: '',
     instagram: '', tiktok: '', facebook: '', lostReason: '',

@@ -77,10 +77,10 @@ $driver = @'
       S.insert('users', { id: 'josh', name: 'Josh Martinez', role: 'rep', active: true, branch: '' }, 'u', 'Josh');
     }
     S.setMe('josh');
-    laura = S.insert('leads', { name: 'Laura Zafonte', contactTitle: 'Realtor', phone: '(201) 788-1519',
+    laura = S.insert('leads', { name: 'Teresa Bramwell', contactTitle: 'Realtor', phone: '(201) 555-0178',
       leadStatus: 'contacted', rating: 'warm', ownerId: 'josh', branch: '', tags: [],
       nextFollowUp: S.shift(3), mockupStatus: 'none', mockupTypes: [], mockupRequestedAt: '' }, 'l', 'Laura');
-    older = S.insert('leads', { name: 'Derek Quarles', leadStatus: 'contacted', rating: 'warm',
+    older = S.insert('leads', { name: 'Howard Linley', leadStatus: 'contacted', rating: 'warm',
       ownerId: 'josh', branch: '', tags: [], nextFollowUp: S.shift(3), mockupStatus: 'requested',
       mockupTypes: ['Social Media'], mockupRequestedAt: S.shift(-6) }, 'l', 'Derek');
 

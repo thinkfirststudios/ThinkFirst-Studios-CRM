@@ -69,12 +69,12 @@ $driver = @'
       S.insert('users', { id: 'josh', name: 'Josh Martinez', role: 'rep', active: true, branch: '' }, 'u', 'Josh');
     }
     S.setMe('josh');
-    laura = S.insert('leads', { name: 'Laura Zafonte', contactName: 'Laura Zafonte',
-      phone: '(201) 788-1519', leadStatus: 'contacted', rating: 'warm', ownerId: 'josh',
-      branch: '', tags: [], nextFollowUp: '', mockupStatus: 'none' }, 'l', 'Laura Zafonte');
-    S.insert('leads', { name: 'Derek Quarles', contactName: 'Derek Quarles',
-      phone: '(203) 572-7881', leadStatus: 'new', rating: 'cold', ownerId: 'josh',
-      branch: '', tags: [], nextFollowUp: '', mockupStatus: 'none' }, 'l', 'Derek Quarles');
+    laura = S.insert('leads', { name: 'Teresa Bramwell', contactName: 'Teresa Bramwell',
+      phone: '(201) 555-0178', leadStatus: 'contacted', rating: 'warm', ownerId: 'josh',
+      branch: '', tags: [], nextFollowUp: '', mockupStatus: 'none' }, 'l', 'Teresa Bramwell');
+    S.insert('leads', { name: 'Howard Linley', contactName: 'Howard Linley',
+      phone: '(203) 555-0157', leadStatus: 'new', rating: 'cold', ownerId: 'josh',
+      branch: '', tags: [], nextFollowUp: '', mockupStatus: 'none' }, 'l', 'Howard Linley');
 
     location.hash = '#/leads';
     until(function () { return document.querySelector('#segNav [data-seg="callbacks"]'); },

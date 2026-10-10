@@ -9,10 +9,10 @@ const ok = (l, c, x) => { if (c) console.log('  ok   ' + l); else { fails++; con
 const rows = {
   profiles: [{ id: 'u', name: 'Alex', role: 'admin', active: true }],
   leads: [{
-    id: 'l1', name: 'Hollywood Gleam Co.', contactName: 'Miguel Soto', leadStatus: 'qualified',
+    id: 'l1', name: 'Westgleam Co.', contactName: 'Miguel Soto', leadStatus: 'qualified',
     rating: 'hot', ownerId: 'u', estValue: 0, nextFollowUp: '', lastContactedAt: '', tags: ['Local'],
-    email: '', phone: '(626) 234-7198', website: '', industry: 'Cleaning', address: 'West Hollywood',
-    instagram: 'hollywoodgleam', tiktok: '', facebook: '',
+    email: '', phone: '(626) 555-0123', website: '', industry: 'Cleaning', address: 'West Hollywood',
+    instagram: 'westgleam', tiktok: '', facebook: '',
     lostReason: '', convertedCustomerId: '', convertedAt: ''
   }],
   customers: [], contacts: [], opportunities: [], tasks: [], vendors: [],
@@ -47,16 +47,16 @@ const S = win.Store;
 
   console.log('\n-- every way a handle gets pasted lands on the same value');
   [
-    ['hollywoodgleam', 'plain'],
-    ['@hollywoodgleam', 'with @'],
-    ['instagram.com/hollywoodgleam', 'bare host'],
-    ['www.instagram.com/hollywoodgleam', 'with www'],
-    ['https://instagram.com/hollywoodgleam', 'full url'],
-    ['https://www.instagram.com/hollywoodgleam/', 'trailing slash'],
-    ['https://www.instagram.com/hollywoodgleam/?hl=en', 'with tracking junk'],
-    ['  @hollywoodgleam  ', 'padded']
+    ['westgleam', 'plain'],
+    ['@westgleam', 'with @'],
+    ['instagram.com/westgleam', 'bare host'],
+    ['www.instagram.com/westgleam', 'with www'],
+    ['https://instagram.com/westgleam', 'full url'],
+    ['https://www.instagram.com/westgleam/', 'trailing slash'],
+    ['https://www.instagram.com/westgleam/?hl=en', 'with tracking junk'],
+    ['  @westgleam  ', 'padded']
   ].forEach(([input, label]) => {
-    ok(label + ' -> hollywoodgleam', h(input) === 'hollywoodgleam', h(input));
+    ok(label + ' -> westgleam', h(input) === 'westgleam', h(input));
   });
 
   console.log('\n-- tiktok keeps its @ in the URL but not in storage');
@@ -83,7 +83,7 @@ const S = win.Store;
   let list = S.socialsOf(lead);
   ok('one handle on this lead', list.length === 1, list.length);
   ok('it is the instagram one', list[0].net.id === 'instagram');
-  ok('with a working url', list[0].url === 'https://instagram.com/hollywoodgleam');
+  ok('with a working url', list[0].url === 'https://instagram.com/westgleam');
   ok('a record with none returns an empty list', S.socialsOf({}).length === 0);
   ok('null record is safe', S.socialsOf(null).length === 0);
 
@@ -104,15 +104,15 @@ const S = win.Store;
 
   console.log('\n-- handles are searchable');
   ok('search text includes the handle',
-     S.socialSearchText(lead).indexOf('hollywoodgleam') > -1, S.socialSearchText(lead));
+     S.socialSearchText(lead).indexOf('westgleam') > -1, S.socialSearchText(lead));
   ok('empty record gives empty text', S.socialSearchText({}) === '');
 
   console.log('\n-- conversion carries them to the account');
-  S.update('leads', 'l1', { tiktok: 'gleamco', facebook: 'hollywoodgleamco' }, 'add handles');
+  S.update('leads', 'l1', { tiktok: 'gleamco', facebook: 'westgleamco' }, 'add handles');
   const out = S.convertLead('l1', { createOpportunity: false });
-  ok('instagram carried', out.account.instagram === 'hollywoodgleam', out.account.instagram);
+  ok('instagram carried', out.account.instagram === 'westgleam', out.account.instagram);
   ok('tiktok carried', out.account.tiktok === 'gleamco', out.account.tiktok);
-  ok('facebook carried', out.account.facebook === 'hollywoodgleamco', out.account.facebook);
+  ok('facebook carried', out.account.facebook === 'westgleamco', out.account.facebook);
   ok('all three visible on the account', S.socialsOf(out.account).length === 3);
   // For a business with no website and no email this is the whole contact route.
   ok('the account is reachable despite having no website or email',

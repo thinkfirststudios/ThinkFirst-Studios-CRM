@@ -53,15 +53,15 @@ const S = win.Store;
   });
 
   console.log('\n-- a real domain is still the key');
-  ok('own domain', k({ name: 'Chef', website: 'chef-mathias.com' }) === 'd:chef-mathias.com');
-  ok('with https and www', k({ name: 'Chef', website: 'https://www.chef-mathias.com/' }) === 'd:chef-mathias.com');
+  ok('own domain', k({ name: 'Chef', website: 'chef-rondel.example' }) === 'd:chef-rondel.example');
+  ok('with https and www', k({ name: 'Chef', website: 'https://www.chef-rondel.example/' }) === 'd:chef-rondel.example');
   ok('a path on an own domain does not change identity',
-     k({ name: 'Chef', website: 'chef-mathias.com/about' }) === 'd:chef-mathias.com');
+     k({ name: 'Chef', website: 'chef-rondel.example/about' }) === 'd:chef-rondel.example');
 
   console.log('\n-- a social handle identifies a business with no website');
-  ok('instagram handle used', k({ name: 'Gleam', instagram: 'hollywoodgleam' }) === 's:instagram/hollywoodgleam');
+  ok('instagram handle used', k({ name: 'Gleam', instagram: 'westgleam' }) === 's:instagram/westgleam');
   ok('same handle pasted as a url matches',
-     k({ name: 'Gleam', instagram: 'https://www.instagram.com/hollywoodgleam/' }) === 's:instagram/hollywoodgleam');
+     k({ name: 'Gleam', instagram: 'https://www.instagram.com/westgleam/' }) === 's:instagram/westgleam');
   ok('two different handles do not collide',
      k({ name: 'A', instagram: 'aaa' }) !== k({ name: 'B', instagram: 'bbb' }));
   ok('email still wins over everything',
@@ -73,30 +73,30 @@ const S = win.Store;
      fourteen realtors away as duplicates - and the import still reported
      success, which is the part that would have gone unnoticed. */
   const roster = [
-    { name: 'Imobiliaria Invista', contactName: 'Anderson Coutinho',
-      website: 'https://www.imobiliariainvista.com.br/corretores/anderson-coutinho' },
-    { name: 'Imobiliaria Invista', contactName: 'Carlos Mauricio',
-      website: 'https://www.imobiliariainvista.com.br/corretores/carlos-mauricio' },
-    { name: 'Imobiliaria Invista', contactName: 'Zenilda',
-      website: 'https://www.imobiliariainvista.com.br/corretores/zenilda' }
+    { name: 'Imobiliaria Horizonte', contactName: 'Anderson Queiroz',
+      website: 'https://www.imobiliaria-horizonte.example/corretores/anderson-queiroz' },
+    { name: 'Imobiliaria Horizonte', contactName: 'Carlos Tiberio',
+      website: 'https://www.imobiliaria-horizonte.example/corretores/carlos-tiberio' },
+    { name: 'Imobiliaria Horizonte', contactName: 'Zenilda',
+      website: 'https://www.imobiliaria-horizonte.example/corretores/zenilda' }
   ];
   const rk = roster.map(k);
   ok('three agents, three keys', new Set(rk).size === 3, rk.join(' '));
   ok('and the firm is still visible in the key',
-     rk.every(x => x.indexOf('d:imobiliariainvista.com.br|') === 0), rk[0]);
+     rk.every(x => x.indexOf('d:imobiliaria-horizonte.example|') === 0), rk[0]);
 
   /* The same shape, but on a platform rather than a firm's own site - and
      with no contact name to save it. A scraped Orange County list had "Mr.
-     Los Alamitos Real Estate" and "Mr. Irvine Real Estate", two pages on
+     Bayridge Real Estate" and "Mr. Northgate Real Estate", two pages on
      designatedlocalexpert.com, and one of them was silently dropped on
      import. Google Maps gives a business title and no person, so the
      contact-name suffix that rescued the Brazil roster was not there. */
   console.log('\n-- a platform roster, with nobody named on it');
   const platform = [
-    { name: 'Mr. Los Alamitos Real Estate',
-      website: 'https://designatedlocalexpert.com/losalamitos/' },
-    { name: 'Mr. Irvine Real Estate',
-      website: 'https://designatedlocalexpert.com/mrirvine/' }
+    { name: 'Mr. Bayridge Real Estate',
+      website: 'https://designatedlocalexpert.com/bayridge/' },
+    { name: 'Mr. Northgate Real Estate',
+      website: 'https://designatedlocalexpert.com/northgate/' }
   ];
   const pk = platform.map(k);
   ok('two pages on one platform are two leads', pk[0] !== pk[1], pk.join(' '));
@@ -120,19 +120,19 @@ const S = win.Store;
   console.log('\n-- but the same person is still the same lead');
   ok('re-imported unchanged', k(roster[0]) === k(roster[0]));
   ok('a second page on the same site does not split one person',
-     k({ name: 'Chef', contactName: 'Mathias', website: 'chef-mathias.com/about' }) ===
-     k({ name: 'Chef', contactName: 'Mathias', website: 'chef-mathias.com' }));
+     k({ name: 'Chef', contactName: 'Mathias', website: 'chef-rondel.example/about' }) ===
+     k({ name: 'Chef', contactName: 'Mathias', website: 'chef-rondel.example' }));
   ok('two people at one company do split',
-     k({ name: 'Chef Co', contactName: 'Mathias', website: 'chef-mathias.com' }) !==
-     k({ name: 'Chef Co', contactName: 'Dana', website: 'chef-mathias.com' }));
+     k({ name: 'Chef Co', contactName: 'Mathias', website: 'chef-rondel.example' }) !==
+     k({ name: 'Chef Co', contactName: 'Dana', website: 'chef-rondel.example' }));
   ok('a shared team instagram still separates the agents behind it',
      k({ name: 'Gralha', contactName: 'Flavia', instagram: 'gralhaimoveis' }) !==
      k({ name: 'Gralha', contactName: 'Andre', instagram: 'gralhaimoveis' }));
   ok('and a record naming nobody keys exactly as it used to',
-     k({ name: 'Chef', website: 'chef-mathias.com' }) === 'd:chef-mathias.com');
+     k({ name: 'Chef', website: 'chef-rondel.example' }) === 'd:chef-rondel.example');
 
   console.log('\n-- falling through to the name');
-  ok('no contact details at all', k({ name: 'Studio ABM Builders' }) === 'n:studioabmbuilders');
+  ok('no contact details at all', k({ name: 'Studio Vance Builders' }) === 'n:studiovancebuilders');
   ok('a platform url with no path is not identity',
      k({ name: 'Studio ABM', website: 'facebook.com' }) === 'n:studioabm');
   ok('punctuation ignored',
@@ -140,15 +140,15 @@ const S = win.Store;
 
   console.log('\n-- the real batch: all ten must survive an import together');
   const batch = [
-    { name: 'Studio ABM Builders' },
-    { name: 'Chef Mathias', website: 'chef-mathias.com' },
-    { name: 'Hollywood Gleam Co.', instagram: 'hollywoodgleam' },
-    { name: 'Christina Fetterolf Adaptive', email: 'CFADAPTIVE@GMAIL.COM' },
-    { name: 'Maravilla Tree Service', email: 'Maravillalandscape@gmail.com' },
-    { name: 'Casillas Pool Remodeling', instagram: 'casillaspools', facebook: 'casillaspools' },
-    { name: 'Handi Conkrete & Construction LLC', instagram: 'handi_conkretellc' },
+    { name: 'Studio Vance Builders' },
+    { name: 'Chef Rondel', website: 'chef-rondel.example' },
+    { name: 'Westgleam Co.', instagram: 'westgleam' },
+    { name: 'Corinne Falkner Adaptive', email: 'cfalkner@example.com' },
+    { name: 'Alderwood Tree Service', email: 'alderwoodtrees@example.com' },
+    { name: 'Sandvale Pool Remodeling', instagram: 'casillaspools', facebook: 'casillaspools' },
+    { name: 'Hardset Concrete & Construction LLC', instagram: 'handi_conkretellc' },
     { name: 'Kitchen Remodeler Ithaca' },
-    { name: 'Blonde Boujee Cleaning' },
+    { name: 'Bluebell Cleaning Co.' },
     { name: 'Carlson Gracie Anaheim', website: 'carlsongraciebjj.club', instagram: 'carlsonanaheim' }
   ];
   const keys = batch.map(k);

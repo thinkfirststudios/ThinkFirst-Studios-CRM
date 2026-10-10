@@ -444,7 +444,7 @@
 
        This is the shape that lost fourteen Brazilian realtors behind one
        imobiliaria domain. It bit again on an Orange County list where "Mr.
-       Los Alamitos Real Estate" and "Mr. Irvine Real Estate" are two pages
+       Bayridge Real Estate" and "Mr. Northgate Real Estate" are two pages
        on designatedlocalexpert.com: one of them was silently dropped.
 
        A contact name on the record hides it, because the name is appended
@@ -496,7 +496,7 @@
 
   var SOCIALS = [
     { id: 'instagram', label: 'Instagram', short: 'IG', tone: 'b-violet',
-      placeholder: '@hollywoodgleam',
+      placeholder: '@westgleam',
       url: function (h) { return 'https://instagram.com/' + h; } },
     { id: 'tiktok', label: 'TikTok', short: 'TikTok', tone: 'b-grey',
       placeholder: '@yourhandle',
@@ -2440,13 +2440,13 @@
 
       /* Everything below identifies a BUSINESS, so where a person is named
          they are part of the identity. A brokerage roster is fifteen agents
-         behind one domain - imobiliariainvista.com.br/corretores/<name> for
+         behind one domain - imobiliaria-horizonte.example/corretores/<name> for
          each of them - and keying on the domain alone made all fifteen the
          same lead, so fourteen realtors were skipped as duplicates and the
          import quietly delivered a third of the list.
 
-         The path cannot carry this instead: chef-mathias.com/about and
-         chef-mathias.com are deliberately the same business. Two records
+         The path cannot carry this instead: chef-rondel.example/about and
+         chef-rondel.example are deliberately the same business. Two records
          naming two different people are two people. */
       var who = String(rec.contactName || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
       var sfx = who ? '|' + who : '';
@@ -2574,7 +2574,7 @@
 
       /* A printed US address ends "City, ST ZIP", and that is stronger
          evidence than any word earlier in the line - because a street can
-         be named after anywhere. "5826 Brazil Dr, Buena Park, CA 90620" is
+         be named after anywhere. "1400 Brazil Dr, Buena Park, CA 90620" is
          in Orange County, and reading "Brazil" out of the street name filed
          an Orange County realtor as being outside the country. Same lesson
          as Avenida Vista Montana not being in Montana.

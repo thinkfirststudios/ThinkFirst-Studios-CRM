@@ -42,7 +42,7 @@ const S = win.Store;
 
   console.log('\n-- a rep asks for work');
   S.setMe('josh');
-  const laura = mk('Laura Zafonte', 'josh', '');
+  const laura = mk('Teresa Bramwell', 'josh', '');
   S.setMockup(laura.id, { mockupStatus: 'requested', mockupTypes: ['Website', 'Logo'],
                           note: 'Wants a one-page site and a logo.' });
   let l = S.find('leads', laura.id);
@@ -54,21 +54,21 @@ const S = win.Store;
   ok('and it is not on the ready-to-send card', !S.mockupsReadyToSend().some(x => x.id === laura.id));
 
   console.log('\n-- the queue');
-  const derek = mk('Derek Quarles', 'josh', '', { mockupStatus: 'requested', mockupRequestedAt: S.shift(-4) });
-  const aziz = mk('Aziz Seyal', 'josh', '', { mockupStatus: 'inprogress', mockupRequestedAt: S.shift(-9) });
+  const derek = mk('Howard Linley', 'josh', '', { mockupStatus: 'requested', mockupRequestedAt: S.shift(-4) });
+  const aziz = mk('Peter Ashgrove', 'josh', '', { mockupStatus: 'inprogress', mockupRequestedAt: S.shift(-9) });
   mk('Nobody Asked', 'josh', '');
   S.setMe('alex');
   let q = S.mockupQueue();
   ok('lists what was asked for and what is being built',
-     q.map(x => x.name).join(', ') === 'Derek Quarles, Laura Zafonte, Aziz Seyal',
+     q.map(x => x.name).join(', ') === 'Howard Linley, Teresa Bramwell, Peter Ashgrove',
      q.map(x => x.name + '/' + x.mockupStatus).join(', '));
   ok('  requests come before work already under way', q[0].mockupStatus === 'requested');
-  ok('  and the oldest ask is first', q[0].name === 'Derek Quarles');
+  ok('  and the oldest ask is first', q[0].name === 'Howard Linley');
   ok('  a lead nobody asked about is not on it', !q.some(x => x.name === 'Nobody Asked'));
 
   console.log('\n-- picking one up, and finishing it');
   S.setMockup(derek.id, { mockupStatus: 'inprogress' });
-  ok('starting it moves it down the queue', S.mockupQueue()[0].name !== 'Derek Quarles');
+  ok('starting it moves it down the queue', S.mockupQueue()[0].name !== 'Howard Linley');
   ok('  and the ask date is kept, so the wait is from the ask',
      S.find('leads', derek.id).mockupRequestedAt === S.shift(-4),
      S.find('leads', derek.id).mockupRequestedAt);

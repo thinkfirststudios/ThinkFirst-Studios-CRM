@@ -76,14 +76,14 @@ const S = win.Store;
   new Function('window', read('views/leads.js'))(win);
 
   const book = [
-    { id: 'l1', name: 'Chef Mathias', address: 'Los Angeles & surrounding areas',
-      phone: '310 876 5291', leadStatus: 'new', rating: 'warm', ownerId: 'u',
+    { id: 'l1', name: 'Chef Rondel', address: 'Los Angeles & surrounding areas',
+      phone: '310 555 0131', leadStatus: 'new', rating: 'warm', ownerId: 'u',
       tags: [], mockupStatus: 'none', mockupTypes: [], estValue: 0 },
-    { id: 'l2', name: 'Aziz Seyal', address: 'New Haven, Connecticut',
-      phone: '(203) 209-9396', leadStatus: 'new', rating: 'warm', ownerId: 'u',
+    { id: 'l2', name: 'Peter Ashgrove', address: 'New Haven, Connecticut',
+      phone: '(203) 555-0120', leadStatus: 'new', rating: 'warm', ownerId: 'u',
       tags: [], mockupStatus: 'none', mockupTypes: [], estValue: 0 },
-    { id: 'l3', name: 'Chemaye Nickens- Smith', address: 'Washington D.C.',
-      phone: '(202) 709-7989', leadStatus: 'new', rating: 'warm', ownerId: 'u',
+    { id: 'l3', name: 'Marguerite Alder', address: 'Washington D.C.',
+      phone: '(202) 555-0170', leadStatus: 'new', rating: 'warm', ownerId: 'u',
       tags: [], mockupStatus: 'none', mockupTypes: [], estValue: 0 }
   ];
   win.Views.leads._exportCsv(book);
@@ -104,10 +104,10 @@ const S = win.Store;
     const r = grid.slice(1).filter(r => r[co] === n)[0];
     return r ? r[tz] : '(row not found)';
   };
-  ok('Chef Mathias exports West Coast', cell('Chef Mathias') === 'West Coast', cell('Chef Mathias'));
-  ok('Aziz Seyal exports East Coast', cell('Aziz Seyal') === 'East Coast', cell('Aziz Seyal'));
+  ok('Chef Rondel exports West Coast', cell('Chef Rondel') === 'West Coast', cell('Chef Rondel'));
+  ok('Peter Ashgrove exports East Coast', cell('Peter Ashgrove') === 'East Coast', cell('Peter Ashgrove'));
   ok('the D.C. realtor exports East Coast, not West',
-     cell('Chemaye Nickens- Smith') === 'East Coast', cell('Chemaye Nickens- Smith'));
+     cell('Marguerite Alder') === 'East Coast', cell('Marguerite Alder'));
 
   /* The column is derived, so re-importing an export must not try to write
      it onto a record - and must not be mistaken for a field that is real. */
@@ -120,14 +120,14 @@ const S = win.Store;
 
   console.log('\n-- the filter and the export agree lead by lead');
   const CASES = [
-    ['Chef Mathias',        'Los Angeles & surrounding areas', '310 876 5291',   'West Coast'],
-    ['Aziz Seyal',          'New Haven, Connecticut',          '(203) 209-9396', 'East Coast'],
-    ['Jaren Johnson',       'Saint Paul, Minnesota',           '(651) 419-8400', 'Central'],
-    ['Blonde Boujee',       'Dallas-Fort Worth, TX',           '(682) 789-2945', 'Central'],
-    ['Chemaye Nickens',     'Washington D.C.',                 '(202) 709-7989', 'East Coast'],
-    ['Bugs Bee Gone',       'Tucson, AZ',                      '(520) 649-2589', 'Mountain'],
+    ['Chef Rondel',        'Los Angeles & surrounding areas', '310 555 0131',   'West Coast'],
+    ['Peter Ashgrove',          'New Haven, Connecticut',          '(203) 555-0120', 'East Coast'],
+    ['Niall Fairbank',       'Saint Paul, Minnesota',           '(651) 555-0141', 'Central'],
+    ['Blonde Boujee',       'Dallas-Fort Worth, TX',           '(682) 555-0168', 'Central'],
+    ['Marguerite Alder',     'Washington D.C.',                 '(202) 555-0170', 'East Coast'],
+    ['Bugs Bee Gone',       'Tucson, AZ',                      '(520) 555-0164', 'Mountain'],
     ['A Baleeira',          'Florianópolis, SC',               '+55 48 99219-7961', 'Outside the US'],
-    ['Western Sky',         '',                                '(844) 937-8759', 'Zone unknown']
+    ['Western Sky',         '',                                '(844) 555-0193', 'Zone unknown']
   ];
   CASES.forEach(function (c) {
     const lead = { name: c[0], address: c[1], phone: c[2] };
@@ -142,7 +142,7 @@ const S = win.Store;
   const keep = mixed.filter(l => S.zoneOf(l) === 'eastern');
   ok('two east coast leads out of the eight', keep.length === 2, keep.length);
   ok('and they are the right two',
-     keep.map(l => l.name).join(', ') === 'Aziz Seyal, Chemaye Nickens',
+     keep.map(l => l.name).join(', ') === 'Peter Ashgrove, Marguerite Alder',
      keep.map(l => l.name).join(', '));
 
   console.log(fails ? '\nZONE EXPORT ' + fails + ' FAILURES' : '\nZONE EXPORT ALL PASS');

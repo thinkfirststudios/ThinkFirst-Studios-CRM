@@ -146,11 +146,11 @@ $driver = @'
     }
 
     // Named people from the top of the real file.
-    var a = byEmail('asculco.realtor@gmail.com');
-    say('Andreina Sculco imported', !!a);
+    var a = byEmail('asellars.realtor@example.com');
+    say('Adriana Sellars imported', !!a);
     if (a) {
-      say('  her phone came through', a.phone === '(201) 321-1051', JSON.stringify(a.phone));
-      say('  her name came through', a.name === 'Andreina Sculco', a.name);
+      say('  her phone came through', a.phone === '(201) 555-0131', JSON.stringify(a.phone));
+      say('  her name came through', a.name === 'Adriana Sellars', a.name);
       say('  her title came through', a.contactTitle === 'Realtor', a.contactTitle);
       say('  her website came through', a.website === 'century21.com', a.website);
       say('  her location came through', a.address === 'Jersey City, New Jersey', a.address);
@@ -162,8 +162,8 @@ $driver = @'
           S.notesFor('lead', a.id).length);
     }
 
-    var b = byEmail('bmontone@dianeturton.com');
-    say('Barbara Montone kept her phone', b && b.phone === '(201) 404-6101', b && JSON.stringify(b.phone));
+    var b = byEmail('bmarchant@example.com');
+    say('Belinda Marchant kept her phone', b && b.phone === '(201) 555-0140', b && JSON.stringify(b.phone));
     say('and her warm rating', b && b.rating === 'warm', b && b.rating);
 
     // The row whose location contains a comma - the classic column-shift bug.

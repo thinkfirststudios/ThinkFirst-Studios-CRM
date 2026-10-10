@@ -59,7 +59,7 @@ const S = win.Store;
      z('Fontana', '9095593346') === 'pacific');
   ok('no location at all still resolves from the number',
      z('', '(813) 525-5596') === 'eastern');
-  ok('a toll-free number says nothing', z('', '(855) 727-4255') === 'unknown');
+  ok('a toll-free number says nothing', z('', '(855) 555-0172') === 'unknown');
 
   console.log('\n-- a state that straddles a zone line defers to the number');
   ok('Houston is Central', z('Houston, Texas', '(713) 555-0100') === 'central');
@@ -70,8 +70,8 @@ const S = win.Store;
 
   console.log('\n-- the business is where it says it is');
   ok('a Los Angeles agent holding a Washington DC mobile is still west coast',
-     z('Los Angeles, California', '(202) 316-5274') === 'pacific',
-     z('Los Angeles, California', '(202) 316-5274'));
+     z('Los Angeles, California', '(202) 555-0131') === 'pacific',
+     z('Los Angeles, California', '(202) 555-0131'));
 
   /* The capital is not the state of the same name. Two of Josh's realtors
      have their Location typed "Washington D.C." with full stops, and the
@@ -81,8 +81,8 @@ const S = win.Store;
   console.log('\n-- Washington the city is not Washington the state');
   ['Washington D.C.', 'Washington, D.C.', 'Washington, DC', 'Washington DC',
    'Washington, D.C. 20001', 'Washington, District of Columbia'].forEach(function (loc) {
-    ok('"' + loc + '" is east coast', z(loc, '(202) 709-7989') === 'eastern',
-       z(loc, '(202) 709-7989'));
+    ok('"' + loc + '" is east coast', z(loc, '(202) 555-0170') === 'eastern',
+       z(loc, '(202) 555-0170'));
   });
   ok('and still east coast with no phone to fall back on',
      z('Washington D.C.', '') === 'eastern', z('Washington D.C.', ''));
@@ -91,8 +91,8 @@ const S = win.Store;
   ok('and so is Washington spelled as a state abbreviation',
      z('Spokane, WA', '') === 'pacific');
   ok('St. Louis is not turned into a state by the full stop',
-     z('St. Louis, Missouri', '(314) 781-2944') === 'central',
-     z('St. Louis, Missouri', '(314) 781-2944'));
+     z('St. Louis, Missouri', '(314) 555-0178') === 'central',
+     z('St. Louis, Missouri', '(314) 555-0178'));
 
   console.log('\n-- outside the lower 48');
   /* A street can be named after anywhere. An Orange County realtor on
@@ -101,8 +101,8 @@ const S = win.Store;
      Montana being read as Montana. A printed zip is what settles it. */
   console.log('\n-- a street named after a country is still on that street');
   ok('Brazil Dr, Buena Park CA is Orange County, not Brazil',
-     z('5826 Brazil Dr, Buena Park, CA 90620', '(714) 356-2369') === 'pacific',
-     z('5826 Brazil Dr, Buena Park, CA 90620', '(714) 356-2369'));
+     z('1400 Brazil Dr, Buena Park, CA 90620', '(714) 555-0135') === 'pacific',
+     z('1400 Brazil Dr, Buena Park, CA 90620', '(714) 555-0135'));
   ok('Toronto St, Denver CO is Colorado, not Canada',
      z('1234 Toronto St, Denver, CO 80220', '') === 'mountain',
      z('1234 Toronto St, Denver, CO 80220', ''));
@@ -122,8 +122,8 @@ const S = win.Store;
      z('Florianópolis, SC', '48992197961') === 'outside');
   ok('a real South Carolina lead is still the east coast',
      z('Charleston, South Carolina', '(843) 555-0100') === 'eastern');
-  ok('Montreal is not the east coast', z('Montreal, Quebec', '(514) 821-8408') === 'outside');
-  ok('Hawaii is neither coast', z('Honolulu, Hawaii', '(808) 683-8244') === 'akhi');
+  ok('Montreal is not the east coast', z('Montreal, Quebec', '(514) 555-0182') === 'outside');
+  ok('Hawaii is neither coast', z('Honolulu, Hawaii', '(808) 555-0180') === 'akhi');
 
   console.log('\n-- nothing to go on');
   ok('no location and no phone is unknown, not guessed', z('', '') === 'unknown');

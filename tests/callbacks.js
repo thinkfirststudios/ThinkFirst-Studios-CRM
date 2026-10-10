@@ -41,8 +41,8 @@ const S = win.Store;
     name, contactName: name, phone: '(201) 555-0100', leadStatus: 'contacted', rating: 'warm',
     ownerId: owner, branch: '', tags: [], nextFollowUp: '', mockupStatus: 'none'
   }, 'l', name);
-  const laura = mk('Laura Zafonte', 'josh');
-  const derek = mk('Derek Quarles', 'josh');
+  const laura = mk('Teresa Bramwell', 'josh');
+  const derek = mk('Howard Linley', 'josh');
   const fran = mk('Frances Kosier', 'frank');
 
   console.log('\n-- booking a call back');
@@ -71,7 +71,7 @@ const S = win.Store;
   console.log('\n-- the list');
   S.scheduleCallback(derek.id, { date: S.shift(1), reminder: 'Left a voicemail, try the office line.' });
   let list = S.callbacks();
-  ok('soonest first', list.map(c => c.lead.name).join(',') === 'Derek Quarles,Laura Zafonte',
+  ok('soonest first', list.map(c => c.lead.name).join(',') === 'Howard Linley,Teresa Bramwell',
      list.map(c => c.lead.name).join(','));
   ok('each row carries its lead', list.every(c => c.lead && c.lead.phone));
 

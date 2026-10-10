@@ -69,7 +69,7 @@ def key_email(r):
 
 def key_name(s):
     """A name reduced to the letters in it, so punctuation and spacing do not
-    hide a repeat: 'Chemaye Nickens- Smith' and 'Chemaye Nickens-Smith'."""
+    hide a repeat: 'Marguerite Alder' and 'Marguerite Alder'."""
     return re.sub(r'[^a-z]', '', (s or '').lower())
 
 

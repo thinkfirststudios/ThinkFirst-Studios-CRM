@@ -49,3 +49,8 @@ standby/*
 # Python bytecode cache
 __pycache__/
 *.pyc
+
+# Supabase CLI scratch - holds the project ref and org id. Not a secret
+# (the ref is in every API call the browser makes) but it is a local
+# working file and does not belong in a public repo.
+supabase/.temp/

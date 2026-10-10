@@ -86,16 +86,16 @@ $driver = @'
     }
 
     // A Redfin agent profile: the number on it is Redfin's booking desk.
-    redfin = lead({ name: 'Anjely Bisai', contactName: 'Anjely Bisai', phone: '(516) 908-5526',
+    redfin = lead({ name: 'Annika Beaumont', contactName: 'Annika Beaumont', phone: '(516) 555-0152',
                     website: 'https://www.redfin.com/real-estate-agents/anjely-bisai' });
     // Compass does the same thing with a directory you work through by name.
-    compass = lead({ name: 'Frank Dong', contactName: 'Frank Dong', phone: '(914) 313-3581',
+    compass = lead({ name: 'Franklin Doyle', contactName: 'Franklin Doyle', phone: '(914) 555-0131',
                      website: 'https://www.compass.com/agents/frank-dong/' });
     // One number, two "different" agents - a front desk by another name.
-    twinA = lead({ name: 'Isaac Winkles', contactName: 'Isaac Winkles', phone: '(256) 683-4210' });
+    twinA = lead({ name: 'Ivan Winsley', contactName: 'Ivan Winsley', phone: '(256) 555-0168' });
     twinB = lead({ name: 'Winkles Team', contactName: 'Ruth Winkles', phone: '256-683-4210' });
     // And an ordinary lead with a number that reaches the person.
-    direct = lead({ name: 'Laura Zafonte', contactName: 'Laura Zafonte', phone: '(201) 788-1519' });
+    direct = lead({ name: 'Teresa Bramwell', contactName: 'Teresa Bramwell', phone: '(201) 555-0178' });
 
     var idx = S.companyLineIndex();
     say('the Redfin profile is a company line', !!idx[redfin.id], idx[redfin.id] || 'not flagged');
@@ -133,7 +133,7 @@ $driver = @'
 
   function filters(sel) {
     // Nothing is hidden by default: the record is still the record.
-    say('the table still lists the flagged leads', tableText().indexOf('Anjely Bisai') > -1);
+    say('the table still lists the flagged leads', tableText().indexOf('Annika Beaumont') > -1);
     say('  marked as a company line', tableText().indexOf('company line') > -1);
 
     function pick(v, then) {
@@ -145,12 +145,12 @@ $driver = @'
     pick('direct', function () {
       var t = tableText();
       say('"Direct number" shows the leads worth ringing',
-          t.indexOf('Laura Zafonte') > -1 && t.indexOf('Anjely Bisai') < 0);
+          t.indexOf('Teresa Bramwell') > -1 && t.indexOf('Annika Beaumont') < 0);
       pick('company', function () {
         var t2 = tableText();
         say('"Company line" gathers the rest for somebody to chase',
-            t2.indexOf('Anjely Bisai') > -1 && t2.indexOf('Isaac Winkles') > -1 &&
-            t2.indexOf('Frank Dong') > -1 && t2.indexOf('Laura Zafonte') < 0, t2.slice(0, 120));
+            t2.indexOf('Annika Beaumont') > -1 && t2.indexOf('Ivan Winsley') > -1 &&
+            t2.indexOf('Franklin Doyle') > -1 && t2.indexOf('Teresa Bramwell') < 0, t2.slice(0, 120));
         pick('', function () { marking(); });
       });
     });

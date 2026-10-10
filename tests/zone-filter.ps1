@@ -79,15 +79,15 @@ $driver = @'
     }
 
     // The real spread off Josh's mockup sheet, one per zone.
-    lead('Chef Mathias', 'Los Angeles & surrounding areas', '310 876 5291');
-    lead('Casillas Pool', '10058 Sunland Blvd, Los Angeles, CA', '(818) 288-7546');
-    lead('Aziz Seyal', 'New Haven, Connecticut', '(203) 209-9396');
-    lead('Laura Zafonte', 'Jersey City, New Jersey', '(201) 788-1519');
-    lead('Jaren Johnson', 'Saint Paul, Minnesota', '(651) 419-8400');
-    lead('Bugs Bee Gone', 'Tucson, AZ', '(520) 649-2589');
+    lead('Chef Rondel', 'Los Angeles & surrounding areas', '310 555 0131');
+    lead('Casillas Pool', '2200 Sunland Blvd, Los Angeles, CA', '(818) 555-0181');
+    lead('Peter Ashgrove', 'New Haven, Connecticut', '(203) 555-0120');
+    lead('Teresa Bramwell', 'Jersey City, New Jersey', '(201) 555-0178');
+    lead('Niall Fairbank', 'Saint Paul, Minnesota', '(651) 555-0141');
+    lead('Bugs Bee Gone', 'Tucson, AZ', '(520) 555-0164');
     // The capital is not the state of the same name, and this one is typed
     // with full stops, which is how it sits in the book.
-    lead('Chemaye Nickens', 'Washington D.C.', '(202) 709-7989');
+    lead('Marguerite Alder', 'Washington D.C.', '(202) 555-0170');
     // No location at all - placed by its area code and nothing else.
     lead('SD Prodigy', '', '6195478214');
 
@@ -105,7 +105,7 @@ $driver = @'
     say('  it offers West Coast and East Coast by name',
         opts.indexOf('West Coast') > -1 && opts.indexOf('East Coast') > -1, opts.join(', '));
     say('  and starts on Any zone, showing everybody',
-        sel.value === '' && tableText().indexOf('Aziz Seyal') > -1);
+        sel.value === '' && tableText().indexOf('Peter Ashgrove') > -1);
 
     if (!pick('#fzone', 'pacific')) return;
     setTimeout(westCoast, 80);
@@ -114,13 +114,13 @@ $driver = @'
   function westCoast() {
     var t = tableText();
     say('West Coast keeps the Los Angeles leads',
-        t.indexOf('Chef Mathias') > -1 && t.indexOf('Casillas Pool') > -1);
+        t.indexOf('Chef Rondel') > -1 && t.indexOf('Casillas Pool') > -1);
     say('  and the San Diego lead placed by its area code alone',
         t.indexOf('SD Prodigy') > -1);
-    say('  and drops Connecticut', t.indexOf('Aziz Seyal') < 0);
+    say('  and drops Connecticut', t.indexOf('Peter Ashgrove') < 0);
     say('  and drops Arizona', t.indexOf('Bugs Bee Gone') < 0);
     say('  and does not claim the Washington D.C. realtor',
-        t.indexOf('Chemaye Nickens') < 0, t.slice(0, 160));
+        t.indexOf('Marguerite Alder') < 0, t.slice(0, 160));
 
     if (!pick('#fzone', 'eastern')) return;
     setTimeout(eastCoast, 80);
@@ -129,10 +129,10 @@ $driver = @'
   function eastCoast() {
     var t = tableText();
     say('East Coast gives Connecticut and New Jersey',
-        t.indexOf('Aziz Seyal') > -1 && t.indexOf('Laura Zafonte') > -1);
-    say('  and Washington D.C. with it', t.indexOf('Chemaye Nickens') > -1, t.slice(0, 160));
-    say('  and nothing from the west coast', t.indexOf('Chef Mathias') < 0);
-    say('  and not Minnesota either', t.indexOf('Jaren Johnson') < 0);
+        t.indexOf('Peter Ashgrove') > -1 && t.indexOf('Teresa Bramwell') > -1);
+    say('  and Washington D.C. with it', t.indexOf('Marguerite Alder') > -1, t.slice(0, 160));
+    say('  and nothing from the west coast', t.indexOf('Chef Rondel') < 0);
+    say('  and not Minnesota either', t.indexOf('Niall Fairbank') < 0);
 
     if (!pick('#fzone', 'central')) return;
     setTimeout(central, 80);
@@ -141,11 +141,11 @@ $driver = @'
   function central() {
     var t = tableText();
     say('Central gives Saint Paul on its own',
-        t.indexOf('Jaren Johnson') > -1 && t.indexOf('Aziz Seyal') < 0, t.slice(0, 160));
+        t.indexOf('Niall Fairbank') > -1 && t.indexOf('Peter Ashgrove') < 0, t.slice(0, 160));
     if (!pick('#fzone', 'mountain')) return;
     setTimeout(function () {
       say('Mountain gives Tucson on its own',
-          tableText().indexOf('Bugs Bee Gone') > -1 && tableText().indexOf('Chef Mathias') < 0);
+          tableText().indexOf('Bugs Bee Gone') > -1 && tableText().indexOf('Chef Rondel') < 0);
       exported();
     }, 80);
   }
@@ -178,14 +178,14 @@ $driver = @'
       var row = grid.slice(1).filter(function (r) { return r[co] === name; })[0];
       return row ? row[tz] : '(missing)';
     }
-    say('  Chef Mathias exports as West Coast', zoneOf('Chef Mathias') === 'West Coast',
-        zoneOf('Chef Mathias'));
-    say('  Aziz Seyal exports as East Coast', zoneOf('Aziz Seyal') === 'East Coast',
-        zoneOf('Aziz Seyal'));
+    say('  Chef Rondel exports as West Coast', zoneOf('Chef Rondel') === 'West Coast',
+        zoneOf('Chef Rondel'));
+    say('  Peter Ashgrove exports as East Coast', zoneOf('Peter Ashgrove') === 'East Coast',
+        zoneOf('Peter Ashgrove'));
     say('  the D.C. realtor exports as East Coast, not West',
-        zoneOf('Chemaye Nickens') === 'East Coast', zoneOf('Chemaye Nickens'));
-    say('  Jaren Johnson exports as Central', zoneOf('Jaren Johnson') === 'Central',
-        zoneOf('Jaren Johnson'));
+        zoneOf('Marguerite Alder') === 'East Coast', zoneOf('Marguerite Alder'));
+    say('  Niall Fairbank exports as Central', zoneOf('Niall Fairbank') === 'Central',
+        zoneOf('Niall Fairbank'));
 
     // The words in the file are the words in the menu.
     var menu = [].map.call(document.querySelector('#fzone').options, function (o) { return o.text; });
@@ -203,8 +203,8 @@ $driver = @'
         var sel = document.querySelector('#fzone');
         say('Clear puts the zone filter back to Any zone', sel && sel.value === '',
             sel ? sel.value : '(gone)');
-        say('  and everybody is back', tableText().indexOf('Aziz Seyal') > -1 &&
-            tableText().indexOf('Chef Mathias') > -1);
+        say('  and everybody is back', tableText().indexOf('Peter Ashgrove') > -1 &&
+            tableText().indexOf('Chef Rondel') > -1);
         finish();
       }, 90);
     } else {

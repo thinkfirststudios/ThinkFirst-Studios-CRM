@@ -44,21 +44,21 @@ const S = win.Store;
     nextFollowUp: S.shift(-1), mockupStatus: 'none', mockupTypes: []
   }, extra || {}), 'l', name);
 
-  const joshs = mk('Laura Zafonte', 'josh', '');
-  const franks = mk('Barbara Montone', 'frank', '');
+  const joshs = mk('Teresa Bramwell', 'josh', '');
+  const franks = mk('Belinda Marchant', 'frank', '');
   const brunas = mk('Boni Restaurante', 'bruna', 'Brazil');
   /* Booked ahead, so these sit on the mockup cards without also being in
      the follow-up queue - the two lists are being checked separately. */
   mk('Mary Ann DeAlto', 'josh', '', { mockupStatus: 'ready', mockupReadyAt: S.shift(-2), nextFollowUp: S.shift(5) });
   mk('Cris Hotel', 'bruna', 'Brazil', { mockupStatus: 'ready', mockupReadyAt: S.shift(-2), nextFollowUp: S.shift(5) });
-  mk('Derek Quarles', 'frank', '', { mockupStatus: 'hold', mockupReadyAt: S.shift(-3), nextFollowUp: S.shift(5) });
+  mk('Howard Linley', 'frank', '', { mockupStatus: 'hold', mockupReadyAt: S.shift(-3), nextFollowUp: S.shift(5) });
 
   const names = list => list.map(l => l.name).sort().join(', ');
 
   console.log('\n-- a rep');
   S.setMe('josh');
   ok('the follow-up queue is his own leads only',
-     names(S.leadsNeedingAttention()) === 'Laura Zafonte', names(S.leadsNeedingAttention()));
+     names(S.leadsNeedingAttention()) === 'Teresa Bramwell', names(S.leadsNeedingAttention()));
   ok('  not Frank\'s', !S.leadsNeedingAttention().some(l => l.id === franks.id));
   ok('  and not another branch\'s', !S.leadsNeedingAttention().some(l => l.id === brunas.id));
   ok('the counters count his book', S.leadStats().open === 2, S.leadStats().open);
@@ -84,7 +84,7 @@ const S = win.Store;
   ok('including the held one', S.mockupsOnHold().length === 1, names(S.mockupsOnHold()));
 
   console.log('\n-- asking for one person still works');
-  ok('narrowing to a rep by hand', names(S.leadsNeedingAttention('josh')) === 'Laura Zafonte',
+  ok('narrowing to a rep by hand', names(S.leadsNeedingAttention('josh')) === 'Teresa Bramwell',
      names(S.leadsNeedingAttention('josh')));
   ok('and it is the same lead the rep saw', S.leadsNeedingAttention('josh')[0].id === joshs.id);
 

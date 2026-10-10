@@ -46,7 +46,7 @@ const DESIGN = 'https://www.canva.com/design/laura-zafonte-flyer/';
   ok('the design slot is its own column', S.mockupLink('design').key === 'mockupDesignUrl');
 
   console.log('\n-- saving both on one lead');
-  const laura = mk('Laura Zafonte');
+  const laura = mk('Teresa Bramwell');
   S.setMockup(laura.id, { mockupStatus: 'ready', mockupUrl: SITE, mockupDesignUrl: DESIGN,
                           mockupTypes: ['Website', 'Graphic Design'] });
   let l = S.find('leads', laura.id);
@@ -61,9 +61,9 @@ const DESIGN = 'https://www.canva.com/design/laura-zafonte-flyer/';
       !S.find('leads', laura.id).mockupDesignUrl));
 
   console.log('\n-- attaching a batch of design mockups');
-  const derek = mk('Derek Quarles', { mockupStatus: 'ready', mockupUrl: SITE, mockupTypes: ['Website'],
+  const derek = mk('Howard Linley', { mockupStatus: 'ready', mockupUrl: SITE, mockupTypes: ['Website'],
                                       mockupReadyAt: S.shift(-2) });
-  const aziz = mk('Aziz Seyal');
+  const aziz = mk('Peter Ashgrove');
   S.setMockupsMany([{ id: derek.id, url: DESIGN, kind: 'design' },
                     { id: aziz.id, url: DESIGN + 'aziz/', kind: 'design' }], '2 design mockups');
   const d = S.find('leads', derek.id), a = S.find('leads', aziz.id);
