@@ -118,6 +118,35 @@ for _codes, _metro in [
         AREA_METRO[_c] = _metro
 
 
+def looks_like_site(v):
+    """Is this a website, or somebody describing one?
+
+    The Facebook-group exports put a site, a social handle and a plain
+    English note in one "Website / Social" column, and 41 of 77 rows in
+    one batch simply said "Facebook page". Taking that as a website would
+    have marked 41 businesses as HAVING a site when the column was saying
+    the opposite - and "no website" is the whole reason any of them is a
+    lead. So a value only counts as a site if it actually looks like a
+    host: a dot, a plausible TLD, and no spaces in the domain part.
+    """
+    v = (v or '').strip()
+    if not v:
+        return False
+    v = re.split(r'[;,]', v)[0].strip()
+    host = re.sub(r'^https?://', '', v, flags=re.I)
+    host = re.sub(r'^www\.', '', host, flags=re.I).split('/')[0]
+    if ' ' in host or '.' not in host:
+        return False
+    # A page on a social platform is not a website. These are the hosts a
+    # lead would point at INSTEAD of having a site, which is the opposite
+    # of what this column is being read for.
+    if re.match(r'^(m\.)?(facebook|fb|instagram|tiktok|twitter|x|linkedin|'
+                r'youtube|linktr|beacons|change|yelp|nextdoor)\.',
+                host, re.I):
+        return False
+    return bool(re.match(r'^[a-z0-9.-]+\.[a-z]{2,}$', host, re.I))
+
+
 def pick(row, *names):
     """The first of these headers the file actually has, case/underscore blind."""
     for n in names:
@@ -197,6 +226,48 @@ def site(s):
     return v.rstrip('/').strip()
 
 
+# Hosts where the PATH is the business and the domain is shared by
+# everyone on it. Keying on the domain made "Nick Allen Plumbing" at
+# sites.google.com/view/nick-allen-plumbing and "Xtreme Paintball" at
+# sites.google.com/view/xtreme-paintball-and-laser-tag the same lead, so a
+# real paintball park was held back as a duplicate of a plumber. This is
+# the same rule js/store.js already applies in SHARED_HOSTS; the tool was
+# missing it.
+SHARED_HOST = re.compile(
+    r'^(m\.)?('
+    # Only hosts where the PATH is the business and the bare domain is
+    # shared by everyone. A builder that gives each customer their own
+    # SUBDOMAIN - cqb-city.square.site, vaultlegacy.wixsite.com - is NOT
+    # one of these: the host already identifies the business, and treating
+    # it as shared would send a lead with a path and the same lead without
+    # one down two different rungs, which is the bug this is meant to stop.
+    r'sites\.google\.com|'
+    r'facebook\.com|fb\.com|fb\.me|instagram\.com|tiktok\.com|'
+    r'linkedin\.com|twitter\.com|x\.com|youtube\.com|'
+    r'linktr\.ee|beacons\.ai|carrd\.co|yelp\.com|nextdoor\.com|'
+    r'redfin\.com|coldwellbanker\.com|compass\.com|har\.com|'
+    r'zillow\.com|realtor\.com|century21\.com|sevengables\.com|'
+    r'designatedlocalexpert\.com'
+    r')$', re.I)
+
+
+def site_key(u):
+    """The key that identifies the BUSINESS behind a URL.
+
+    A page on a shared platform is identified by its path; anywhere else,
+    by its domain. With no path on a shared host there is nothing to
+    identify, so the caller falls through to the name.
+    """
+    raw = site(u).lower()
+    if not raw:
+        return ''
+    h = raw.split('/')[0]
+    path = raw[len(h):].strip('/').split('?')[0].split('#')[0]
+    if SHARED_HOST.match(h):
+        return 's:' + h + '/' + path if path else ''
+    return 'd:' + h
+
+
 def host(s):
     return re.split(r'[/?#]', site(s))[0].lower()
 
@@ -230,16 +301,38 @@ class Lead(object):
         self.contact = pick(row, 'contact_name', 'contact name', 'contact', 'owner name')
         self.title = pick(row, 'contact_title', 'title', 'role')
         self.email = pick(row, 'email', 'e-mail', 'email address')
-        self.website = pick(row, 'website', 'url', 'site')
+        # 'Website / Social' is one column on the Facebook-group exports -
+        # a site for some, a Facebook page or an IG handle for others. It
+        # normalises to 'websitesocial', which matched none of the aliases,
+        # so every website in a 77-row batch was being dropped in silence.
+        raw_site = pick(row, 'website', 'url', 'site',
+                        'website social', 'website / social', 'web social')
+        # A social URL in this column is a social handle, not a website -
+        # see looks_like_site. Anything that is neither is kept as a note
+        # rather than thrown away, because "Facebook page" is telling us
+        # something true about the lead even though it is not a website.
+        self.website = raw_site if looks_like_site(raw_site) else ''
+        self.site_note = '' if self.website else raw_site
         self.industry = pick(row, 'category', 'industry', 'trade', 'niche')
         self.services = pick(row, 'services', 'service', 'what they do')
         self.notes = pick(row, 'notes', 'note', 'comments')
         self.social = pick(row, 'social', 'social media', 'instagram', 'ig')
-        self.address = pick(row, 'address', 'street', 'full address')
+        if not self.social and not self.website:
+            self.social = raw_site
+        # Same shape: 'Street Address' normalises to 'streetaddress'.
+        self.address = pick(row, 'address', 'street', 'full address',
+                            'street address', 'mailing address')
         self.city = pick(row, 'city', 'town')
         self.state = pick(row, 'state', 'st')
         self.area = pick(row, 'service_area', 'service area', 'serves')
         self.licence = pick(row, 'license', 'license #', 'licence', 'dre')
+        # A researched list has already judged the lead. That judgement is
+        # worth more as the CRM's own rating, which the list filters on,
+        # than as a tag nobody looks at. Only the three the CRM knows are
+        # accepted - anything else falls through to the import default
+        # rather than inventing a fourth rating no badge can draw.
+        rat = pick(row, 'rating', 'fit_rating', 'fit').strip().lower()
+        self.rating = rat if rat in ('hot', 'warm', 'cold') else ''
         self.has_site = pick(row, 'has_website', 'has website')
         self.dup_of = pick(row, 'duplicate_of_page', 'duplicate of page', 'duplicate of')
         self.phones = all_phones(pick(row, 'phone', 'phone number', 'telephone', 'mobile'))
@@ -259,9 +352,9 @@ class Lead(object):
         ks = []
         if good_email(self.email):
             ks.append('e:' + self.email.lower())
-        h = host(self.website)
-        if h:
-            ks.append('d:' + h)
+        k = site_key(self.website)
+        if k:
+            ks.append(k)
         for d in self.phones:
             ks.append('p:' + d)
         if self.name:
@@ -317,6 +410,7 @@ def merge(grp):
         'industry': take('industry'), 'address': take('address'),
         'city': take('city'), 'state': take('state'), 'area': take('area'),
         'licence': take('licence'), 'social': take('social'),
+        'rating': take('rating'),
         'has_site': take('has_site'),
     }
     phones, svc, notes, pages = [], [], [], []
@@ -430,9 +524,9 @@ def main():
             em = pick(c, 'email')
             if good_email(em):
                 known.setdefault('e:' + em.lower(), comp)
-            h = host(pick(c, 'website'))
-            if h:
-                known.setdefault('d:' + h, comp)
+            k = site_key(pick(c, 'website'))
+            if k:
+                known.setdefault(k, comp)
             for d in all_phones(pick(c, 'phone')):
                 known.setdefault('p:' + d, comp)
             known.setdefault('n:' + nm(comp), comp)
@@ -442,7 +536,7 @@ def main():
     for m in merged:
         hit = ''
         for k in (['e:' + m['email'].lower()] if good_email(m['email']) else []) + \
-                 (['d:' + host(m['website'])] if host(m['website']) else []) + \
+                 ([site_key(m['website'])] if site_key(m['website']) else []) + \
                  ['p:' + d for d in m['phones']] + \
                  (['n:' + nm(m['name'])] if m['name'] else []):
             if k in known:
@@ -509,7 +603,7 @@ def main():
             'Industry': m['industry'], 'Source': a.source, 'Est. Value': '',
             'Instagram': handle(m['social']) if re.search(r'(?i)insta|^ig\b', m['social']) else '',
             'TikTok': '', 'Facebook': '',
-            'Rating': '',
+            'Rating': m['rating'],
             # Commas, because S.parseTags splits on commas and nothing else.
             # A pipe-joined cell arrives as one long tag rather than several,
             # which is how 1,500 leads ended up carrying a single tag reading

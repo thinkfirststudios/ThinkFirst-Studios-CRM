@@ -62,6 +62,32 @@
   var PROTECT_EVERY_SCREEN = true;
   var PROTECTED = { leads: 1, outreach: 1 };
 
+  /* Admins keep working while the window is in the background.
+     An admin alt-tabs between the CRM and a spreadsheet, a prep file or
+     the Supabase editor all day, and the cover fired on every one of
+     those - so the deterrent read as a fault in the app rather than a
+     protection, which is how a protection ends up switched off entirely.
+
+     BE CLEAR ABOUT WHAT THIS COSTS. The cover is the one layer that
+     actually defeats a region-capture tool, and it is now off for the
+     accounts that can see the whole book. Admins are also the accounts
+     worth phishing. This is a deliberate trade of a real protection for
+     usability, for the smallest group, and it is one line to put back.
+
+     Everything else still applies to admins: the watermark stamps who
+     is looking and when across every pixel, PrintScreen is still
+     swallowed, printing is still refused, and attempts are still
+     logged. So a capture by an admin is still traceable to that
+     account - it is just no longer blocked at the moment it is taken. */
+  var COVER_ON_BLUR_EXCEPT_ADMINS = true;
+
+  function coversOnBlur() {
+    if (!COVER_ON_BLUR_EXCEPT_ADMINS) return true;
+    /* Guarded: the shield arms before a session is restored on a cold
+       load, and an unknown user must get the cover, not an exemption. */
+    try { return !(S && S.isAdmin && S.isAdmin()); } catch (e) { return true; }
+  }
+
   /* When true the CRM refuses to run in a plain browser and will only
      render inside the native wrapper, which is the only place the OS
      will honour a no-capture flag. See the note at the top of the file
@@ -165,6 +191,7 @@
 
   function conceal() {
     if (!active || hidden) return;
+    if (!coversOnBlur()) return;
     build();
     hidden = true;
     cover.hidden = false;
