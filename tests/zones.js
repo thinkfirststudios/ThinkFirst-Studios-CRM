@@ -58,7 +58,7 @@ const S = win.Store;
   ok('a bare city with a 909 number is the west coast',
      z('Fontana', '9095593346') === 'pacific');
   ok('no location at all still resolves from the number',
-     z('', '(813) 525-5596') === 'eastern');
+     z('', '(813) 555-0196') === 'eastern');
   ok('a toll-free number says nothing', z('', '(855) 555-0172') === 'unknown');
 
   console.log('\n-- a state that straddles a zone line defers to the number');
@@ -124,6 +124,78 @@ const S = win.Store;
      z('Charleston, South Carolina', '(843) 555-0100') === 'eastern');
   ok('Montreal is not the east coast', z('Montreal, Quebec', '(514) 555-0182') === 'outside');
   ok('Hawaii is neither coast', z('Honolulu, Hawaii', '(808) 555-0180') === 'akhi');
+
+  /* Brazil Drive again, with a city instead of a street. A wrap shop in
+     Ontario, California was filed in Canada, so no coast filter showed
+     it. The pair that settles it is a US state at the very end of the
+     line plus a ten digit area code belonging to a US state. */
+  console.log('');
+  ok('Ontario, CA is Ontario California',
+     z('Ontario, CA', '(909) 555-0152') === 'pacific',
+     z('Ontario, CA', '(909) 555-0152'));
+  ok('  and Ontario the province still is not',
+     z('Ontario, Canada', '(416) 555-0133') === 'outside');
+  ok('  and the state alone is not enough without a US number',
+     z('Ontario, CA', '+55 48 99219-7961') === 'outside');
+  ok('Quebec City keeps its country', z('Quebec City, QC', '') === 'outside');
+
+  /* A split state's area code is the tie-breaker only when the number is
+     actually from that state. A Flower Mound tennis coach with a 480
+     Arizona mobile was filed in Mountain time, an hour out and missing
+     from the Central filter. El Paso must keep working, because that is
+     what the tie-breaker is for. */
+  console.log('');
+  ok('a Texas lead with an out-of-state mobile stays on Texas time',
+     z('Flower Mound, TX', '480-555-0119') === 'central',
+     z('Flower Mound, TX', '480-555-0119'));
+  ok('  and El Paso is still Mountain, which is the whole point of the split',
+     z('El Paso, TX', '(915) 555-0170') === 'mountain',
+     z('El Paso, TX', '(915) 555-0170'));
+  ok('  and Houston is still Central', z('Houston, TX', '(713) 555-0144') === 'central');
+  ok('  and a Texas lead with no phone falls back to Central',
+     z('Dallas, TX', '') === 'central');
+  ok('the other split states are untouched: Pensacola is Central',
+     z('Pensacola, FL', '(850) 555-0123') === 'central');
+  ok('  and Miami is Eastern', z('Miami, FL', '(305) 555-0123') === 'eastern');
+
+  /* NH was simply missing from the abbreviation table. A lead with a
+     phone was placed by its area code and so never showed the gap. */
+  ok('New Hampshire is the east coast, abbreviated and with no phone',
+     z('Exeter, NH', '') === 'eastern', z('Exeter, NH', ''));
+  ok('  and spelled out', z('Rochester, New Hampshire', '') === 'eastern');
+  ok('  and every other state resolves from its abbreviation alone',
+     (function () {
+       var miss = [];
+       'al ak az ar ca co ct de fl ga hi id il in ia ks ky la me md ma mi mn ms mo mt ne nv nh nj nm ny nc nd oh ok or pa ri sd tn tx ut vt va wa wv wi wy dc'
+         .split(' ').forEach(function (s) {
+           if (z('Somewhere, ' + s.toUpperCase(), '') === 'unknown') miss.push(s);
+         });
+       return !miss.length;
+     })(),
+     'unresolved: see the ZONE_STATE_ABBR comment for why SC is excluded');
+
+  console.log('\n-- a split state only takes a zone it actually spans');
+  /* From the Oct 23 lists: the researcher's TZ column disagreed. */
+  ok('Portland, OR with an Ohio cell stays Pacific', z('Portland, OR', '216-555-0126') === 'pacific',
+     z('Portland, OR', '216-555-0126'));
+  ok('Salem, OR with a Maine cell stays Pacific', z('Salem, OR', '207-555-0165') === 'pacific',
+     z('Salem, OR', '207-555-0165'));
+  ok('El Paso, TX still reads Mountain from its 915', z('El Paso, TX', '(915) 555-0140') === 'mountain');
+  ok("Coeur d'Alene, ID is Pacific", z("Coeur d'Alene, ID", '(208) 555-0198') === 'pacific',
+     z("Coeur d'Alene, ID", '(208) 555-0198'));
+  ok('Lewiston, ID is Pacific', z('Lewiston, ID', '(208) 555-0164') === 'pacific');
+  ok('Boise, ID is still Mountain', z('Boise, ID', '(208) 555-0100') === 'mountain');
+  ok('Ontario, OR is Mountain', z('Ontario, OR', '(541) 555-0100') === 'mountain',
+     z('Ontario, OR', '(541) 555-0100'));
+  ok('Boise, ID with a Las Vegas cell stays Mountain', z('Boise, ID', '(702) 555-0108') === 'mountain');
+  ok('Bismarck, ND with a Tucson cell stays Central', z('Bismarck, ND', '(520) 555-0175') === 'central');
+  ok('Elizabethtown, KY is Eastern despite its 270', z('Elizabethtown, KY', '(270) 555-0163') === 'eastern');
+  ok('Tallahassee is Eastern despite its 850', z('Tallahassee, Florida', '(850) 555-0145') === 'eastern');
+  ok('Pensacola is Central on its 850', z('Pensacola, FL', '(850) 555-0100') === 'central');
+  ok('Detroit, MI with a Houston cell stays Eastern', z('Detroit, MI', '(281) 555-0137') === 'eastern');
+  ok('Jackson, MI with a South Dakota cell stays Eastern', z('Jackson, MI', '(605) 555-0113') === 'eastern');
+  ok('Grand Rapids, MI on its own 616 is Eastern', z('Grand Rapids, MI', '(616) 555-0119') === 'eastern');
+  ok('but Ontario, CA is still Pacific', z('Ontario, CA', '(909) 555-0100') === 'pacific');
 
   console.log('\n-- nothing to go on');
   ok('no location and no phone is unknown, not guessed', z('', '') === 'unknown');

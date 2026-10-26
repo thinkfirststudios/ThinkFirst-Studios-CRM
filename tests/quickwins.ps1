@@ -107,18 +107,20 @@ $driver = @'
         hover(pick);
         var menu = document.getElementById('statusMenu');
         say('hovering the pill opens the status menu', menu && !menu.hidden);
-        say('  offering the other statuses', menu && menu.querySelector('[data-setstatus="working"]') &&
+        say('  offering the other statuses', menu && menu.querySelector('[data-setstatus="voicemail"]') &&
             menu.querySelector('[data-setstatus="dead"]'));
-        say('  but not Converted, which is its own step', menu && !menu.querySelector('[data-setstatus="converted"]'));
+        /* Offered, but picking it opens the conversion rather than writing
+           the status - see quickSetStatus. */
+        say('  including Pitch and sale', menu && !!menu.querySelector('[data-setstatus="converted"]'));
         say('  and marking the current one', menu && menu.querySelector('[data-setstatus="new"]').disabled);
-        menu.querySelector('[data-setstatus="working"]').click();
-        until(function () { return S.find('leads', fresh.id).leadStatus === 'working'; },
-          'picking Working changes the lead', function () {
+        menu.querySelector('[data-setstatus="voicemail"]').click();
+        until(function () { return S.find('leads', fresh.id).leadStatus === 'voicemail'; },
+          'picking Left voicemail changes the lead', function () {
             say('  without opening the lead', location.hash === '#/leads', location.hash);
             until(function () {
               var p = document.querySelector('[data-statuspick="' + fresh.id + '"]');
-              return p && p.textContent.indexOf('Working') > -1;
-            }, '  and the pill says Working', closing);
+              return p && p.textContent.indexOf('Left voicemail') > -1;
+            }, '  and the pill says Left voicemail', closing);
           });
       });
   }
@@ -131,7 +133,7 @@ $driver = @'
     say('  and does not open the lead', location.hash === '#/leads');
     menu.querySelector('[data-setstatus="dead"]').click();
     var m = document.querySelector('.modal-root');
-    say('marking it Dead asks why first', m && !!m.querySelector('[name=lostReason]'));
+    say('marking it Do not call asks why first', m && !!m.querySelector('[name=lostReason]'));
     m.querySelector('[name=lostReason]').value = 'Stopped replying after three calls.';
     m.querySelector('[data-ok]').click();
     until(function () { return S.find('leads', closer.id).leadStatus === 'dead'; }, 'it is marked Dead', function () {

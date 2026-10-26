@@ -166,6 +166,7 @@
     writeMany: function () { /* ditto */ },
     deleteMany: function () { /* ditto */ },
     replaceAll: function (db) { Local.persist(db); return Promise.resolve(); },
+    rpc: function () { return Promise.resolve(null); },
     subscribe: function () {},
     session: function () { return null; },
     signOut: function () { return Promise.resolve(); }
@@ -368,9 +369,13 @@
       if (op === 'delete') q = client.from(table).delete().eq('id', rec.id);
       else q = client.from(table).upsert(clean(rec, table));   // insert and update both upsert
 
-      q.then(function (r) {
+      var p = q.then(function (r) {
         if (r && r.error) fail(table, op, r.error.message);
       }, function (e) { fail(table, op, e.message); });
+      /* Remembered until it lands, so a database function that depends on
+         this write can wait for it - see rpc(). */
+      inflight.push(p);
+      p.then(function () { inflight.splice(inflight.indexOf(p), 1); });
     },
 
     /* Deleting a batch in one request per chunk rather than one per row.
@@ -439,6 +444,20 @@
       });
     },
 
+    /* Call a database function as the signed-in user, after every write
+       already on its way has landed. The No answer hand-off takes the lead
+       away from the rep; their status change and note have to arrive while
+       it is still theirs, or the database refuses them. */
+    rpc: function (name, args) {
+      if (!client) return Promise.reject(new Error('Not connected.'));
+      return Promise.all(inflight.slice()).then(function () {
+        return client.rpc(name, args);
+      }).then(function (r) {
+        if (r.error) throw new Error(r.error.message);
+        return r.data;
+      });
+    },
+
     /* Call an Edge Function as the signed-in user, so the function can
        check their role. Returns the parsed JSON body. */
     invokeFunction: function (name, payload) {
@@ -470,6 +489,8 @@
         .subscribe();
     }
   };
+
+  var inflight = [];
 
   function fail(table, op, msg) {
     console.error('Supabase ' + op + ' on ' + table + ' failed:', msg);

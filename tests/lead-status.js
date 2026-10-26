@@ -1,5 +1,14 @@
-/* Two ways to lose a lead: never a fit (Unqualified) vs was a fit and
-   went nowhere (Dead). They must not be the same number. */
+/* The call-outcome statuses agreed Oct 2026:
+
+     open    New lead · No answer · Left voicemail · Hung up
+     closed  Do not call · Pitch no sale (with why) · Pitch and sale
+
+   No answer is not dead - it is called again, by somebody else. This
+   checks the list, that the old statuses still land in the right place
+   before the SQL renames them, the numbers on the leads screen, closing
+   with a reason, and the No answer hand-off as an admin (a direct save).
+   The rep's hand-off, which goes through the database, is in
+   tests/no-answer-handoff.js. */
 const fs = require('fs');
 const DIR = require('path').join(__dirname, '..', 'js') + '/';
 const read = f => fs.readFileSync(DIR + f, 'utf8');
@@ -8,22 +17,31 @@ const ok = (l, c, x) => { if (c) console.log('  ok   ' + l); else { fails++; con
 const day = n => { const d = new Date(); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 
 const mk = (id, status, extra) => Object.assign({
-  id: id, name: id, leadStatus: status, rating: 'warm', ownerId: 'u',
+  id: id, name: id, leadStatus: status, rating: 'warm', ownerId: 'u', branch: '',
   estValue: 1000, nextFollowUp: '', lastContactedAt: '', tags: [],
   lostReason: '', convertedCustomerId: '', convertedAt: ''
 }, extra || {});
 
 const rows = {
-  profiles: [{ id: 'u', name: 'Alex', role: 'admin', active: true }],
+  profiles: [
+    { id: 'u', name: 'Alex', role: 'admin', active: true, branch: '' },
+    { id: 'josh', name: 'Josh', role: 'rep', active: true, branch: '' },
+    { id: 'jason', name: 'Jason', role: 'rep', active: true, branch: '' },
+    { id: 'gone', name: 'Gone', role: 'rep', active: false, branch: '' },
+    { id: 'br', name: 'Brazil', role: 'rep', active: true, branch: 'Brazil' }
+  ],
   leads: [
-    mk('open1', 'working', { nextFollowUp: day(3) }),
-    mk('open2', 'qualified', { nextFollowUp: day(2) }),
-    mk('conv1', 'converted', { convertedCustomerId: 'a1' }),
-    mk('conv2', 'converted', { convertedCustomerId: 'a2' }),
-    mk('unq1', 'unqualified', { lostReason: 'Outside our service area' }),
-    mk('unq2', 'unqualified', { lostReason: 'Wanted print only' }),
-    mk('dead1', 'dead', { lostReason: 'Stopped replying after the quote' }),
-    mk('dead2', 'dead', { lostReason: 'Went with a cheaper agency' })
+    mk('new1', 'new', { nextFollowUp: day(3) }),
+    mk('old-working', 'working', { nextFollowUp: day(2) }),
+    mk('old-qualified', 'qualified', { nextFollowUp: day(2) }),
+    mk('old-unq', 'unqualified', { lostReason: 'Outside our service area' }),
+    mk('vm1', 'voicemail', { nextFollowUp: day(1) }),
+    mk('hung1', 'hungup', { nextFollowUp: day(1) }),
+    mk('dnc1', 'dead', { lostReason: 'Asked not to be called' }),
+    mk('nosale1', 'nosale', { lostReason: 'Happy with their site' }),
+    mk('sale1', 'converted', { convertedCustomerId: 'a1' }),
+    // Josh already has a second call waiting, so the next one goes to Jason.
+    mk('joshs', 'noanswer', { ownerId: 'josh', nextFollowUp: day(1) })
   ],
   customers: [], contacts: [], opportunities: [], tasks: [], vendors: [],
   work_orders: [], notes: [], services: [], time_entries: [], daily_logs: [],
@@ -40,6 +58,7 @@ const client = {
                 delete: () => ({ eq: () => thenable({ error: null }),
                  in: () => thenable({ error: null }),
                  neq: () => thenable({ error: null }) }) }),
+  rpc: () => { throw new Error('an admin hand-off must not need the database function'); },
   channel: () => ({ on: () => ({ subscribe: () => {} }), subscribe: () => {} })
 };
 const win = { localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
@@ -53,76 +72,63 @@ const S = win.Store;
 (async () => {
   await S.boot();
 
-  console.log('\n-- the status exists and is closed');
-  const dead = S.leadStatus('dead');
-  ok('Dead is a real status', dead.id === 'dead' && dead.label === 'Dead');
-  ok('it is not an open lead', dead.open === false);
-  ok('a dead lead is not in play', !S.isLeadOpen(S.find('leads', 'dead1')));
-  ok('it is distinct from Unqualified', S.leadStatus('unqualified').id !== dead.id);
-  ok('the red is on Dead, not Unqualified',
-     dead.tone === 'b-red' && S.leadStatus('unqualified').tone === 'b-grey',
-     dead.tone + ' / ' + S.leadStatus('unqualified').tone);
+  console.log('\n-- the list, in order');
+  ok('seven statuses', S.LEAD_STATUSES.map(x => x.label).join(' | ') ===
+     'New lead | No answer | Left voicemail | Hung up | Do not call | Pitch no sale | Pitch and sale',
+     S.LEAD_STATUSES.map(x => x.label).join(' | '));
+  ok('the first four are open', S.LEAD_STATUSES.filter(x => x.open).map(x => x.id).join() ===
+     'new,noanswer,voicemail,hungup');
+  ok('No answer is open - it is called again', S.leadStatus('noanswer').open === true);
+  ok('Pitch no sale asks why', S.leadStatus('nosale').needsReason === true);
+  ok('Do not call keeps the old Dead id', S.leadStatus('dead').label === 'Do not call');
+  ok('Pitch and sale keeps the Converted id', S.leadStatus('converted').label === 'Pitch and sale');
 
-  console.log('\n-- dead leads leave the working queues');
-  ok('excluded from open leads', !S.openLeads().some(l => l.leadStatus === 'dead'));
-  ok('open count is only the live ones', S.openLeads().length === 2, S.openLeads().length);
-  ok('never chased for a follow-up',
-     !S.leadsNeedingAttention().some(l => l.leadStatus === 'dead'));
-  ok('a dead lead with no date is not flagged unscheduled',
-     S.followUpState(S.find('leads', 'dead1')).key === 'closed');
+  console.log('\n-- old statuses land where the SQL will put them');
+  ok('Working reads as No answer', S.find('leads', 'old-working').leadStatus === 'noanswer',
+     S.find('leads', 'old-working').leadStatus);
+  ok('Qualified reads as No answer', S.find('leads', 'old-qualified').leadStatus === 'noanswer');
+  ok('Unqualified reads as Do not call', S.find('leads', 'old-unq').leadStatus === 'dead');
+  ok('  keeping its reason', S.find('leads', 'old-unq').lostReason === 'Outside our service area');
+  ok('an unknown stored id is looked up by alias too', S.leadStatus('nurturing').id === 'noanswer');
 
-  console.log('\n-- the two losses are counted separately');
+  console.log('\n-- the numbers on the leads screen');
   const st = S.leadStats();
-  ok('dead counted', st.dead === 2, st.dead);
-  ok('unqualified counted', st.unqualified === 2, st.unqualified);
-  ok('lost is the sum of both', st.lost === 4, st.lost);
-  ok('converted unchanged', st.converted === 2);
+  ok('open = new + recall leads', st.open === 6, st.open);
+  ok('call again counts no answer, voicemail and hung up', st.recall === 5, st.recall);
+  ok('Do not call counted', st.dead === 2, st.dead);
+  ok('Pitch no sale counted', st.nosale === 1, st.nosale);
+  ok('sales counted', st.converted === 1);
+  ok('win rate is sales over pitches, Do not call left out', st.winRate === 50, st.winRate);
 
-  console.log('\n-- two rates, measuring different things');
-  // Decided = 2 converted + 2 unqualified + 2 dead = 6 -> 33%
-  ok('convRate counts every decided lead', st.convRate === 33, st.convRate);
-  // Winnable = 2 converted + 2 dead = 4 -> 50%. Unqualified never winnable.
-  ok('winRate excludes leads that were never a fit', st.winRate === 50, st.winRate);
-  ok('the two rates genuinely differ here', st.convRate !== st.winRate);
+  console.log('\n-- closing records the reason');
+  S.logContact('vm1', { leadStatus: 'nosale', lostReason: 'Too expensive', nextFollowUp: '' });
+  ok('status moved to Pitch no sale', S.find('leads', 'vm1').leadStatus === 'nosale');
+  ok('reason saved', S.find('leads', 'vm1').lostReason === 'Too expensive');
+  S.logContact('hung1', { leadStatus: 'voicemail', lostReason: 'ignored', nextFollowUp: day(1) });
+  ok('an open status never carries a reason', S.find('leads', 'hung1').lostReason === '');
 
-  console.log('\n-- the reason is kept');
-  ok('stored on the lead', S.find('leads', 'dead1').lostReason === 'Stopped replying after the quote');
-  ok('unqualified carries its own reason',
-     S.find('leads', 'unq1').lostReason === 'Outside our service area');
+  console.log('\n-- No answer goes to somebody else');
+  ok('the next caller is whoever has fewest second calls waiting',
+     S.nextCaller(S.find('leads', 'new1')).id === 'jason', S.nextCaller(S.find('leads', 'new1')).id);
+  S.logContact('new1', { leadStatus: 'noanswer', nextFollowUp: day(1) });
+  const l = S.find('leads', 'new1');
+  ok('logging No answer hands the lead over', l.ownerId === 'jason', l.ownerId);
+  ok('  with the second call booked', l.nextFollowUp === day(1));
+  ok('  and a note saying who had it',
+     S.notesFor('lead', 'new1').some(n => /Handed from Alex to Jason/.test(n.body)));
+  ok('never to an inactive person or another branch',
+     ['gone', 'br'].indexOf(S.nextCaller(S.find('leads', 'old-working')).id) < 0);
+  // Josh 1, Jason 1 now: the tie goes by name, and never back to the caller.
+  ok('never to the person who just rang', S.nextCaller(S.find('leads', 'old-working')).id !== 'u');
+  ok('another status does not hand anything over',
+     (S.logContact('old-qualified', { leadStatus: 'voicemail', nextFollowUp: day(2) }),
+      S.find('leads', 'old-qualified').ownerId === 'u'));
 
-  console.log('\n-- closing through logContact records the reason');
-  S.logContact('open1', { leadStatus: 'dead', lostReason: 'Three attempts, no reply', nextFollowUp: '' });
-  const closed = S.find('leads', 'open1');
-  ok('status moved to dead', closed.leadStatus === 'dead');
-  ok('reason saved', closed.lostReason === 'Three attempts, no reply', closed.lostReason);
-  ok('it drops out of the open count', S.openLeads().length === 1);
-
-  console.log('\n-- a reason is never attached to a lead still in play');
-  S.logContact('open2', { leadStatus: 'working', lostReason: 'should be ignored', nextFollowUp: day(4) });
-  ok('open lead keeps an empty reason', S.find('leads', 'open2').lostReason === '',
-     S.find('leads', 'open2').lostReason);
-
-  console.log('\n-- reviving');
-  const revived = S.reviveLead('dead2', day(2));
-  ok('back to working', revived.leadStatus === 'working');
-  ok('in play again', S.isLeadOpen(revived));
-  ok('comes back with a date booked', revived.nextFollowUp === day(2), revived.nextFollowUp);
-  ok('not immediately flagged as needing attention',
-     S.followUpState(revived).key === 'soon', S.followUpState(revived).key);
-  ok('why it died is kept as a note',
-     S.notesFor('lead', 'dead2').some(n => n.body.indexOf('Went with a cheaper agency') > -1));
-  ok('a revived lead with no date given still gets one',
-     !!S.reviveLead('dead1').nextFollowUp);
-
-  console.log('\n-- converted is still untouched by any of this');
-  ok('converted stays converted', S.find('leads', 'conv1').leadStatus === 'converted');
-  // By now: 2 unqualified, plus dead1/dead2 revived away and open1 newly
-  // dead -> 1 dead. Converted is not in the number either way.
-  ok('lost counts only unqualified + dead', S.leadStats().lost === 3, S.leadStats().lost);
-  ok('and never the converted ones',
-     S.leadStats().lost + S.leadStats().converted + S.leadStats().open === S.all('leads').length,
-     S.leadStats().lost + '+' + S.leadStats().converted + '+' + S.leadStats().open +
-     ' vs ' + S.all('leads').length);
+  console.log('\n-- reviving a closed lead');
+  const revived = S.reviveLead('nosale1', day(2));
+  ok('back to New lead', revived.leadStatus === 'new');
+  ok('why it closed is kept as a note',
+     S.notesFor('lead', 'nosale1').some(n => n.body.indexOf('Happy with their site') > -1));
 
   console.log('\n' + (fails ? 'FAILURES: ' + fails : 'ALL PASS'));
   process.exit(fails ? 1 : 0);

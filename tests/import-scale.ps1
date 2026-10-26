@@ -121,7 +121,7 @@ $driver = @'
 
         var sample = S.all('leads').filter(function (l) { return l.email === 'realtor7@example.com'; })[0];
         say('a sampled lead kept its tags',
-            sample && S.hasTag(sample, 'own-site'), sample && (sample.tags || []).join('|'));
+            sample && S.hasTag(sample, 'has own site'), sample && (sample.tags || []).join('|'));
         say('and its note is attached to it',
             sample && S.notesFor('lead', sample.id).length === 1,
             sample && S.notesFor('lead', sample.id).length);

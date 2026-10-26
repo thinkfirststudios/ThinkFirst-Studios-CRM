@@ -9,12 +9,19 @@
      reps put in: the brief they wrote, what the client asked for, and how
      long it has sat. Requests first, oldest first - a request nobody has
      picked up is the one that quietly ages into a lost deal. */
+  /* Ticked rows and whether the whole queue is showing. Module level so
+     they survive the re-render after every action. */
+  var workPicked = {}, workAll = false;
+
   function workCard(queue) {
+    U.deadPickPrune(workPicked, queue);
     var waiting = queue.filter(function (l) { return l.mockupStatus === 'requested'; }).length;
-    var head = '<div class="card-head"><span class="card-title">Work To Build</span>' +
+    var hint = '<span class="hint">' + (waiting ? waiting + ' not started yet' : 'all picked up') + '</span>';
+    var head = '<div class="card-head">' + (queue.length ? U.deadPickAll('work') : '') +
+      '<span class="card-title">Work To Build</span>' +
       '<span class="kcol-count">' + queue.length + '</span>' +
       '<div class="page-actions">' +
-        '<span class="hint">' + (waiting ? waiting + ' not started yet' : 'all picked up') + '</span>' +
+        (queue.length ? U.deadPickBar('work', hint) : hint) +
         '<a class="btn btn-sm" href="#/leads">Leads</a></div></div>';
 
     if (!queue.length) {
@@ -24,7 +31,8 @@
     }
 
     var noteIdx = S.noteIndex('lead');
-    return '<div class="card">' + head + queue.slice(0, 12).map(function (l) {
+    var shown = workAll ? queue.length : 12;
+    return '<div class="card" id="workCard">' + head + queue.slice(0, shown).map(function (l) {
       var st = S.mockupStatus(l.mockupStatus);
       var days = l.mockupRequestedAt === undefined || !l.mockupRequestedAt
         ? null : -S.daysUntil(l.mockupRequestedAt);
@@ -33,6 +41,7 @@
       if (brief.length > 130) brief = brief.slice(0, 127) + '…';
       var late = days !== null && days >= 3 && l.mockupStatus === 'requested';
       return '<div class="wo-row" data-workrow="' + U.esc(l.id) + '">' +
+        U.deadPickBox('work', l, workPicked) +
         '<span class="prio-flag" style="background:' +
           (late ? '#D71F24' : l.mockupStatus === 'requested' ? '#AF5300' : '#3B6FD4') + '"></span>' +
         '<div class="wo-main">' +
@@ -52,14 +61,24 @@
             (l.mockupStatus === 'requested' ? 'Start' : 'Mark ready') + '</button>' +
         '</div></div>';
     }).join('') +
+    /* All of it on request, so "tick everything" can mean the whole
+       queue rather than the first twelve. */
     (queue.length > 12
       ? '<div class="wo-row"><div class="wo-main"><div class="wo-sub">' +
-        '<span class="hint">and ' + (queue.length - 12) + ' more</span></div></div></div>'
+        (workAll
+          ? '<button class="btn btn-ghost btn-sm" data-workall="0">Show fewer</button>'
+          : '<button class="btn btn-sm" data-workall="1">Show all ' + queue.length + '</button>' +
+            '<span class="hint">' + (queue.length - 12) + ' more not shown</span>') +
+        '</div></div></div>'
       : '') +
     '</div>';
   }
 
   function bindWork(el) {
+    U.bindDeadPick(el.querySelector('#workCard'), 'work', workPicked, root.render);
+    el.querySelectorAll('[data-workall]').forEach(function (b) {
+      b.onclick = function () { workAll = b.dataset.workall === '1'; root.render(); };
+    });
     el.querySelectorAll('[data-startwork]').forEach(function (b) {
       b.onclick = function (e) {
         e.stopPropagation();

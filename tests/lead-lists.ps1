@@ -137,6 +137,29 @@ $driver = @'
         'choosing from the dropdown narrows it as well', function () {
           say('  and lights the matching chip',
               chipFor('Realtor List').className.indexOf('btn-primary') > -1);
+          doneList();
+        });
+    });
+  }
+
+  function doneList() {
+    /* Every lead called and nothing overdue: the list is done, and its chip
+       is only clutter. Once a follow-up falls due it is work again. */
+    var done = S.insert('leads', { name: 'Done one', source: 'Done List', ownerId: S.me().id,
+      lastContactedAt: day(-3), nextFollowUp: '', leadStatus: 'working', branch: '', tags: [],
+      rating: 'warm', mockupStatus: 'none', createdAt: day(-1) + 'T09:00:00.000Z' }, 'l', 'L');
+    window.render();
+    until(function () { return document.querySelector('#listBar'); }, 'a finished list', function () {
+      say('  has no chip', !chipFor('Done List'));
+      say('  but All still counts its leads',
+          chipFor('').textContent.indexOf('6') > -1, chipFor('').textContent);
+      /* Two days back, not one: day() is a UTC date, and in a US evening
+         UTC is already tomorrow, so day(-1) would be today - not overdue. */
+      S.update('leads', done.id, { nextFollowUp: day(-2) });
+      window.render();
+      until(function () { return chipFor('Done List'); },
+        'a called list with a follow-up overdue keeps its chip', function (c) {
+          say('  and says it is due', c.textContent.indexOf('1 due') > -1, c.textContent);
           single();
         });
     });

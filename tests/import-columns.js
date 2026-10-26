@@ -57,8 +57,8 @@ const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim
   ok('both are offered in the mapping dialog',
      /\['rating', 'Rating'\]/.test(leadsSrc) && /\['tagsCol', 'Tags'\]/.test(leadsSrc));
   ok('per-row rating reaches the lead', /rating: rowRating \|\| 'warm'/.test(leadsSrc));
-  ok('per-row tags are merged with the import-wide ones',
-     /tags: S\.parseTags\(tags\.concat\(rowTags\)/.test(leadsSrc));
+  ok('per-row tags are merged with the import-wide ones, then cut to the lead list',
+     /tags: S\.cleanLeadTags\(tags\.concat\(rowTags\)/.test(leadsSrc));
   ok('an unknown rating falls back instead of being written through',
      /RATING_IDS\[cell\('rating'\)\.toLowerCase\(\)\]/.test(leadsSrc));
 
@@ -108,21 +108,23 @@ const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim
   ok('empty stays empty', parseRowTags('').length === 0);
   ok('duplicates collapse', parseRowTags('realtor|realtor').length === 1);
 
-  console.log('\n-- the segments survive as real, filterable tags');
-  const seg = ['own-site', 'brokerage-page', 'no-site-found', 'not-a-realtor'];
-  seg.forEach((t, i) => {
+  console.log('\n-- the segments survive as lead tags, in the current spelling');
+  /* As the importer does it: the row's tags cut to S.LEAD_TAGS. realtor is
+     a trade (Industry has it) and not-a-realtor is not on the list. */
+  const seg = { 'own-site': 'has own site', 'brokerage-page': 'brokerage page',
+                'no-site-found': 'no website', 'not-a-realtor': null };
+  Object.keys(seg).forEach((t, i) => {
     const lead = S.insert('leads', {
       name: 'Realtor ' + i, leadStatus: 'new', rating: i === 0 ? 'hot' : 'cold',
       ownerId: 'u', estValue: 0, nextFollowUp: '', lastContactedAt: '',
-      tags: S.parseTags('realtor|'.replace(/\|/g, ',') + t),
+      tags: S.cleanLeadTags(parseRowTags('realtor|' + t)),
       convertedCustomerId: '', convertedAt: ''
     }, 'l', 'Realtor ' + i);
-    ok('tagged ' + t, S.hasTag(lead, t));
+    ok(t + ' -> ' + (seg[t] || 'dropped'),
+       seg[t] ? S.hasTag(lead, seg[t]) && lead.tags.length === 1 : lead.tags.length === 0,
+       lead.tags.join(','));
   });
-  ok('every one is tagged realtor',
-     S.all('leads').every(l => S.hasTag(l, 'realtor')));
-  ok('the segments are all offered in the tag filter',
-     seg.every(t => S.allTags().indexOf(t) > -1), S.allTags().join(','));
+  ok('realtor is not kept as a tag', S.all('leads').every(l => !S.hasTag(l, 'realtor')));
 
   console.log('\n-- a blank follow-up does not manufacture urgent work');
   /* Importing a list without dates is a deliberate act, not an oversight, so

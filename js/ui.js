@@ -181,6 +181,143 @@
         (existing.length ? ' In use: ' + esc(existing.slice(0, 8).join(', ')) : '') + '</div>';
   }
 
+  /* Leads take tags from a fixed list (S.LEAD_TAGS), so they are ticked
+     rather than typed - a typed tag outside the list would only be thrown
+     away on save. Values come back from values() as an array. */
+  function leadTagPicker(name, tags) {
+    var on = {};
+    S.cleanLeadTags(tags).forEach(function (t) { on[t] = 1; });
+    return S.LEAD_TAG_GROUPS.map(function (g) {
+      return '<div style="display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;margin-bottom:4px">' +
+        '<span class="hint" style="min-width:70px">' + esc(g.label) + '</span>' +
+        g.tags.map(function (t) {
+          return '<label style="display:inline-flex;gap:5px;align-items:center;cursor:pointer">' +
+            '<input type="checkbox" name="' + esc(name) + '" value="' + esc(t) + '"' +
+              (on[t] ? ' checked' : '') + '>' + esc(t) + '</label>';
+        }).join('') +
+      '</div>';
+    }).join('');
+  }
+
+  /* Ticking several leads in a queue and closing them as Dead in one go.
+     Follow Up Now and Work To Build both turn up runs of leads that are
+     plainly finished, and closing them one dialog at a time is the slow
+     part of the morning. One helper so the two cards cannot drift apart.
+
+     Element ids are built from `prefix` (attnCard, attnAll, ...), so two
+     cards can share a page. `picked` is the caller's own {id: 1} object,
+     kept across renders by the caller. The buttons live in the DOM on
+     every render and show themselves once a box is ticked, updated in
+     place - a re-render per tick would move the rows under the cursor. */
+  function deadPickAll(prefix) {
+    return '<input type="checkbox" id="' + prefix + 'All" title="Tick every lead shown below" ' +
+      'style="margin-right:4px">';
+  }
+  function deadPickBar(prefix, hint) {
+    return '<span id="' + prefix + 'Bulk" style="display:none;gap:8px;align-items:center">' +
+        '<strong id="' + prefix + 'Count" style="font-size:12.5px"></strong>' +
+        '<button class="btn btn-sm bulk-danger" id="' + prefix + 'Dead" ' +
+          'title="Close the ticked leads - they come off this list">Close…</button>' +
+        '<button class="btn btn-ghost btn-sm" id="' + prefix + 'Clear">Clear</button>' +
+      '</span>' +
+      '<span id="' + prefix + 'Hint">' + hint + '</span>';
+  }
+  function deadPickBox(prefix, l, picked) {
+    return '<input type="checkbox" data-' + prefix + 'pick="' + esc(l.id) + '"' +
+      (picked[l.id] ? ' checked' : '') + ' aria-label="Select ' + esc(l.name) + '">';
+  }
+  /* Forget ticks on leads that are no longer in the queue, or they would
+     be marked dead along with the ones you can see. */
+  function deadPickPrune(picked, list) {
+    var keep = {};
+    list.forEach(function (l) { keep[l.id] = 1; });
+    Object.keys(picked).forEach(function (id) { if (!keep[id]) delete picked[id]; });
+  }
+  function bindDeadPick(card, prefix, picked, done) {
+    if (!card || !card.querySelectorAll) return;
+    var attr = 'data-' + prefix + 'pick';
+    var boxes = card.querySelectorAll('[' + attr + ']');
+    var all = card.querySelector('#' + prefix + 'All');
+    function q(id) { return card.querySelector('#' + prefix + id); }
+    function clearAll() { Object.keys(picked).forEach(function (id) { delete picked[id]; }); }
+
+    boxes.forEach(function (cb) {
+      cb.onclick = function (e) {
+        e.stopPropagation();
+        if (cb.checked) picked[cb.getAttribute(attr)] = 1;
+        else delete picked[cb.getAttribute(attr)];
+        sync();
+      };
+    });
+    all.onclick = function () {
+      boxes.forEach(function (cb) {
+        cb.checked = all.checked;
+        if (all.checked) picked[cb.getAttribute(attr)] = 1;
+        else delete picked[cb.getAttribute(attr)];
+      });
+      sync();
+    };
+    q('Clear').onclick = function () {
+      clearAll();
+      boxes.forEach(function (cb) { cb.checked = false; });
+      sync();
+    };
+    q('Dead').onclick = function () {
+      var ids = Object.keys(picked);
+      if (!ids.length) return;
+      var closing = S.LEAD_STATUSES.filter(function (x) { return !x.open && x.id !== 'converted'; });
+      modal({
+        title: 'Close ' + ids.length + ' lead' + (ids.length === 1 ? '' : 's'),
+        okText: 'Close leads',
+        body: '<div class="form-grid">' +
+          '<div class="field span-2"><label>As</label>' +
+            '<select class="input" name="closeAs">' +
+              closing.map(function (x) {
+                return '<option value="' + esc(x.id) + '">' + esc(x.label) + '</option>';
+              }).join('') +
+            '</select><div class="hint" id="closeHint"></div></div>' +
+          '<div class="field span-2"><label id="closeWhyLabel">Why? (applies to all)</label>' +
+          '<input class="input" name="lostReason" placeholder="Asked us not to call again"></div></div>',
+        onMount: function (box) {
+          var sel = box.querySelector('[name=closeAs]');
+          var paint = function () {
+            var t = S.leadStatus(sel.value);
+            box.querySelector('#closeHint').textContent = t.hint || '';
+            box.querySelector('#closeWhyLabel').textContent = t.needsReason
+              ? 'Why no sale? (a few words, applies to all)' : 'Why? (optional, applies to all)';
+          };
+          sel.onchange = paint;
+          paint();
+        },
+        onOk: function (box) {
+          var v = values(box);
+          var t = S.leadStatus(v.closeAs);
+          if (t.needsReason && !v.lostReason) {
+            toast('Pitch no sale needs a few words on why.', 'err');
+            return false;
+          }
+          var n = S.updateMany('leads', ids, { leadStatus: t.id, lostReason: v.lostReason || '' },
+            ids.length + ' leads → ' + t.label).length;
+          clearAll();
+          toast(n + ' lead' + (n === 1 ? '' : 's') + ' marked ' + t.label + '. ' +
+            'Find them under the ' + t.label + ' tab if one comes back.', 'ok');
+          done();
+        }
+      });
+    };
+    sync();
+
+    function sync() {
+      var n = Object.keys(picked).length;
+      /* style, not the hidden attribute: the inline display would win. */
+      q('Bulk').style.display = n ? 'inline-flex' : 'none';
+      q('Hint').style.display = n ? 'none' : '';
+      q('Count').textContent = n + ' selected';
+      all.checked = n > 0 && n === boxes.length;
+      all.indeterminate = n > 0 && n < boxes.length;
+    }
+  }
+
   /* The three handle inputs, identical on every object that has them.
      Any format is accepted — the store reduces a pasted profile URL to
      the handle — so nobody has to think about which form is "right". */
@@ -470,7 +607,9 @@
     badge: badge, statusBadge: statusBadge, woBadge: woBadge,
     avatar: avatar, avatarColor: avatarColor, userCell: userCell,
     empty: empty, options: options, field: field, ownerField: ownerField, branchField: branchField, serviceChecks: serviceChecks,
-    tagInput: tagInput, tagChips: tagChips, billingTypeBadge: billingTypeBadge,
+    tagInput: tagInput, leadTagPicker: leadTagPicker, tagChips: tagChips,
+    deadPickAll: deadPickAll, deadPickBar: deadPickBar, deadPickBox: deadPickBox,
+    deadPickPrune: deadPickPrune, bindDeadPick: bindDeadPick, billingTypeBadge: billingTypeBadge,
     socialFields: socialFields, socialChips: socialChips,
     toast: toast, modal: modal, closeModal: closeModal, confirmDelete: confirmDelete,
     values: values, table: table, bindTable: bindTable,

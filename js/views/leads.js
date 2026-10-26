@@ -58,7 +58,10 @@
              mockupOwner: '',
              /* Ticked rows, keyed by lead id. Pruned on every render to
                 what the filters actually show — see below. */
-             selected: {} };
+             selected: {},
+             /* Ticked rows in Follow Up Now, kept apart from the table's
+                selection so clearing one never empties the other. */
+             attnPicked: {} };
 
   /* Bulk follow-up presets, all counted from today rather than from
      whatever each lead was set to before. "Next week" has to land on the
@@ -73,23 +76,23 @@
   ];
 
   /* Leads split into groups you actually work differently, rather than a
-     status dropdown you have to remember to change. Active is the day
-     job. Dead is the revival pool — they were a fit, so they are worth
-     coming back to. Unqualified is an archive nobody needs to reread.
-     Keeping them apart stops a year of dead leads burying this week's. */
+     status dropdown you have to remember to change. Active is everything
+     still to ring - new, no answer, voicemail, hung up. The closed ones
+     each get their own tab, so a year of no-sales never buries this week's
+     calls and nobody rings a Do not call by accident. */
   var SEGMENTS = [
     { id: 'open', label: 'Active', tone: 'b-orange',
       match: function (l) { return S.isLeadOpen(l); },
       empty: ['No active leads', 'Add one by hand, or paste a list in with Import.'] },
-    { id: 'dead', label: 'Dead', tone: 'b-red',
-      match: function (l) { return l.leadStatus === 'dead'; },
-      empty: ['No dead leads', 'Leads that were a fit but went nowhere land here.'] },
-    { id: 'unqualified', label: 'Unqualified', tone: 'b-grey',
-      match: function (l) { return l.leadStatus === 'unqualified'; },
-      empty: ['Nothing unqualified', 'Leads that were never a fit land here.'] },
-    { id: 'converted', label: 'Converted', tone: 'b-green',
-      match: function (l) { return l.leadStatus === 'converted'; },
-      empty: ['Nothing converted yet', 'Leads that became accounts land here.'] },
+    { id: 'nosale', label: 'Pitch no sale', tone: 'b-grey',
+      match: function (l) { return S.statusId(l.leadStatus) === 'nosale'; },
+      empty: ['No pitches lost yet', 'Leads that heard the pitch and said no land here, with why.'] },
+    { id: 'dead', label: 'Do not call', tone: 'b-red',
+      match: function (l) { return S.statusId(l.leadStatus) === 'dead'; },
+      empty: ['Nobody on Do not call', 'Leads that must never be rung again land here.'] },
+    { id: 'converted', label: 'Pitch and sale', tone: 'b-green',
+      match: function (l) { return S.statusId(l.leadStatus) === 'converted'; },
+      empty: ['No sales yet', 'Leads that heard the pitch and bought land here.'] },
     { id: '', label: 'All', tone: 'b-blue',
       match: function () { return true; },
       empty: ['No leads yet', 'Add one by hand, or paste a list in with Import.'] }
@@ -211,11 +214,11 @@
         kpi('Needs Follow-Up', String(stats.attention),
             stats.attention ? 'overdue or due today' : 'nothing due',
             stats.attention ? 'danger' : 'ok') +
-        kpi('Qualified', String(stats.qualified), 'ready to convert', '') +
-        kpi('Converted', String(stats.converted),
-            stats.converted + stats.unqualified
-              ? stats.convRate + '% of decided leads'
-              : 'nothing decided yet', 'ok') +
+        kpi('Call Again', String(stats.recall), 'no answer, voicemail or hung up', '') +
+        kpi('Pitch And Sale', String(stats.converted),
+            stats.converted + stats.nosale
+              ? stats.winRate + '% of pitches'
+              : 'no pitches yet', 'ok') +
       '</div>' +
 
       (seg.id === 'open' && !cbMode ? mockupCard(S.mockupsReadyToSend(), S.mockupsOnHold()) : '') +
@@ -252,11 +255,11 @@
                 '<span class="seg-count">' + S.visibleLeads().filter(seg.match).length +
                 '</span></button>' +
             '</div>') +
-        (seg.id === 'dead'
-          ? '<span class="hint" style="margin-left:auto">These were a real fit. ' +
+        (seg.id === 'nosale'
+          ? '<span class="hint" style="margin-left:auto">Heard the pitch and said no. ' +
             'Open one and use “Put back in play” when the timing changes.</span>'
-          : seg.id === 'unqualified'
-            ? '<span class="hint" style="margin-left:auto">Never a fit. Kept so the same name is not chased twice.</span>'
+          : seg.id === 'dead'
+            ? '<span class="hint" style="margin-left:auto">Never ring these. Kept so the same number is not called twice.</span>'
             : '') +
       '</div>' +
       (cbMode ? callbacksPanel(callbacks) : (
@@ -293,10 +296,11 @@
                 return '<option value="' + U.esc(s) + '"' + (s === st.source ? ' selected' : '') + '>' + U.esc(s) + '</option>';
               }).join('') + '</select>'
           : '') +
-        (S.allTags().length
+        (S.leadTagCounts().length
           ? '<select class="input" id="ftag"><option value="">All tags</option>' +
-              S.allTags().map(function (t) {
-                return '<option value="' + U.esc(t) + '"' + (t === st.tag ? ' selected' : '') + '>' + U.esc(t) + '</option>';
+              S.leadTagCounts().map(function (c) {
+                return '<option value="' + U.esc(c.tag) + '"' + (c.tag === st.tag ? ' selected' : '') + '>' +
+                  U.esc(c.tag) + ' (' + c.count + ')</option>';
               }).join('') + '</select>'
           : '') +
         '<button class="btn btn-ghost btn-sm" id="clear">Clear</button>' +
@@ -478,9 +482,9 @@
       };
     }
     statusMenuFor = l.id;
-    statusMenu.innerHTML = S.LEAD_STATUSES.filter(function (x) { return x.id !== 'converted'; })
+    statusMenu.innerHTML = S.LEAD_STATUSES
       .map(function (x) {
-        var cur = x.id === l.leadStatus;
+        var cur = x.id === S.statusId(l.leadStatus);
         return '<button type="button" class="status-opt' + (cur ? ' is-current' : '') + '" data-setstatus="' + x.id + '"' +
           (cur ? ' disabled' : '') + '>' + U.badge(x.label, x.tone) +
           (cur ? '<span class="muted">current</span>' : '') + '</button>';
@@ -497,28 +501,45 @@
 
   function quickSetStatus(l, to) {
     var target = S.leadStatus(to);
+    /* A sale is a customer, so it goes through conversion rather than being
+       claimed with a status nobody can bill. */
+    if (to === 'converted') { openConvert(l, root.render); return; }
     if (target.open) {
       S.update('leads', l.id, { leadStatus: to }, l.name + ' → ' + target.label);
-      U.toast(l.name + ' moved to ' + target.label + '.', 'ok');
+      var handed = to === 'noanswer' ? S.handOffNoAnswer(l.id) : null;
+      U.toast(l.name + ' moved to ' + target.label +
+        (handed ? ' — the second call goes to ' + handed.name.split(' ')[0] : '') + '.', 'ok');
       root.render();
       return;
     }
-    /* Closing a lead asks why, the same as Log contact does - the reason is
-       the only thing that tells you later whether it was worth a second try. */
+    /* Closing a lead asks why - the reason is the only thing that tells you
+       later whether it was worth another try. Pitch no sale insists. */
     U.modal({
       title: 'Mark ' + l.name + ' as ' + target.label,
       okText: 'Mark ' + target.label,
-      body: '<div class="form-grid"><div class="field span-2"><label>Why? (optional)</label>' +
-        '<input class="input" name="lostReason" value="' + U.esc(l.lostReason || '') + '" ' +
-          'placeholder="' + (to === 'dead' ? 'Stopped replying after three attempts' : 'Not a fit for what we do') + '">' +
-        '<div class="hint">' + U.esc(target.hint || '') + '</div></div></div>',
+      body: closeReasonField(to, l.lostReason),
       onOk: function (box) {
         var v = U.values(box);
+        if (target.needsReason && !v.lostReason) {
+          U.toast('Say in a few words why there was no sale.', 'err');
+          return false;
+        }
         S.update('leads', l.id, { leadStatus: to, lostReason: v.lostReason || '' }, l.name + ' → ' + target.label);
         U.toast(l.name + ' marked ' + target.label + '.', 'ok');
         root.render();
       }
     });
+  }
+
+  /* The "why" box for a closing status, worded for which one it is. */
+  function closeReasonField(to, current) {
+    var t = S.leadStatus(to);
+    return '<div class="form-grid"><div class="field span-2">' +
+      '<label>' + (t.needsReason ? 'Why no sale? (a few words)' : 'Why? (optional)') + '</label>' +
+      '<input class="input" name="lostReason" value="' + U.esc(current || '') + '" ' +
+        'placeholder="' + (t.needsReason ? 'Happy with their current site / too expensive / not now'
+                                         : 'Asked us not to call again') + '">' +
+      '<div class="hint">' + U.esc(t.hint || '') + '</div></div></div>';
   }
 
   function bindStatusPicks(el) {
@@ -694,13 +715,18 @@
           '</div></div>'
         : '';
     }
-    return '<div class="card" style="margin-bottom:14px">' +
-      '<div class="card-head"><span class="card-title">Follow Up Now</span>' +
+    U.deadPickPrune(st.attnPicked, list);
+    return '<div class="card" style="margin-bottom:14px" id="attnCard">' +
+      '<div class="card-head">' + U.deadPickAll('attn') +
+        '<span class="card-title">Follow Up Now</span>' +
         '<span class="kcol-count">' + list.length + '</span>' +
-        '<div class="page-actions"><span class="hint">Overdue or due today</span></div></div>' +
+        '<div class="page-actions">' +
+          U.deadPickBar('attn', '<span class="hint">Overdue or due today</span>') +
+        '</div></div>' +
       list.slice(0, st.attentionShown).map(function (l) {
         var f = S.followUpState(l);
         return '<div class="wo-row">' +
+          U.deadPickBox('attn', l, st.attnPicked) +
           '<span class="prio-flag" style="background:' + (f.key === 'overdue' ? '#D71F24' : f.key === 'today' ? '#AF5300' : '#87680F') + '"></span>' +
           '<div class="wo-main">' +
             '<div class="wo-title"><a class="link" href="#/leads/' + U.esc(l.id) + '">' + U.esc(l.name) + '</a></div>' +
@@ -725,6 +751,7 @@
 
   function bindAttention(el) {
     bindCompanyLine(el);
+    U.bindDeadPick(el.querySelector('#attnCard'), 'attn', st.attnPicked, root.render);
     el.querySelectorAll('[data-mockupowner]').forEach(function (b) {
       b.onclick = function (e) {
         e.stopPropagation();
@@ -1340,9 +1367,17 @@
 
      One chip per list, with how many are left to call, so picking what to
      work is a glance rather than a query. Hidden entirely when there is
-     only one list, because then it is not a choice. */
+     only one list, because then it is not a choice.
+
+     A list that is fully called with nothing overdue is finished, so its
+     chip goes - it is only clutter. The leads stay, and "All" still counts
+     them. One with follow-ups due stays up until they are dealt with, and
+     the list you have selected always shows so you can click back out. */
   function listBar() {
-    var lists = S.leadLists();
+    var all = S.leadLists();
+    var lists = all.filter(function (l) {
+      return l.uncalled || l.overdue || st.source === l.source;
+    });
     if (lists.length < 2) return '';
 
     var chip = function (l) {
@@ -1364,7 +1399,7 @@
       '<span class="hint" style="margin-right:2px">Lists</span>' +
       '<button class="btn btn-sm' + (st.source ? '' : ' btn-primary') + '" data-list="">' +
         'All<span class="seg-count">' +
-        lists.reduce(function (n, l) { return n + l.total; }, 0) + '</span></button>' +
+        all.reduce(function (n, l) { return n + l.total; }, 0) + '</span></button>' +
       lists.map(chip).join('') +
       '</div>';
   }
@@ -1800,10 +1835,7 @@
         'Put back in play</button>';
     }
     var msg, act = 'log', btn = 'Log a contact';
-    if (l.leadStatus === 'qualified') {
-      msg = 'Qualified and ready. Convert it into a customer to start billing.';
-      act = 'convert'; btn = 'Convert to Customer';
-    } else if (f.key === 'overdue') {
+    if (f.key === 'overdue') {
       msg = 'This follow-up is ' + Math.abs(f.days) + ' days late.';
     } else if (f.key === 'today') {
       msg = 'Due today.';
@@ -1824,11 +1856,10 @@
       leadStatus: 'new', rating: 'warm', ownerId: S.me().id, branch: S.myBranch(),
       nextFollowUp: S.shift(2), source: '', tags: []
     };
-    /* "Converted" is set by converting, never picked from a dropdown —
-       choosing it by hand would claim a customer that does not exist. */
-    var pickable = S.LEAD_STATUSES.filter(function (x) {
-      return x.id !== 'converted' || l.leadStatus === 'converted';
-    });
+    /* Pitch and sale is offered, but saving it opens the conversion
+       rather than writing the status - a sale nobody can bill is not one. */
+    var pickable = S.LEAD_STATUSES;
+    var wasStatus = S.statusId(l.leadStatus);
 
     U.modal({
       title: isNew ? 'New Lead' : 'Edit ' + l.name,
@@ -1841,7 +1872,7 @@
         U.field('Email', '<input class="input" type="email" name="email" value="' + U.esc(l.email || '') + '">') +
         U.field('Phone', '<input class="input" name="phone" value="' + U.esc(l.phone || '') + '">') +
         U.field('Status',
-          '<select class="input" name="leadStatus">' + U.options(pickable, l.leadStatus) + '</select>' +
+          '<select class="input" name="leadStatus">' + U.options(pickable, wasStatus) + '</select>' +
           '<div class="hint" id="statusHint">' + U.esc(S.leadStatus(l.leadStatus).hint) + '</div>') +
         U.field('Rating', '<select class="input" name="rating">' + U.options(S.LEAD_RATINGS, l.rating || 'warm') + '</select>') +
         U.ownerField('Owner', l.ownerId, 'Leads you add stay yours.') +
@@ -1856,13 +1887,13 @@
             S.LEAD_SOURCES.map(function (s) { return '<option value="' + U.esc(s) + '">'; }).join('') +
           '</datalist>') +
         U.field('Estimated Value ($)', '<input class="input" type="number" min="0" step="50" name="estValue" value="' + U.esc(l.estValue || 0) + '">') +
-        U.field('Tags', U.tagInput('tagsRaw', l.tags)) +
+        '<div class="field span-2"><label>Tags</label>' + U.leadTagPicker('tagsRaw', l.tags) + '</div>' +
         /* Only meaningful once the lead is closed, so it stays hidden
            until then. Offered for both closed states: "not a fit" and
            "went quiet" are each worth a sentence. */
         '<div class="field span-2" id="reasonField"' +
           (S.leadStatus(l.leadStatus).open ? ' style="display:none"' : '') + '>' +
-          '<label>Why was it closed?</label>' +
+          '<label>Why? (required for Pitch no sale)</label>' +
           '<input class="input" name="lostReason" value="' + U.esc(l.lostReason || '') + '" ' +
             'placeholder="Went quiet after the quote / already had an agency / outside our area">' +
           '<div class="hint">The only record of why. Shown again if you revive the lead.</div>' +
@@ -1888,10 +1919,18 @@
         var v = U.values(box);
         if (!v.name) { U.toast('Company name is required.', 'err'); return false; }
         v.estValue = Number(v.estValue) || 0;
-        v.tags = S.parseTags(v.tagsRaw); delete v.tagsRaw;
+        v.tags = S.cleanLeadTags(v.tagsRaw); delete v.tagsRaw;
         v.branch = S.normalizeBranch(v.branch);
         S.cleanSocials(v);
         var note = v.openingNote; delete v.openingNote;
+        var chosen = S.leadStatus(v.leadStatus);
+        if (chosen.needsReason && !v.lostReason) {
+          U.toast('Pitch no sale needs a few words on why.', 'err');
+          return false;
+        }
+        /* Saved as it was, and the conversion opens straight after. */
+        var sell = v.leadStatus === 'converted' && wasStatus !== 'converted';
+        if (sell) v.leadStatus = isNew ? 'new' : wasStatus;
 
         if (isNew) {
           v.convertedCustomerId = '';
@@ -1899,9 +1938,13 @@
           var created = S.insert('leads', v, 'l', v.name);
           if (note) S.addNote('lead', created.id, note);
           U.toast(v.name + ' added to leads.', 'ok');
+          if (sell) { setTimeout(function () { openConvert(created, done); }, 0); return; }
         } else {
           S.update('leads', l.id, v, 'lead details');
-          U.toast('Saved.', 'ok');
+          var handed = v.leadStatus === 'noanswer' && wasStatus !== 'noanswer'
+            ? S.handOffNoAnswer(l.id) : null;
+          U.toast(handed ? 'Saved — the second call goes to ' + handed.name.split(' ')[0] + '.' : 'Saved.', 'ok');
+          if (sell) { setTimeout(function () { openConvert(S.find('leads', l.id), done); }, 0); return; }
         }
         done();
       }
@@ -2029,7 +2072,7 @@
   function openLogContact(id, done) {
     var l = S.find('leads', id);
     if (!l) return;
-    var pickable = S.LEAD_STATUSES.filter(function (x) { return x.id !== 'converted'; });
+    var pickable = S.LEAD_STATUSES;
 
     U.modal({
       title: 'Log contact — ' + l.name,
@@ -2038,10 +2081,11 @@
         '<div class="field span-2"><label>What happened?</label>' +
           '<textarea class="input" name="note" placeholder="Called Luis — wants a quote for the rebrand, sending Thursday."></textarea></div>' +
         U.field('Contacted On', '<input class="input" type="date" name="date" value="' + U.esc(S.today()) + '">') +
-        U.field('Move Status To',
-          '<select class="input" name="leadStatus">' + U.options(pickable, l.leadStatus) + '</select>') +
+        U.field('How did the call go?',
+          '<select class="input" name="leadStatus">' + U.options(pickable, S.statusId(l.leadStatus)) + '</select>' +
+          '<div class="hint" id="logStatusHint"></div>') +
         '<div class="field span-2" id="logReason" style="display:none">' +
-          '<label>Why is it closed?</label>' +
+          '<label id="logReasonLabel">Why?</label>' +
           '<input class="input" name="lostReason" value="' + U.esc(l.lostReason || '') + '" ' +
             'placeholder="Stopped replying after three attempts">' +
         '</div>' +
@@ -2070,10 +2114,24 @@
         };
         var sel = box.querySelector('[name=leadStatus]');
         var field = box.querySelector('#logReason');
+        var date = box.querySelector('[name=nextFollowUp]');
+        var hint = box.querySelector('#logStatusHint');
         var toggle = function () {
-          field.style.display = S.leadStatus(sel.value).open ? 'none' : '';
+          var t = S.leadStatus(sel.value);
+          field.style.display = t.open || sel.value === 'converted' ? 'none' : '';
+          box.querySelector('#logReasonLabel').textContent =
+            t.needsReason ? 'Why no sale? (a few words)' : 'Why? (optional)';
+          var next = sel.value === 'noanswer' ? S.nextCaller(l) : null;
+          hint.textContent = sel.value === 'noanswer'
+            ? (next ? 'Goes to ' + next.name + ' for the second call, booked for tomorrow.'
+                    : 'Nobody else to hand it to - it stays with its owner.')
+            : sel.value === 'converted' ? 'Saving opens the conversion to a customer.' : t.hint;
         };
-        sel.onchange = toggle;
+        sel.onchange = function () {
+          /* The second try is soon, not in a week. */
+          if (sel.value === 'noanswer') date.value = S.shift(1);
+          toggle();
+        };
         toggle();
       },
       onOk: function (box) {
@@ -2083,10 +2141,26 @@
           U.toast('Set a Next Follow-Up date — that is the day of the call back.', 'err');
           return false;
         }
+        if (S.leadStatus(v.leadStatus).needsReason && !v.lostReason) {
+          U.toast('Say in a few words why there was no sale.', 'err');
+          return false;
+        }
+        var sell = v.leadStatus === 'converted';
+        var before = l.ownerId;
         S.logContact(l.id, {
           note: v.note, date: v.date, nextFollowUp: v.nextFollowUp,
-          leadStatus: v.leadStatus, lostReason: v.lostReason
+          leadStatus: sell ? '' : v.leadStatus, lostReason: v.lostReason
         });
+        var after = (S.find('leads', l.id) || {}).ownerId;
+        if (sell) {
+          setTimeout(function () { openConvert(S.find('leads', l.id), done); }, 0);
+          return;
+        }
+        if (after && after !== before) {
+          U.toast('Logged. No answer — the second call goes to ' + S.user(after).name + '.', 'ok');
+          done();
+          return;
+        }
         /* After logContact, which clears the call back that was due — so a
            new one booked on the same call is not cleared along with it. */
         if (wantsCallback) {
@@ -2117,7 +2191,7 @@
         '<div class="form-grid">' +
         U.field('Next Follow-Up',
           '<input class="input" type="date" name="nextFollowUp" value="' + U.esc(S.shift(1)) + '">' +
-          '<div class="hint">It goes back to Working with this date booked.</div>', true) +
+          '<div class="hint">It goes back to New lead with this date booked.</div>', true) +
       '</div>',
       onOk: function (box) {
         S.reviveLead(l.id, U.values(box).nextFollowUp);
@@ -2478,7 +2552,10 @@
           U.field('First Follow-Up',
             '<input class="input" type="date" name="nextFollowUp" value="' + U.esc(S.shift(2)) + '">' +
             '<div class="hint">Applied to every imported lead so none of them land with no next step.</div>') +
-          U.field('Tag them', U.tagInput('tagsRaw', [])) +
+          '<div class="field span-2"><label>Tag them</label>' + U.leadTagPicker('tagsRaw', []) +
+            '<div class="hint">Added to every row. Tags in the file are kept only if they are on this list ' +
+            '(old spellings like no-site-found are converted); the trade, city and source already have columns.</div>' +
+          '</div>' +
         '</div>',
       onMount: function (box) {
         var file = box.querySelector('#impFile');
@@ -2619,7 +2696,7 @@
         var fresh = box.__fresh || [];
         if (!fresh.length) { U.toast('Nothing to import.', 'err'); return false; }
 
-        var tags = S.parseTags(opts.tagsRaw);
+        var tags = opts.tagsRaw || [];
         var pending = [];
         var rows = fresh.map(function (r) {
           var noteText = r.noteText; delete r.noteText;
@@ -2641,10 +2718,10 @@
             branch: opts.branch,
             nextFollowUp: opts.nextFollowUp || '',
             lastContactedAt: '',
-            /* Import-wide tags first, then the row's own, de-duplicated so a
-               tag typed in the box does not appear twice on rows that carry
-               it in the file as well. */
-            tags: S.parseTags(tags.concat(rowTags).join(',')),
+            /* Import-wide tags plus the row's own, cut down to the lead
+               tag list. A file's tags are mostly its trade and city, which
+               have columns of their own; this is where 749 tags came from. */
+            tags: S.cleanLeadTags(tags.concat(rowTags)),
             convertedCustomerId: '', convertedAt: ''
           };
           if (noteText) pending.push({ id: lead.id, body: noteText });

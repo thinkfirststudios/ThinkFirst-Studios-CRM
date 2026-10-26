@@ -157,7 +157,7 @@ $driver = @'
       say('  her industry came through', a.industry === 'Real Estate', a.industry);
       say('  her source came through', a.source === 'Realtor List', a.source);
       say('  her rating came through', a.rating === 'cold', a.rating);
-      say('  her tags came through', S.hasTag(a, 'brokerage-page'), (a.tags || []).join('|'));
+      say('  her tags came through', S.hasTag(a, 'brokerage page'), (a.tags || []).join('|'));
       say('  her note came through', S.notesFor('lead', a.id).length === 1,
           S.notesFor('lead', a.id).length);
     }

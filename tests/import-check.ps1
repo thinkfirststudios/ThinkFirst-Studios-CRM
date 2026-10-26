@@ -38,11 +38,11 @@ $driver = @'
   // rating per row, and one deliberately bad rating.
   var CSV = [
     'name,contactName,contactTitle,email,phone,website,industry,address,rating,source,tags,notes',
-    'Erik Flexner,Erik Flexner,Realtor,erik@theflexnergroup.com,(310) 941-3539,theflexnergroup.com,Real Estate,"Los Angeles, California",hot,Realtor List,realtor|own-site|site-broken,Site replaced.',
+    'Erin Fuller,Erin Fuller,Realtor,erin@fullerhomes.example,(310) 555-0139,fullerhomes.example,Real Estate,"Los Angeles, California",hot,Realtor List,realtor|own-site|site-broken,Site replaced.',
     'Belinda Marchant,Belinda Marchant,Realtor,bmarchant@example.com,(201) 555-0140,dianeturton.com,Real Estate,"Jersey City, New Jersey",warm,Realtor List,realtor|own-site,Not yet checked.',
-    'Gustavo Lopez,Gustavo Lopez,Realtor,g.lopez@kw.com,(201) 233-4495,kw.com,Real Estate,"Jersey City, New Jersey",cold,Realtor List,realtor|brokerage-page,Brokerage page.',
-    'Janine Squire,Janine Squire,Realtor,janinesadesellshomes@gmail.com,(201) 757-7368,,Real Estate,"Jersey City, New Jersey",cold,Realtor List,realtor|no-site-found,No site listed.',
-    'Shalita Hale,Shalita Hale,Realtor,shale@nexamortgage.com,(215) 939-0390,nexamortgage.com,Real Estate,"Philadelphia, Pennsylvania",cold,Realtor List,realtor|not-a-realtor,Lending.',
+    'Gabe Lowe,Gabe Lowe,Realtor,g.lowe@kw.com,(201) 555-0195,kw.com,Real Estate,"Jersey City, New Jersey",cold,Realtor List,realtor|brokerage-page,Brokerage page.',
+    'Jane Sutter,Jane Sutter,Realtor,jsutter@example.com,(201) 555-0168,,Real Estate,"Jersey City, New Jersey",cold,Realtor List,realtor|no-site-found,No site listed.',
+    'Sasha Hart,Sasha Hart,Realtor,shart@lender.example,(215) 555-0190,lender.example,Real Estate,"Philadelphia, Pennsylvania",cold,Realtor List,realtor|not-a-realtor,Lending.',
     'Bogus Rating,Bogus Rating,Realtor,bogus@example.com,(555) 555-0000,example.com,Real Estate,Nowhere,scorching,Realtor List,realtor|own-site,Bad rating on purpose.'
   ].join('\n');
 
@@ -119,17 +119,19 @@ $driver = @'
     function find(email) {
       return S.all('leads').filter(function (l) { return l.email === email; })[0];
     }
-    var erik = find('erik@theflexnergroup.com');
+    var erik = find('erin@fullerhomes.example');
     say('the hot lead kept its rating', erik && erik.rating === 'hot', erik && erik.rating);
-    say('and all three of its tags',
-        erik && S.hasTag(erik, 'realtor') && S.hasTag(erik, 'own-site') && S.hasTag(erik, 'site-broken'),
+    /* own-site and site-broken arrive in their current spelling; realtor
+       is a trade, and the Industry column already says so. */
+    say('and its website tags, in the current spelling',
+        erik && S.hasTag(erik, 'has own site') && S.hasTag(erik, 'old site') && !S.hasTag(erik, 'realtor'),
         erik && (erik.tags || []).join('|'));
     say('its source came through', erik && erik.source === 'Realtor List', erik && erik.source);
     say('its location came through', erik && /Los Angeles/.test(erik.address || ''), erik && erik.address);
 
-    var kw = find('g.lopez@kw.com');
+    var kw = find('g.lowe@kw.com');
     say('the brokerage lead is cold', kw && kw.rating === 'cold', kw && kw.rating);
-    say('and tagged brokerage-page', kw && S.hasTag(kw, 'brokerage-page'));
+    say('and tagged brokerage page', kw && S.hasTag(kw, 'brokerage page'), kw && (kw.tags || []).join('|'));
 
     var bogus = find('bogus@example.com');
     say('an unknown rating fell back to warm', bogus && bogus.rating === 'warm', bogus && bogus.rating);
@@ -138,10 +140,13 @@ $driver = @'
         S.all('leads').filter(function (l) { return l.source === 'Realtor List'; })
           .every(function (l) { return !l.nextFollowUp; }));
 
-    say('every segment is now a filterable tag',
-        ['own-site', 'brokerage-page', 'no-site-found', 'not-a-realtor']
-          .every(function (t) { return S.allTags().indexOf(t) > -1; }),
-        S.allTags().join(','));
+    /* not-a-realtor is outside the lead tag list, so it is dropped. */
+    var offered = S.leadTagCounts().map(function (c) { return c.tag; });
+    say('every website segment is a filterable tag',
+        ['has own site', 'brokerage page', 'no website']
+          .every(function (t) { return offered.indexOf(t) > -1; }) &&
+        offered.indexOf('not-a-realtor') === -1,
+        offered.join(','));
 
     // Re-importing the identical rows must add nothing.
     var beforeAgain = S.all('leads').length;

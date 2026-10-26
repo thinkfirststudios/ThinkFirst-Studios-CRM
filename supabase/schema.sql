@@ -154,7 +154,7 @@ create table if not exists public.leads (
   "contactTitle"        text not null default '',
   email                 text not null default '',
   phone                 text not null default '',
-  "leadStatus"          text not null default 'new',   -- new|working|nurturing|qualified|unqualified|converted
+  "leadStatus"          text not null default 'new',   -- new|noanswer|voicemail|hungup|dead (Do not call)|nosale|converted (Pitch and sale); see lead-statuses.sql
   rating                text not null default 'warm',  -- hot|warm|cold
   source                text not null default '',
   "ownerId"             text not null default '',

@@ -129,8 +129,9 @@ $driver = @'
       say('  with his company', e.name === 'Gralha Im\u00f3veis', e.name);
       say('  his email', e.email === 'erico.hatada@gralhavendas.com.br', e.email);
       say('  his phone', e.phone === '(48) 98847-7428', JSON.stringify(e.phone));
-      say('  and both tags', S.hasTag(e, 'Florian\u00f3polis') && S.hasTag(e, 'Santa Catarina'),
-          (e.tags || []).join('|'));
+      /* Both were places. The address holds those, so they are not kept
+         as tags (S.LEAD_TAGS). */
+      say('  and no place tags', (e.tags || []).length === 0, (e.tags || []).join('|'));
     }
     say('a c-cedilha survived', !!by('Luciano da Concei\u00e7\u00e3o'));
     say('and a tilde', !!by('C\u00e9lia de Oliveira Elias'));
@@ -174,9 +175,9 @@ $driver = @'
         .filter(function (l) { return l.branch === 'Brazil'; })
         .every(function (l) { return l.industry === 'Real Estate'; }));
 
-    say('and every row has exactly two tags', S.all('leads')
+    say('and no row kept place tags', S.all('leads')
         .filter(function (l) { return l.branch === 'Brazil'; })
-        .every(function (l) { return (l.tags || []).length === 2; }));
+        .every(function (l) { return (l.tags || []).length === 0; }));
 
     say('nobody landed without a next step being optional',
         S.all('leads').filter(function (l) { return l.branch === 'Brazil'; })

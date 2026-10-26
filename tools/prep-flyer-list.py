@@ -247,7 +247,14 @@ SHARED_HOST = re.compile(
     r'linktr\.ee|beacons\.ai|carrd\.co|yelp\.com|nextdoor\.com|'
     r'redfin\.com|coldwellbanker\.com|compass\.com|har\.com|'
     r'zillow\.com|realtor\.com|century21\.com|sevengables\.com|'
-    r'designatedlocalexpert\.com'
+    r'designatedlocalexpert\.com|'
+    # Booking and marketplace pages, where a trainer with no site of their
+    # own sends people instead. PerfectFiit at vagaro.com/perfectfiit was
+    # held back as a duplicate of a hair salon elsewhere on vagaro.com.
+    # Kept in step with SHARED_HOSTS in js/store.js.
+    r'vagaro\.com|mysite\.vagaro\.com|calendly\.com|book\.squareup\.com|'
+    r'setmore\.com|acuityscheduling\.com|booksy\.com|skillest\.com|'
+    r'thumbtack\.com'
     r')$', re.I)
 
 
@@ -287,8 +294,24 @@ def handle(s):
     v = re.sub(r'(?i)^www\.', '', v)
     v = re.sub(r'(?i)^(instagram|facebook|tiktok)\.com/', '', v)
     v = v.split('?')[0].strip().lstrip('@').rstrip('/').strip()
+    # "@banfieldsbarbershop (unconfirmed)" is a handle and a doubt.
+    # Keep the handle; the doubt is already in the note.
+    v = re.sub(r'\s*\([^)]*\)\s*$', '', v).strip()
     # Free text like "Facebook and Instagram icons" is not a handle.
     return v if re.match(r'^[A-Za-z0-9._-]{2,40}$', v) else ''
+
+
+def is_ig_value(s):
+    """Does this social value name an Instagram account?
+
+    "IG @x" and an instagram.com URL say so. So does a bare
+    "@x" - nothing but a handle is written that way, and the
+    researched lists put one in every row of a column headed
+    Instagram. Without the last case all 140 were dropped.
+    """
+    s = (s or '').strip()
+    return bool(s.startswith('@')
+                or re.search(r'(?i)insta|^ig\b', s))
 
 
 class Lead(object):
@@ -334,6 +357,13 @@ class Lead(object):
         rat = pick(row, 'rating', 'fit_rating', 'fit').strip().lower()
         self.rating = rat if rat in ('hot', 'warm', 'cold') else ''
         self.has_site = pick(row, 'has_website', 'has website')
+        # Tags the upstream adapter worked out and this tool cannot:
+        # that a lead has already said no, and that there is no way to
+        # reach it at all. Split on commas because that is what
+        # S.parseTags does, so a welded tag never gets built here.
+        self.extra_tags = [t.strip() for t in
+                           pick(row, 'extra_tags', 'extra tags').split(',')
+                           if t.strip()]
         self.dup_of = pick(row, 'duplicate_of_page', 'duplicate of page', 'duplicate of')
         self.phones = all_phones(pick(row, 'phone', 'phone number', 'telephone', 'mobile'))
         p2 = all_phones(pick(row, 'phone_2', 'phone 2', 'second phone', 'alt phone'))
@@ -412,6 +442,7 @@ def merge(grp):
         'licence': take('licence'), 'social': take('social'),
         'rating': take('rating'),
         'has_site': take('has_site'),
+        'extra_tags': sorted(set(t for l in grp for t in l.extra_tags)),
     }
     phones, svc, notes, pages = [], [], [], []
     for l in grp:
@@ -432,24 +463,52 @@ def merge(grp):
     return m
 
 
+PLACEHOLDER = re.compile(
+    r'^\s*[\[(]?\s*(not\s+(listed|found|given|available|checked|stated)'
+    r'|none|n/?a|unknown|tbd|\?+)\s*[\])]?\s*$', re.I)
+
+
+def place(v):
+    """A place name, or nothing if somebody was describing its absence.
+
+    "(not listed)" is a note about the research, not a city, and it was
+    reaching the CRM's Location field as though it were one.
+    """
+    v = (v or '').strip()
+    return '' if PLACEHOLDER.match(v) else v
+
+
+# A state the CRM cannot read from its abbreviation, so spell it out. See
+# the ZONE_STATE_ABBR comment in js/store.js for why SC is the only one.
+SPELL_OUT = {'SC': 'South Carolina'}
+
+
+def st_out(v):
+    v = (v or '').strip().upper()
+    return SPELL_OUT.get(v, v)
+
+
 def location(m):
-    if m['address']:
-        a = m['address']
-        if m['city'] and nm(m['city']) not in nm(a):
-            a += ', ' + m['city']
-        if m['state'] and (' ' + m['state'].upper()) not in a.upper():
-            a += ', ' + m['state'].upper()
+    city = place(m['city'])
+    state = st_out(m['state'])
+    addr = place(m['address'])
+    if addr:
+        a = addr
+        if city and nm(city) not in nm(a):
+            a += ', ' + city
+        if state and (' ' + state.upper()) not in a.upper():
+            a += ', ' + state
         return a
-    if m['city']:
+    if city:
         # No state is added to a bare city. One flyer printed "Mexico City"
         # against two 714 numbers; writing "Mexico City, CA" onto the record
         # would be a plain untruth, and it is not needed - S.zoneOf finds no
         # state, falls back to the area code and places the lead correctly.
-        return m['city'] + (', ' + m['state'].upper() if m['state'] else '')
+        return city + (', ' + state if state else '')
     if m['area']:
         a = m['area']
-        if m['state'] and (' ' + m['state'].upper()) not in a.upper():
-            a += ', ' + m['state'].upper()
+        if state and (' ' + state.upper()) not in a.upper():
+            a += ', ' + state
         return a
     # Nothing printed a location at all, which is two flyers in three. The
     # area code is the only evidence there is, and it is better evidence
@@ -481,6 +540,8 @@ def main():
     ap.add_argument('--also', action='append', default=[],
                     help='another list already imported, checked the same way')
     ap.add_argument('--source', default='')
+    ap.add_argument('--allow-missing', dest='allow_missing', action='store_true',
+                    help='proceed even if a named --also/--against file is absent')
     a = ap.parse_args()
 
     rows = list(csv.DictReader(io.open(a.inp, encoding='utf-8-sig')))
@@ -511,9 +572,29 @@ def main():
 
     # What is already in the book, keyed every way rather than the first way.
     known = {}
+    # A list that was named and did not arrive is the one failure here that
+    # looks like success. The de-duplication simply runs against less, every
+    # count in the summary stays plausible, and the duplicates ship.
+    #
+    # It has now happened twice. The first time, Airsoft_Leads_READY.csv had
+    # been moved out of Downloads and the overlap was caught only because
+    # the researcher happened to have flagged it. The second time, four of
+    # the five Young Owner lists had been uploaded and tidied away, and the
+    # run would have compared this batch against one industry out of five.
+    #
+    # So: named and missing is a hard stop. --allow-missing is there for the
+    # case where a list is genuinely gone and the operator has decided to
+    # proceed without it, which is a decision rather than an accident.
+    gone = [p for p in [a.against] + a.also if not os.path.exists(p)]
+    if gone and not a.allow_missing:
+        raise SystemExit(
+            'STOPPED - these lists were named for de-duplication but do not\n'
+            'exist, so the run would quietly compare against less than you\n'
+            'asked for:\n  ' + '\n  '.join(gone)
+            + '\n\nFind them, or pass --allow-missing to proceed deliberately.')
     for path in [a.against] + a.also:
         if not os.path.exists(path):
-            print('   (not found, skipped: %s)' % path)
+            print('   (NOT FOUND, skipped by --allow-missing: %s)' % path)
             continue
         n = 0
         for c in csv.DictReader(io.open(path, encoding='utf-8-sig')):
@@ -592,6 +673,9 @@ def main():
             tags.append('no website')
             if handle(m['social']):
                 tags.append('social only')
+        for t in m.get('extra_tags', []):
+            if t not in tags:
+                tags.insert(0, t)
         if 'NAME UNKNOWN' in ' '.join(m['notes']):
             tags.append('name unknown')
 
@@ -601,7 +685,8 @@ def main():
             'Phone': tel(m['phones'][0]) if m['phones'] else '',
             'Website': site(m['website']), 'Location': loc,
             'Industry': m['industry'], 'Source': a.source, 'Est. Value': '',
-            'Instagram': handle(m['social']) if re.search(r'(?i)insta|^ig\b', m['social']) else '',
+            # A leading @ is a handle - see is_ig_value.
+            'Instagram': handle(m['social']) if is_ig_value(m['social']) else '',
             'TikTok': '', 'Facebook': '',
             'Rating': m['rating'],
             # Commas, because S.parseTags splits on commas and nothing else.

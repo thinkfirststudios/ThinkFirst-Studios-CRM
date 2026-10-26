@@ -80,6 +80,36 @@ never a lead nobody has scheduled. Narrowing it is what stops a large
 undated import from reading as thousands of things due now, and the suite
 checks the real work still shows up.
 
+`pre-upload.js` is the one to run on a new batch of CRM-READY files:
+
+    node tests/pre-upload.js --ready A.csv B.csv --sources sheetA.csv sheetB.csv
+
+It reads them with the importer's real header matcher and the store's real
+`parseTags`, `zoneOf`, `zoneLabel` and `leadKey`, because a prep tool that
+produces a tidy CSV proves nothing about what the CRM will make of it.
+Every list since September has arrived in a different column shape and the
+failures keep being the same four: a header read as the wrong field, tags
+welded into one, a Location the zone logic cannot read, and two leads
+keying as the same lead.
+
+With `--sources` it also does the one check the prep tools cannot do for
+themselves. The researcher writes a TZ column by hand, so the zone the CRM
+derives from the Location can be compared against what a person said. Two
+independent signals disagreeing is the cheapest bug detector available
+without live data, and on its first run it found a Flower Mound tennis
+coach filed in Mountain time because his mobile is an Arizona number.
+
+`young-owner-import.js` reads the five CSVs of a batch before it is
+uploaded, using the importer's real header matcher and the store's real
+`parseTags`, `zoneOf` and `leadKey`. A prep tool producing a tidy CSV
+proves nothing; what matters is what the CRM makes of it. It caught three
+things on its first run: 140 Instagram handles dropped at the last step
+because the output gate only passed values containing "insta" and these
+were bare `@handles`; a 45-character unfilterable tag built out of an
+industry with commas in it; and a wrap shop in Ontario, California filed
+as being in Canada. It needs the files in `~/Downloads`, so it is a
+pre-upload check rather than part of a normal run.
+
 `paging.js` is the one to keep an eye on. Supabase caps an API response at
 the project's "Max rows" setting and reports no error when it truncates, so
 a table that outgrows the cap starts disappearing in silence. The suite

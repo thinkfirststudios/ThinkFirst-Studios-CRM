@@ -108,34 +108,47 @@
      names through the pipeline board and the billing calendar, and make
      "how many customers do we have" unanswerable. They convert into a
      customer once, and that conversion is the number worth measuring. */
+  /* What happened on the call, which is what a cold-calling team actually
+     needs to know about a lead. Agreed Oct 2026 to replace New / Working /
+     Nurturing / Qualified / Unqualified / Dead, which described a sales
+     pipeline nobody was running.
+
+     The four open ones all mean "ring again". No answer in particular is
+     not a dead lead: it gets called again, and the second call goes to
+     somebody else (handOffNoAnswer below), because a different voice at a
+     different time is the cheapest way to get through.
+
+     Two ids are kept from the old list on purpose. 'dead' is now Do not
+     call - every old Dead lead was decided to be exactly that - and
+     'converted' is now Pitch and sale, still set by converting the lead
+     into a customer. Keeping the ids means the database, the 994 leads
+     already closed and every report that counts them need no migration. */
   var LEAD_STATUSES = [
-    { id: 'new',         label: 'New',         tone: 'b-blue',   order: 1, open: true,
-      hint: 'Captured but not contacted yet.' },
-    { id: 'working',     label: 'Working',     tone: 'b-orange', order: 2, open: true,
-      hint: 'Actively reaching out.' },
-    { id: 'nurturing',   label: 'Nurturing',   tone: 'b-violet', order: 3, open: true,
-      hint: 'Interested but not now — keep warm.' },
-    { id: 'qualified',   label: 'Qualified',   tone: 'b-green',  order: 4, open: true,
-      hint: 'Real fit and real budget. Ready to convert.' },
-    /* Two ways to lose a lead, and they are not the same thing.
-
-       Unqualified is a judgement you made: wrong service, wrong area, no
-       budget. Nothing went wrong — filtering these out early is the job
-       working. Dead is a lead that WAS a fit and went nowhere anyway:
-       they stopped replying, or went elsewhere.
-
-       Collapsing both into one status hides the only number that tells
-       you whether to change how you follow up. A pile of unqualified
-       leads means your targeting is loose; a pile of dead ones means you
-       are losing people you could have won. So the red is on Dead —
-       being unqualified is not the outcome to feel bad about. */
-    { id: 'unqualified', label: 'Unqualified', tone: 'b-grey',   order: 5, open: false,
-      hint: 'Not a fit — wrong service, wrong area, no budget. Correctly filtered out.' },
-    { id: 'dead',        label: 'Dead',        tone: 'b-red',    order: 6, open: false,
-      hint: 'Was a fit but went nowhere — stopped replying, or went elsewhere. Can be revived.' },
-    { id: 'converted',   label: 'Converted',   tone: 'b-green',  order: 7, open: false,
-      hint: 'Became a customer. Set automatically — do not pick by hand.' }
+    { id: 'new',       label: 'New lead',       tone: 'b-blue',   order: 1, open: true,
+      hint: 'Not called yet.' },
+    { id: 'noanswer',  label: 'No answer',      tone: 'b-orange', order: 2, open: true,
+      hint: 'Rang and nobody picked up. Not dead - it gets called again, by someone else.' },
+    { id: 'voicemail', label: 'Left voicemail', tone: 'b-yellow', order: 3, open: true,
+      hint: 'Left a message. Call again if they do not ring back.' },
+    { id: 'hungup',    label: 'Hung up',        tone: 'b-violet', order: 4, open: true,
+      hint: 'Hung up on the call. Often just bad timing - worth one more try.' },
+    { id: 'dead',      label: 'Do not call',    tone: 'b-red',    order: 5, open: false,
+      hint: 'Never ring this lead again.' },
+    { id: 'nosale',    label: 'Pitch no sale',  tone: 'b-grey',   order: 6, open: false,
+      needsReason: true,
+      hint: 'Heard the pitch and said no. Say why in a few words.' },
+    { id: 'converted', label: 'Pitch and sale', tone: 'b-green',  order: 7, open: false,
+      hint: 'Heard the pitch and bought. Choosing it converts the lead into a customer.' }
   ];
+  /* The statuses this replaced, read as their nearest new one so a row the
+     SQL has not reached yet still lands in the right list. Working and
+     Nurturing leads had nearly all been rung without a result; Unqualified
+     was closed for good, which is what Do not call now means. */
+  var LEAD_STATUS_ALIASES = {
+    working: 'noanswer', nurturing: 'noanswer', qualified: 'noanswer', unqualified: 'dead'
+  };
+  /* The open statuses that mean a call was made and has to be made again. */
+  var RECALL_STATUSES = { noanswer: 1, voicemail: 1, hungup: 1 };
 
   var LEAD_RATINGS = [
     { id: 'hot',  label: 'Hot',  tone: 'b-red',    order: 1 },
@@ -325,10 +338,66 @@
      A state that straddles a zone line is the exception and defers to the
      area code, because "Texas" cannot tell El Paso from Houston, and
      "Tennessee" cannot tell Knoxville from Memphis. */
+  /* Each split state with the two zones it actually spans. The area code
+     may pick between them and nothing else: a Portland trainer with a 216
+     Ohio cell was filed East Coast, a zone no part of Oregon is in. */
   var ZONE_SPLIT_STATES = {
-    texas: 1, kansas: 1, nebraska: 1, 'north dakota': 1, 'south dakota': 1,
-    kentucky: 1, tennessee: 1, florida: 1, indiana: 1, michigan: 1,
-    oregon: 1, idaho: 1
+    texas: 'central mountain', kansas: 'central mountain', nebraska: 'central mountain',
+    'north dakota': 'central mountain', 'south dakota': 'central mountain',
+    kentucky: 'eastern central', tennessee: 'eastern central', florida: 'eastern central',
+    indiana: 'eastern central', michigan: 'eastern central',
+    oregon: 'pacific mountain', idaho: 'mountain pacific'
+  };
+
+  /* Towns on the far side of their state's zone line, where the area code
+     cannot help because one code covers the whole state. All of Idaho is
+     208, and the panhandle - Coeur d'Alene, Sandpoint, Lewiston, Moscow -
+     keeps Pacific time with Spokane, so three photographers there were
+     filed Mountain and would have been rung an hour early. Malheur County
+     is the same in reverse for Oregon. Matched as whole words on the
+     Location, and only once the state is known, so Ontario, CA is safe. */
+  var ZONE_TOWNS = {
+    idaho: ['pacific', ['coeur d alene', 'post falls', 'hayden', 'rathdrum', 'sandpoint',
+      'bonners ferry', 'priest river', 'kellogg', 'wallace', 'st maries', 'moscow',
+      'lewiston', 'orofino', 'grangeville', 'kamiah', 'cottonwood']],
+    oregon: ['mountain', ['ontario', 'nyssa', 'vale', 'jordan valley']],
+    /* Hardin County keeps Eastern time, but shares the 270 code with
+       Bowling Green and Paducah, which are Central. */
+    kentucky: ['eastern', ['elizabethtown', 'radcliff', 'fort knox', 'vine grove']],
+    /* 850 is Central in the west Panhandle, but Tallahassee and the Big
+       Bend east of the Apalachicola keep Eastern time. */
+    florida: ['eastern', ['tallahassee', 'quincy', 'havana', 'crawfordville', 'monticello',
+      'madison', 'perry', 'apalachicola', 'carrabelle', 'st marks']]
+  };
+
+  /* For a state that spans two zones the area code is the tie-breaker -
+     but only when the number actually belongs to that state.
+
+     A tennis coach in Flower Mound, Texas carries a 480 Arizona mobile.
+     Texas does span Mountain time, so the code won the tie and filed a
+     Dallas business in Arizona - an hour out, and invisible under the
+     Central filter. A number from somewhere else says nothing about which
+     half of Texas you are in; the printed state does.
+
+     The same happened on the Oct 23 lists in Boise (a 702 Las Vegas cell
+     read as Pacific) and Bismarck (a 520 Tucson cell read as Mountain), so
+     the Mountain/Central and Pacific/Mountain states are listed too. So
+     is Michigan, since the Oct 25 Angi list had Detroit on a 281 Houston
+     cell and Jackson on a 605 South Dakota one, both read as Central. The
+     other Eastern/Central states are not yet: their codes split inside
+     the state, and a half-remembered list would cause the same kind of
+     error this is here to prevent. Add a state when there is a real case
+     for it and the codes have been checked. */
+  var ZONE_STATE_CODES = {
+    texas: ' 210 214 254 281 325 346 361 409 430 432 469 512 682 713 726 737 '
+         + '806 817 830 832 903 915 936 940 945 956 972 979 ',
+    oregon: ' 458 503 541 971 ',
+    idaho: ' 208 986 ',
+    kansas: ' 316 620 785 913 ',
+    nebraska: ' 308 402 531 ',
+    'north dakota': ' 701 ',
+    'south dakota': ' 605 ',
+    michigan: ' 231 248 269 313 517 586 616 679 734 810 906 947 989 '
   };
 
   /* Each state listed whole. An earlier cut of this split the groups on
@@ -375,11 +444,18 @@
     ct: 'connecticut', oh: 'ohio', mi: 'michigan', 'in': 'indiana',
     ky: 'kentucky', me: 'maine', vt: 'vermont', ri: 'rhode island',
     de: 'delaware', wv: 'west virginia', dc: 'district of columbia',
-    hi: 'hawaii', ak: 'alaska'
+    hi: 'hawaii', ak: 'alaska', nh: 'new hampshire'
     /* "SC" is deliberately absent. Every Brazilian lead reads
        "Florianopolis, SC" - Santa Catarina - and taking that for South
        Carolina would file Cassius's whole book on the US east coast. A
-       South Carolina lead resolves on the spelled-out name instead. */
+       South Carolina lead resolves on the spelled-out name instead, or on
+       its area code, which is why the four Anderson and Greenwood bowling
+       alleys are filed correctly despite this.
+
+       "NH" was absent for no reason at all - simply missed when this table
+       was typed out. A New Hampshire lead with a phone was placed by its
+       area code and so never showed the gap; one without a phone went to
+       "Zone unknown" and dropped out of the time zone filter entirely. */
   };
 
   var ZONE_BY_CODE = {};
@@ -389,14 +465,19 @@
                   '628 650 657 661 669 707 714 747 760 805 818 820 831 837 840 858 909 916 ' +
                   '925 949 951 206 253 360 425 509 564 458 503 541 971 702 725 775'],
       ['mountain', '480 520 602 623 928 303 719 720 970 983 385 435 801 505 575 406 307 208 986 915'],
-      ['central', '210 214 254 281 325 346 361 409 430 432 469 512 682 713 726 737 806 817 ' +
+      /* 850 and 448 are the Florida Panhandle, which is Central -
+         Pensacola and Panama City keep Alabama's clock, not Miami's. They
+         were in the eastern group, so every Panhandle lead read East
+         Coast and would be rung an hour early. Florida is already a split
+         state, so Miami stays Eastern on its own codes. */
+      ['central', '850 448 210 214 254 281 325 346 361 409 430 432 469 512 682 713 726 737 806 817 ' +
                   '830 832 903 936 940 945 956 972 979 217 224 309 312 331 447 464 618 630 ' +
                   '708 730 773 779 815 847 861 872 218 320 507 612 651 763 952 314 417 557 ' +
                   '573 636 660 816 975 225 318 337 504 985 205 251 256 334 659 938 327 479 ' +
                   '501 870 319 515 563 641 712 316 620 785 913 308 402 531 405 539 572 580 ' +
                   '918 262 274 414 534 608 715 920 228 601 662 769 615 629 731 901 931 270 ' +
                   '364 701 605'],
-      ['eastern', '239 305 321 324 352 386 407 448 561 656 689 727 754 772 786 813 850 863 ' +
+      ['eastern', '239 305 321 324 352 386 407 561 656 689 727 754 772 786 813 863 ' +
                   '904 941 954 229 404 470 478 678 706 762 770 912 943 212 315 329 332 347 ' +
                   '363 516 518 585 607 631 646 680 716 718 838 845 914 917 929 934 252 336 ' +
                   '704 743 828 910 919 980 984 803 839 843 854 864 276 434 540 571 686 703 ' +
@@ -456,7 +537,14 @@
     'remax\\.com', 'bhhs\\.com', 'bhhscalifornia\\.com', 'serhant\\.com',
     'exprealty\\.com', 'kw\\.com', 'sothebysrealty\\.com', 'corcoran\\.com',
     'weichert\\.com', 'era\\.com', 'firstteam\\.com', 'cbmoxi\\.com',
-    'sevengables\\.com', 'designatedlocalexpert\\.com', 'lifetimerealtygroup\\.com'
+    'sevengables\\.com', 'designatedlocalexpert\\.com', 'lifetimerealtygroup\\.com',
+    /* Booking and marketplace pages. A trainer or coach with no site of
+       their own lists one of these instead, and the path is the business:
+       "PerfectFiit" at vagaro.com/perfectfiit was held back as a duplicate
+       of a San Antonio hair salon at vagaro.com/us04/hairbyvelma. */
+    'vagaro\\.com', 'mysite\\.vagaro\\.com', 'calendly\\.com', 'book\\.squareup\\.com',
+    'setmore\\.com', 'acuityscheduling\\.com', 'booksy\\.com', 'skillest\\.com',
+    'thumbtack\\.com'
   ].join('|') + ')$', 'i');
 
   /* ── numbers that do not reach a person ────────────────────────────
@@ -481,6 +569,36 @@
      column: it needs no migration, it already syncs, and the filters and
      search already understand it. */
   var COMPANY_LINE_TAG = 'company-line';
+
+  /* The only tags a lead carries.
+
+     Every import tool used to write its own words - the trade, the city,
+     the list it came from, notes from preparing the list - until there
+     were 749 tags on 3,795 leads and the filter was useless. Nearly all
+     of it repeated a column the lead already has. What no column holds is
+     the state of the business's website, which is the reason to call, so
+     that is what tags are for. supabase/tag-cleanup.sql made the existing
+     leads match; cleanLeadTags keeps new ones that way. */
+  var LEAD_TAG_GROUPS = [
+    { label: 'Website', tags: ['no website', 'social only', 'old site', 'brokerage page', 'has own site'] },
+    { label: 'Calling', tags: [COMPANY_LINE_TAG] },
+    { label: 'Priority', tags: ['tier 1', 'tier 2'] },
+    { label: 'In common', tags: ['hockey', 'racing'] }
+  ];
+  var LEAD_TAGS = [].concat.apply([], LEAD_TAG_GROUPS.map(function (g) { return g.tags; }));
+  /* How the tools and older lists spelled the same things. Must match the
+     mapping in supabase/tag-cleanup.sql. */
+  var LEAD_TAG_SYNONYMS = {
+    'no-site-found': 'no website', 'no website listed': 'no website', 'no-website': 'no website',
+    'social media only': 'social only', 'social profile only (check)': 'social only',
+    'no real page': 'social only',
+    'site 2020 or earlier': 'old site', 'site ~2021': 'old site', 'weak site': 'old site',
+    'site-broken': 'old site', 'free site builder page': 'old site',
+    'brokerage-page': 'brokerage page',
+    'own-site': 'has own site', 'has website - not checked': 'has own site',
+    'reach: switchboard': COMPANY_LINE_TAG, 'switchboard only': COMPANY_LINE_TAG,
+    'common ground: hockey': 'hockey', 'common ground: racing': 'racing'
+  };
 
   function hostOf(url) {
     return String(url || '').trim().toLowerCase()
@@ -692,14 +810,14 @@
        today, one never scheduled, one converted. */
     var leads = [
       { id: 'l_1', name: 'Saguaro Auto Spa', contactName: 'Luis Ferrer', contactTitle: 'Owner',
-        email: 'luis@saguaroauto.com', phone: '(602) 555-0301', leadStatus: 'working', rating: 'hot',
+        email: 'luis@saguaroauto.com', phone: '(602) 555-0301', leadStatus: 'noanswer', rating: 'hot',
         source: 'Referral', ownerId: 'u_sam', estValue: 3800, nextFollowUp: shift(-3), lastContactedAt: shift(-10),
         industry: 'Automotive', address: 'Phoenix, AZ', website: 'saguaroauto.com', tags: ['Local'],
         mockupStatus: 'ready', mockupTypes: ['Website'], mockupUrl: 'figma.com/file/saguaro-auto-concept',
         mockupReadyAt: shift(-4), mockupSentAt: '',
         outreachId: 'or_3', convertedCustomerId: '', convertedAt: '', createdAt: now() },
       { id: 'l_2', name: 'Mesquite Grill House', contactName: 'Dana Whitmore', contactTitle: 'GM',
-        email: 'dana@mesquitegrill.com', phone: '(480) 555-0312', leadStatus: 'qualified', rating: 'hot',
+        email: 'dana@mesquitegrill.com', phone: '(480) 555-0312', leadStatus: 'hungup', rating: 'hot',
         source: 'Website Form', ownerId: 'u_jordan', estValue: 9200, nextFollowUp: shift(-1), lastContactedAt: shift(-4),
         industry: 'Food & Bev', address: 'Gilbert, AZ', website: 'mesquitegrill.com', tags: ['Local', 'Referral'],
         mockupStatus: 'sent', mockupTypes: ['Website', 'Graphic Design'],
@@ -707,7 +825,7 @@
         mockupReadyAt: shift(-6), mockupSentAt: shift(-3),
         outreachId: 'or_6', convertedCustomerId: '', convertedAt: '', createdAt: now() },
       { id: 'l_3', name: 'Verde Valley Landscaping', contactName: 'Tomas Rivera', contactTitle: 'Owner',
-        email: 'tomas@verdevalleyland.com', phone: '(928) 555-0323', leadStatus: 'working', rating: 'warm',
+        email: 'tomas@verdevalleyland.com', phone: '(928) 555-0323', leadStatus: 'voicemail', rating: 'warm',
         source: 'Google Ads', ownerId: 'u_sam', estValue: 2400, nextFollowUp: today(), lastContactedAt: shift(-6),
         industry: 'Home Services', address: 'Cottonwood, AZ', website: 'verdevalleyland.com', tags: [],
         mockupStatus: 'inprogress', mockupTypes: ['Website'], mockupUrl: '',
@@ -719,12 +837,12 @@
         industry: 'Healthcare', address: 'Scottsdale, AZ', website: 'pinnacleortho.com', tags: [],
         convertedCustomerId: '', convertedAt: '', createdAt: now() },
       { id: 'l_5', name: 'Foothills Boutique', contactName: 'Serena Cole', contactTitle: 'Founder',
-        email: 'serena@foothillsboutique.com', phone: '(602) 555-0345', leadStatus: 'nurturing', rating: 'cold',
+        email: 'serena@foothillsboutique.com', phone: '(602) 555-0345', leadStatus: 'noanswer', rating: 'cold',
         source: 'Instagram', ownerId: 'u_jordan', estValue: 1500, nextFollowUp: shift(21), lastContactedAt: shift(-14),
         industry: 'Retail', address: 'Ahwatukee, AZ', website: 'foothillsboutique.com', tags: ['Local'],
         convertedCustomerId: '', convertedAt: '', createdAt: now() },
       { id: 'l_6', name: 'Desert Sky Insurance', contactName: 'Ray Nkemdirim', contactTitle: 'Agent',
-        email: 'ray@desertskyins.com', phone: '(623) 555-0356', leadStatus: 'unqualified', rating: 'cold',
+        email: 'ray@desertskyins.com', phone: '(623) 555-0356', leadStatus: 'nosale', rating: 'cold',
         source: 'Cold Outreach', ownerId: 'u_sam', estValue: 0, nextFollowUp: '', lastContactedAt: shift(-30),
         industry: 'Insurance', address: 'Surprise, AZ', website: 'desertskyins.com', tags: [],
         convertedCustomerId: '', convertedAt: '', createdAt: now() },
@@ -914,6 +1032,13 @@
     return out;
   }
 
+  /* An old status read as its new one in memory only. The stored value is
+     changed by supabase/lead-statuses.sql, not by whoever happens to open
+     the app first, so nobody's screen writes thousands of rows. */
+  function renameStatus(l) {
+    if (l && LEAD_STATUS_ALIASES[l.leadStatus]) l.leadStatus = LEAD_STATUS_ALIASES[l.leadStatus];
+  }
+
   /* ── boot ────────────────────────────────────────────────────── */
   function boot() {
     return B.init(B.config)
@@ -924,6 +1049,7 @@
       .then(function (loaded) {
         if (loaded) {
           db = normalize(loaded);
+          db.leads.forEach(renameStatus);
         } else if (B.mode === 'local') {
           db = seed();
           B.persist(db);
@@ -1032,6 +1158,7 @@
     var idx = -1;
     for (var i = 0; i < list.length; i++) if (list[i].id === id) { idx = i; break; }
 
+    if (coll === 'leads' && newRow) renameStatus(newRow);
     if (event === 'DELETE') { if (idx > -1) list.splice(idx, 1); }
     else if (idx > -1) list[idx] = newRow;
     else if (coll === 'activity') list.unshift(newRow);
@@ -2020,13 +2147,18 @@
 
     /* ── leads ──────────────────────────────────────────────────── */
     LEAD_STATUSES: LEAD_STATUSES,
+    RECALL_STATUSES: RECALL_STATUSES,
     LEAD_RATINGS: LEAD_RATINGS,
     LEAD_SOURCES: LEAD_SOURCES,
     FOLLOW_UP: FOLLOW_UP,
     leadStatus: function (id) {
+      id = LEAD_STATUS_ALIASES[id] || id;
       for (var i = 0; i < LEAD_STATUSES.length; i++) if (LEAD_STATUSES[i].id === id) return LEAD_STATUSES[i];
       return LEAD_STATUSES[0];
     },
+    /* The current id for a stored one, old ids included. */
+    statusId: function (id) { return API.leadStatus(id).id; },
+    isRecall: function (l) { return !!RECALL_STATUSES[API.statusId(l && l.leadStatus)]; },
     leadRating: function (id) {
       for (var i = 0; i < LEAD_RATINGS.length; i++) if (LEAD_RATINGS[i].id === id) return LEAD_RATINGS[i];
       return LEAD_RATINGS[1];                 // warm
@@ -2082,34 +2214,32 @@
     leadStats: function () {
       var mine = API.visibleLeads();
       var byStatus = function (id) {
-        return mine.filter(function (l) { return l.leadStatus === id; });
+        return mine.filter(function (l) { return API.statusId(l.leadStatus) === id; });
       };
       var converted = byStatus('converted');
-      var unqualified = byStatus('unqualified');
-      var dead = byStatus('dead');
+      var nosale = byStatus('nosale');
+      var dnc = byStatus('dead');
       var open = API.openLeads();
 
       /* Rate over decided leads only. Counting leads still in play as
-         failures would make the number fall every time you add one.
-         Dead counts as decided — it is a loss, not an open question. */
-      var decided = converted.length + unqualified.length + dead.length;
+         failures would make the number fall every time you add one. */
+      var decided = converted.length + nosale.length + dnc.length;
 
-      /* Of the leads that were a real fit, how many did we actually
-         land? Unqualified leads are excluded from both halves: they were
-         never winnable, and leaving them in flatters the number when
-         targeting is loose and punishes it when targeting is tight. */
-      var winnable = converted.length + dead.length;
+      /* Of the leads that heard the pitch, how many bought. Do not call is
+         left out of both halves: most of those never got as far as a pitch,
+         so counting them would measure the list rather than the pitch. */
+      var pitched = converted.length + nosale.length;
 
       return {
         total: db.leads.length,
         open: open.length,
-        qualified: byStatus('qualified').length,
+        recall: open.filter(API.isRecall).length,
         converted: converted.length,
-        unqualified: unqualified.length,
-        dead: dead.length,
-        lost: unqualified.length + dead.length,
+        nosale: nosale.length,
+        dead: dnc.length,
+        lost: nosale.length + dnc.length,
         convRate: decided ? Math.round((converted.length / decided) * 100) : 0,
-        winRate: winnable ? Math.round((converted.length / winnable) * 100) : 0,
+        winRate: pitched ? Math.round((converted.length / pitched) * 100) : 0,
         attention: API.leadsNeedingAttention().length,
         value: open.reduce(function (s, l) { return s + (Number(l.estValue) || 0); }, 0)
       };
@@ -2122,13 +2252,82 @@
       var l = find('leads', id);
       if (!l) return null;
       update('leads', id, {
-        leadStatus: 'working',
+        leadStatus: 'new',
         nextFollowUp: nextFollowUp || shift(1)
       }, l.name + ' back in play');
       if (l.lostReason) {
         API.addNote('lead', id, 'Reopened. Previously closed because: ' + l.lostReason);
       }
       return find('leads', id);
+    },
+
+
+    /* ── No answer goes to somebody else ──────────────────────────────
+       A lead that did not pick up is not dead, and the second call is
+       better made by a different person: another voice, another time of
+       day, and nobody re-ringing the same number out of habit.
+
+       So marking No answer hands the lead to whoever, in its branch, has
+       the fewest leads already waiting on a second call - never the person
+       who just rang. If there is nobody else it stays put.
+
+       A rep may only save leads they own, so a rep cannot give one away
+       with an ordinary update; the database refuses it. For them this
+       goes through hand_off_lead (supabase/lead-statuses.sql), which makes
+       that one change on their behalf and nothing else. */
+    nextCaller: function (l) {
+      var me = API.me();
+      var load = {};
+      db.leads.forEach(function (x) {
+        if (API.isLeadOpen(x) && API.isRecall(x)) load[x.ownerId] = (load[x.ownerId] || 0) + 1;
+      });
+      var pool = db.users.filter(function (u) {
+        return u.active && u.id !== me.id && u.id !== l.ownerId &&
+          (u.branch || '') === (l.branch || '');
+      });
+      /* The owner is a fair second caller when somebody else made the
+         first call, so they are only left out when that leaves a choice. */
+      if (!pool.length && l.ownerId !== me.id) {
+        var owner = db.users.filter(function (u) { return u.id === l.ownerId && u.active; })[0];
+        if (owner) return owner;
+      }
+      pool.sort(function (a, b) {
+        return (load[a.id] || 0) - (load[b.id] || 0) || String(a.name).localeCompare(String(b.name));
+      });
+      return pool[0] || null;
+    },
+    handOffNoAnswer: function (id) {
+      var l = find('leads', id);
+      if (!l) return null;
+      var to = API.nextCaller(l);
+      if (!to || to.id === l.ownerId) return null;
+      var from = API.user(l.ownerId).name;
+      var me = API.me();
+      /* Written first, while the lead is still the caller's to write on. */
+      API.addNote('lead', id, 'No answer. Handed from ' + from + ' to ' + to.name + ' for the second call.');
+      var label = l.name + ' - no answer, second call handed to ' + to.name;
+      var direct = B.mode === 'local' || me.role === 'admin' ||
+        (me.role === 'manager' && (l.branch || '') === (me.branch || ''));
+      if (direct) {
+        update('leads', id, { ownerId: to.id }, label);
+      } else {
+        /* Change the cache now so the screen moves on, and let the
+           database make the real change. If it refuses, say so plainly -
+           the lead would otherwise look handed over and not be. */
+        l.ownerId = to.id;
+        l.updatedAt = now();
+        log('updated', 'leads', id, label);
+        notify();
+        B.rpc('hand_off_lead', { p_lead: id, p_to: to.id }).then(null, function (e) {
+          var msg = (e && e.message) || '';
+          if (!msg || /could not find the function|does not exist/i.test(msg)) {
+            msg = 'the No answer hand-off is not set up yet (supabase/lead-statuses.sql, step 3) - ' +
+              l.name + ' is still yours';
+          }
+          if (B.onError) B.onError('leads', 'hand off', msg);
+        });
+      }
+      return to;
     },
 
     /* Record a touch and book the next one in a single step, so nobody
@@ -2286,6 +2485,7 @@
       }
       update('leads', id, patch, 'contacted ' + l.name);
       if (opts.note) API.addNote('lead', id, opts.note);
+      if (opts.leadStatus === 'noanswer') API.handOffNoAnswer(id);
 
       /* The call back was the reason for the call, so logging the call is
          doing it. Only ones due by then: a call back booked for Friday is
@@ -2519,10 +2719,12 @@
     },
 
     tagsOf: function (rec) { return (rec && rec.tags) || []; },
-    /* Every tag in use, for filters and autocomplete. */
+    /* Every tag in use on customers and vendors, for their filters and
+       autocomplete. Leads keep to a fixed list of their own (LEAD_TAGS),
+       so their tags are not offered here. */
     allTags: function () {
       var seen = {};
-      db.customers.concat(db.vendors, db.leads).forEach(function (r) {
+      db.customers.concat(db.vendors).forEach(function (r) {
         (r.tags || []).forEach(function (t) { if (t) seen[t] = (seen[t] || 0) + 1; });
       });
       return Object.keys(seen).sort(function (a, b) {
@@ -2540,6 +2742,34 @@
     },
     hasTag: function (rec, tag) {
       return (rec.tags || []).some(function (t) { return t.toLowerCase() === String(tag).toLowerCase(); });
+    },
+
+    LEAD_TAGS: LEAD_TAGS,
+    LEAD_TAG_GROUPS: LEAD_TAG_GROUPS,
+    /* Old spellings become the current tag; anything outside the list is
+       dropped. Deduped, in list order, so two leads with the same tags
+       always read the same. */
+    cleanLeadTags: function (tags) {
+      var have = {};
+      (tags || []).forEach(function (t) {
+        var k = String(t || '').trim().toLowerCase();
+        k = LEAD_TAG_SYNONYMS[k] || k;
+        have[k] = 1;
+      });
+      return LEAD_TAGS.filter(function (t) { return have[t]; });
+    },
+    /* For the lead filter: each tag with how many visible leads carry it,
+       in list order, leaving out tags nobody has. */
+    leadTagCounts: function () {
+      var n = {};
+      API.visibleLeads().forEach(function (l) {
+        (l.tags || []).forEach(function (t) {
+          var k = String(t).toLowerCase();
+          n[k] = (n[k] || 0) + 1;
+        });
+      });
+      return LEAD_TAGS.filter(function (t) { return n[t]; })
+        .map(function (t) { return { tag: t, count: n[t] }; });
     },
 
     /* ── which leads ring a switchboard ──────────────────────────────
@@ -2583,6 +2813,26 @@
          no five digit code after it, so Brazil is still read as Brazil. */
       var usTail = loc.match(/,\s*([A-Za-z]{2})\s+\d{5}(-\d{4})?\s*$/);
       var inUS = !!(usTail && ZONE_STATE_ABBR[usTail[1].toLowerCase()]);
+
+      /* The same lesson again, without the zip to lean on. "Ontario, CA"
+         is Ontario, California - 909 area code, San Bernardino County -
+         and NOT_US saw the word Ontario and filed a wrap shop in Canada,
+         where no coast filter would ever show it.
+
+         Two things together are enough to say a record is American, and
+         neither alone is: the location ENDS in a US state abbreviation,
+         and the phone is a ten digit number whose area code belongs to a
+         US state. "Florianopolis, SC" keeps its Brazilian reading because
+         SC is not in ZONE_STATE_ABBR at all, and a Brazilian number is
+         +55 rather than ten digits. A foreign address that names its
+         country puts the country last, so the tail is not a state. */
+      if (!inUS) {
+        var tailSt = loc.match(/,\s*([A-Za-z]{2})\s*$/);
+        var d0 = phone.replace(/\D/g, '');
+        if (d0.length === 11 && d0.charAt(0) === '1') d0 = d0.slice(1);
+        inUS = !!(tailSt && ZONE_STATE_ABBR[tailSt[1].toLowerCase()]
+                  && d0.length === 10 && ZONE_BY_CODE[d0.slice(0, 3)]);
+      }
 
       if (!inUS && NOT_US.test(loc)) return 'outside';
       if (!inUS && /^\+(?!1\b)\d/.test(phone.trim())) return 'outside';
@@ -2636,7 +2886,18 @@
       var code = digits.length === 10 ? digits.slice(0, 3) : '';
       var byCode = (code && !ZONE_TOLL_FREE[code]) ? ZONE_BY_CODE[code] : null;
 
-      if (state && ZONE_SPLIT_STATES[state] && byCode) return byCode;
+      var towns = state && ZONE_TOWNS[state];
+      if (towns && towns[1].some(function (t) { return flat.indexOf(' ' + t + ' ') > -1; })) {
+        return towns[0];
+      }
+      if (state && ZONE_SPLIT_STATES[state] && byCode) {
+        /* See ZONE_STATE_CODES: a number from another state cannot say
+           which half of this one the business sits in. */
+        var own = ZONE_STATE_CODES[state];
+        var spans = ZONE_SPLIT_STATES[state].split(' ').indexOf(byCode) > -1;
+        if (spans && (!own || own.indexOf(' ' + code + ' ') > -1)) return byCode;
+        return ZONE_BY_STATE[state];
+      }
       if (state) return ZONE_BY_STATE[state];
       return byCode || 'unknown';
     },
@@ -2863,7 +3124,7 @@
             return l.lastContactedAt && (!since || l.lastContactedAt >= since);
           }).length,
           overdue: mine.filter(function (l) {
-            return l.leadStatus !== 'converted' && API.leadStatus(l.leadStatus).open &&
+            return API.leadStatus(l.leadStatus).open &&
                    l.nextFollowUp && l.nextFollowUp < today();
           }).length,
           neverContacted: mine.filter(function (l) { return !l.lastContactedAt; }).length,
